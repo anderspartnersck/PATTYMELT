@@ -100,6 +100,8 @@
     return topY;
   }
 
+  // a melt takes Swiss, not American: once Joe's Swiss ladder is loaded (lib/spatulas.js) the melts lose the yellow slice
+  const swissArt = () => !!(g.PMSpat && g.PMSpat.topping && g.PMSpat.topping("swiss-fresh-draped"));
   function thinCheese(ctx, cx, cy, rad) {                   // a slice laid flat (pre-melt)
     disc(ctx, cx, cy, rad * 1.02, rad * 0.24, rad * 0.10, C.chzTop0, C.chzTop1, C.chzSide0, C.chzSide1);
   }
@@ -176,7 +178,7 @@
       const toasted = isMelt;
       if (toasted) bread(ctx, 0, rad * 0.22, rad, st === S.DONE ? C.toastDone : C.toastGold, C.ryeCrust);
       patty(ctx, 0, toasted ? rad * 0.02 : 0, rad * (toasted ? 0.82 : 1), face, S);
-      if (st === S.SEAR_B || st === S.TOAST) thinCheese(ctx, 0, -rad * 0.14, rad);
+      if ((st === S.SEAR_B || st === S.TOAST) && !swissArt()) thinCheese(ctx, 0, -rad * 0.14, rad);   // Joe's Swiss art = no American slice on a melt
       if (toasted) { cheese(ctx, 0, -rad * 0.16, rad, melt); bread(ctx, 0, -rad * 0.32, rad, st === S.DONE ? C.toastDone : C.toastGold, C.ryeCrust); }
       return;
     }
@@ -205,7 +207,7 @@
       const toasted = isMelt;
       if (toasted) bread(ctx, 0, rad * 0.22, rad, st === S.DONE ? C.toastDone : C.toastGold, C.ryeCrust);
       smashPatty(ctx, 0, toasted ? rad * 0.04 : rad * 0.02, rad * (toasted ? 0.82 : 1), face, S);
-      if (st === S.SEAR_B || st === S.TOAST) thinCheese(ctx, 0, -rad * 0.10, rad);
+      if ((st === S.SEAR_B || st === S.TOAST) && !swissArt()) thinCheese(ctx, 0, -rad * 0.10, rad);
       if (toasted) { cheese(ctx, 0, -rad * 0.12, rad, melt); bread(ctx, 0, -rad * 0.28, rad, st === S.DONE ? C.toastDone : C.toastGold, C.ryeCrust); }
       return;
     }

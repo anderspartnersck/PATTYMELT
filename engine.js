@@ -82,18 +82,18 @@
   // Three orderable items from shared components; each is the same scarce grill running a recipe
   // that differs only in its ordered list of cook ACTIONS (same sweet-spot window), then the cheese
   // MELTs to DONE. BURGER == today's flow, so an all-burger round is byte-identical (locked numbers).
-  const Action = Object.freeze({ FLIP: "FLIP", CHEESE: "CHEESE", TOAST: "TOAST" });
+  const Action = Object.freeze({ FLIP: "FLIP", CHEESE: "CHEESE", TOAST: "TOAST", ONION: "ONION" });   // ONION: the melts (Joe 1026)
   const Item = Object.freeze({ BURGER: "BURGER", GRILLED_CHEESE: "GRILLED_CHEESE", PATTY_MELT: "PATTY_MELT",
                                HAMBURGER: "HAMBURGER", DOUBLE_CHEESE: "DOUBLE_CHEESE",
                                SMASH: "SMASH", SMASH_MELT: "SMASH_MELT" });
   const RECIPES = {
     BURGER:         [Action.FLIP, Action.CHEESE],
     GRILLED_CHEESE: [Action.TOAST, Action.CHEESE],               // (phase 2: moves to the toaster)
-    PATTY_MELT:     [Action.FLIP, Action.CHEESE],                // patty on the grill; rye toasts on the TOASTER + joins
+    PATTY_MELT:     [Action.FLIP, Action.ONION, Action.CHEESE],  // flip, the onion mix, the Swiss; rye toasts on the TOASTER + joins
     HAMBURGER:      [Action.FLIP],                                // sear, flip, plate — no cheese
     DOUBLE_CHEESE:  [Action.FLIP, Action.FLIP, Action.CHEESE],    // two patties, then the cheese
     SMASH:          [Action.FLIP, Action.CHEESE],                 // smashed cheeseburger — same steps as BURGER but SLOW (ITEM_COOK)
-    SMASH_MELT:     [Action.FLIP, Action.CHEESE],                 // smashed patty (1.5x) on rye — grill + a toasted bun
+    SMASH_MELT:     [Action.FLIP, Action.ONION, Action.CHEESE],   // smashed patty (1.5x), onions, Swiss, on rye + a toasted bun
   };
   // Items whose patty needs a TOASTED BUN off the toaster before it can be served (docs/BUN_TOASTER.md).
   // Their grill recipe is now identical to a BURGER's; a round with NONE of these never spins up a toaster.
@@ -103,7 +103,7 @@
   // or a Patty (a grilled cheese) — `isBun` tells them apart in the tick/serve/dump logic.
   const TOASTER_ITEMS = new Set([Item.GRILLED_CHEESE]);
   const isBun = (e) => e !== null && e.stage === undefined;
-  const _ACTION_STAGE = { FLIP: Stage.SEAR_A, CHEESE: Stage.SEAR_B, TOAST: Stage.TOAST };
+  const _ACTION_STAGE = { FLIP: Stage.SEAR_A, CHEESE: Stage.SEAR_B, TOAST: Stage.TOAST, ONION: Stage.SEAR_B };
   const _ACTIVE_STAGES = [Stage.SEAR_A, Stage.SEAR_B, Stage.TOAST];   // actively cooking — can burn
   // ITEM_COOK = per-item cook-time multiplier on the sear windows (SEAR_READY / sear_burn). Default 1.0
   // for EVERY existing item, so an all-BURGER round + the locked R1 numbers are byte-identical. SMASH items
@@ -280,7 +280,11 @@
     p.cook = 0; _say(s, msg);
   }
   function flip(s, pi = 0)       { _act(s, pi, Action.FLIP, "FLIP!"); }
-  function add_cheese(s, pi = 0) { _act(s, pi, Action.CHEESE, "CHEESE!"); }
+  function add_cheese(s, pi = 0) {   // the TOPPING button: on a melt whose next step is the onion mix it lays the ONIONS first
+    const [cont, i] = _target(s, pi), p = cont !== null ? cont[i] : null;
+    if (p !== null && !isBun(p) && p.step < RECIPES[p.item].length && RECIPES[p.item][p.step] === Action.ONION) { _act(s, pi, Action.ONION, "ONIONS!"); return; }
+    _act(s, pi, Action.CHEESE, "CHEESE!");
+  }
   // Context-aware TOAST (the `X` button): an EMPTY toaster slot -> start a bun for a melt; a toaster slot with
   // a GRILLED CHEESE cooking -> advance its in-toaster toast step; a grill slot -> a harmless no-op (nothing
   // on the grill toasts anymore). Mirrors Python.
@@ -504,7 +508,7 @@
       s.players[pi].cursor = (bestCont === s.slots ? bestI : s.slots.length + bestI);
       const p = bestCont[bestI];
       const act = RECIPES[p.item][p.step];              // do the item's NEXT recipe step
-      if (act === Action.FLIP) flip(s, pi); else if (act === Action.CHEESE) add_cheese(s, pi); else toast(s, pi);
+      if (act === Action.FLIP) flip(s, pi); else if (act === Action.CHEESE || act === Action.ONION) add_cheese(s, pi); else toast(s, pi);
     }
   }
 
@@ -676,7 +680,7 @@
 
     // ORDER VARIETY: three items from shared steps; BURGER byte-identical, the new ones winnable.
     let varOk = RECIPES.BURGER.length === 2 && RECIPES.GRILLED_CHEESE[0] === Action.TOAST &&
-      RECIPES.PATTY_MELT.length === 2 && RECIPES.SMASH_MELT.length === 2 &&   // melts cook like a burger; rye's on the toaster
+      RECIPES.PATTY_MELT.length === 3 && RECIPES.SMASH_MELT.length === 3 && RECIPES.PATTY_MELT[1] === Action.ONION &&   // melts: flip, onions, Swiss; rye's on the toaster
       TOAST_ITEMS.has(Item.PATTY_MELT) && TOAST_ITEMS.has(Item.SMASH_MELT) && !TOAST_ITEMS.has(Item.SMASH) &&
       ITEM_PAY.GRILLED_CHEESE < ITEM_PAY.BURGER && ITEM_PAY.BURGER < ITEM_PAY.PATTY_MELT &&
       ITEM_PAY.BURGER === SERVE_POINTS;

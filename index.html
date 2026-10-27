@@ -50,6 +50,7 @@
 <script src="sprites.js"></script>
 <script src="lib/audio.js?v=1"></script>
 <script src="lib/ghost.js?v=1"></script>
+<script src="lib/spatulas.js?v=1"></script>
 <script>
 "use strict";
 const pm = globalThis.PM, S = pm.Stage;
@@ -142,7 +143,14 @@ function kitchenSpat(s, geo) {
 }
 // THE SPATULA SPRITE SEAM — incoming art (docs/SPATULA_SHEET.md) drops in here & lights up on reload.
 // Absent = the per-player vector spatula (the placeholder) carries it; present = Patty's real spatula.
-const SPAT_SPR = {};
+const SPAT_SPR = {};                                       // (legacy single-spatula art; the pair now lives in lib/spatulas.js)
+PMSpat.load("assets/sprites/grill/");
+const SPAT_FOOD_IMG = {};
+for (const [k, f] of [["cheese", "cheese-fresh"], ["bread", "bread"], ["rye", "bread-rye"], ["raw", "patty-raw"],
+                      ["seared", "patty-seared"], ["done", "patty-done"], ["burnt", "patty-burnt"]]) {
+  const im = new Image(); im.onload = () => { SPAT_FOOD_IMG[k] = im; }; im.src = "assets/sprites/grill/" + f + ".png";
+}
+const spatFood = (k) => SPAT_FOOD_IMG[k] || null;
 for (const [k, f] of [["level", "spatula-level"], ["flip", "spatula-flip"], ["toast", "spatula-toast"]]) {
   const im = new Image(); im.onload = () => { SPAT_SPR[k] = im; }; im.src = "assets/sprites/grill/spatula/" + f + ".png";
 }
@@ -285,6 +293,11 @@ function drawAssembly(x, y, w, h) {
   ctx.fillStyle = "rgba(30,22,14,.6)"; ctx.fillRect(bx, cy - 28, bw, 56);       // stainless prep counter
   ctx.strokeStyle = "rgba(170,130,80,.5)"; ctx.lineWidth = 2; ctx.strokeRect(bx, cy - 28, bw, 56);
   txt(SCHOOL ? "TRAY-UP" : "ASSEMBLY", bx + bw / 2, cy - 36, 12, "rgba(230,180,110,.85)", "center", 800);
+  // the TOPPING PANS (Joe 1027): raw onions + Swiss (the melts) left of the plate, American right — the cold line the
+  // spatulas work from. Steel hotel pans sitting on the counter; they stay clear of the plate + its prompt.
+  PMSpat.drawBin(ctx, "onions", bx + bw * 0.10, cy - 4, Math.min(48, bw * 0.2));
+  PMSpat.drawBin(ctx, "swiss", bx + bw * 0.285, cy - 4, Math.min(48, bw * 0.2));
+  PMSpat.drawBin(ctx, "american", bx + bw * 0.86, cy - 4, Math.min(48, bw * 0.2));
   // an order plated & ready to run? (done+servable on the grill OR a done grilled cheese)
   const ready = game.slots.some((p) => p && p.stage === S.DONE && (!pm.TOAST_ITEMS.has(p.item) || p.bunned))
     || (game.toaster && game.toaster.some((b) => b && b.stage === S.DONE));
@@ -294,7 +307,7 @@ function drawAssembly(x, y, w, h) {
   if (building) {                                           // the counter is busy plating the last order (the build FX draws it)
     txt("PLATING…", bx + bw / 2, cy + 26, 11, COL.cheese, "center", 800);
   } else {
-    drawCarryPlate(cx, cy - 2 + bob);                       // the assembled burger on a plate
+    drawCarryPlate(cx, cy - 2 + bob, 1, readyItem());       // the assembled order on a plate (a melt = Joe's plated melt)
     if (ready) { ctx.strokeStyle = (now / 300 | 0) % 2 ? COL.cheese : COL.good; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.ellipse(cx, cy, 20, 9, 0, 0, 7); ctx.stroke();
       txt("PLATE ▸ PASS", bx + bw / 2, cy + 26, 11, COL.good, "center", 800); }
@@ -484,7 +497,12 @@ if (Q.has("bonus")) {                    // QA: a back-of-house bonus round (?bo
 }
 
 // ---------- QA hooks (query-gated, parity-safe — kitchen.html had no shot rig) ----------
-if (Q.has("fill")) {                  // ?fill — stage one patty per slot across the cook ladder, then PAUSE
+const QA_STILL = /^melt2?$/.test(Q.get("fill") || "");   // the topping stills: no PAUSED banner, no safety card
+if (QA_STILL) {   // ?fill=melt|melt2 — the melt's onion + Swiss ladders (lib/spatulas.js), PAUSED
+  PMSpat.stageMelts(game, Q.get("fill")); paused = true;
+  if (Q.get("spat")) setInterval(() => PMSpat._force(game, 0, { kind: Q.get("spat").toUpperCase(), idx: game.players[0].cursor,   // ?spat=onion|cheese: pin the pair mid-carry
+    item: pm.Item.PATTY_MELT, from: "SEAR_B" }, parseFloat(Q.get("k") || "0.2")), 30);
+} else if (Q.has("fill")) {           // ?fill — stage one patty per slot across the cook ladder, then PAUSE
   const stg = [S.SEAR_A, S.SEAR_B, S.MELT, S.DONE, S.SEAR_A, S.BURNT, S.SEAR_B, S.DONE];
   for (let i = 0; i < game.slots.length; i++) {
     const it = ITEMS ? ITEMS[i % ITEMS.length] : pm.Item.BURGER, p = pm.Patty(0, it, stg[i % stg.length]);
@@ -608,9 +626,10 @@ const DEMO = Q.has("demo");                 // self-playing (attract / QA) — t
 function step() {
   if (phase === "bonus") { if (mini && !mini.done) pm.mini_tick(mini); return; }   // done → wait for a press to bank + advance
   if (phase === "ready" || paused || game.over || game.won) return;
+  const pre = snapServable();             // (render-only) what was ready to run, so a serve knows WHICH dish left
   if (phase === "attract") {              // the title-screen demo: the auto-player cooks, loops forever
     pm.auto_step(game); pm.tick(game);
-    if (game.served > lastServed) { spawnServeFX(); lastServed = game.served; }
+    if (game.served > lastServed) { spawnServeFX(goneItem(pre)); lastServed = game.served; }
     if (game.fails > lastFails)  { spawnWalkout();  lastFails = game.fails; }
     if (game.over || game.won) reset();   // never lets the demo end — restart the shift silently
     return;
@@ -625,9 +644,16 @@ function step() {
   }
   audioTick(game);                        // consequence sounds (order-up bell, fail buzzer, flow, win, over)
   // serve / fail deltas → dining-room FX (a plate carried out on a serve, a walkout on a fail)
-  if (game.served > lastServed) { spawnServeFX(); lastServed = game.served; }
+  if (game.served > lastServed) { spawnServeFX(goneItem(pre)); lastServed = game.served; }
   if (game.fails > lastFails)  { spawnWalkout();  lastFails = game.fails; }
 }
+// which dish is plated (render-only): servable items by born, so the plate FX + the pass + Billy's carry show the
+// real order — a PATTY MELT goes out as Joe's plated melt (diner plate / HEROES tray), the rest as the burger plate
+const servable = (p) => p && p.stage === S.DONE && (!pm.TOAST_ITEMS.has(p.item) || p.bunned);
+function snapServable() { const m = new Map(); for (const p of game.slots.concat(game.toaster || [])) if (servable(p)) m.set(p.born, p.item); return m; }
+function goneItem(pre) { const now = snapServable(); for (const [b, it] of pre) if (!now.has(b)) return it; return null; }
+function readyItem() { for (const p of game.slots.concat(game.toaster || [])) if (servable(p)) return p.item; return null; }
+let lastPlateItem = null;
 
 // Billy's smoothed position tracks his ATTENTION: full = at the pass, drained = out bussing tables.
 function billyTarget() {
@@ -653,9 +679,10 @@ function seatXY(i) { const s = SEATS[i % SEATS.length]; return { x: DIN.x + s[0]
 function doorXY()    { return { x: DIN.x + 0.93 * DIN.w, y: DIN.y + 0.80 * DIN.h }; }   // the entry (walk-ins/outs)
 function takeoutXY() { return { x: DIN.x + 0.855 * DIN.w, y: DIN.y + 0.58 * DIN.h }; }  // TAKE-OUT PICK-UP rack
 function tablePoint(i) { return seatXY(i); }   // FX land on the real seats now
-function spawnServeFX() {                     // the order BUILDS at the assembly (bun▸patty▸cheese▸top bun), then rides ASSEMBLY → PASS → a table
+function spawnServeFX(item) {                 // the order BUILDS at the assembly (bun▸patty▸cheese▸top bun), then rides ASSEMBLY → PASS → a table
   const a = _asmPlate || passPoint(), p = passPoint(), t = tablePoint(game.served);
-  fx.push({ id: fxId++, k: "plate", x: a.x, y: a.y, mx: p.x, my: p.y, tx: t.x, ty: t.y, t: 0, bt: 18, life: 52 }); }
+  if (item) lastPlateItem = item;
+  fx.push({ id: fxId++, k: "plate", item, x: a.x, y: a.y, mx: p.x, my: p.y, tx: t.x, ty: t.y, t: 0, bt: 18, life: 52 }); }
 function plateBuilding() { return fx.some((f) => f.k === "plate" && f.t < (f.bt || 0)); }   // a build is mid-stack at the assembly
 function spawnWalkout() { const t = tablePoint(game.fails + 2);              // an angry diner storms out
   fx.push({ id: fxId++, k: "walk", x: t.x, y: t.y, t: 0, life: 24 }); }
@@ -678,8 +705,8 @@ function cookPrompt(p) {
   if (!p || p.stage === S.DONE || p.stage === S.BURNT || p.stage === S.MELT) return null;
   const rec = pm.RECIPES[p.item]; if (p.step >= rec.length) return null;
   const act = rec[p.step];
-  const label = act === pm.Action.FLIP ? "FLIP" : act === pm.Action.CHEESE ? "CHEESE" : "TOAST";
-  const key = act === pm.Action.FLIP ? "F" : act === pm.Action.CHEESE ? "C" : "X";
+  const label = act === pm.Action.FLIP ? "FLIP" : act === pm.Action.CHEESE ? "CHEESE" : act === pm.Action.ONION ? "ONIONS" : "TOAST";
+  const key = act === pm.Action.FLIP ? "F" : (act === pm.Action.CHEESE || act === pm.Action.ONION) ? "C" : "X";   // onions ride the CHEESE button
   const burnAt = pm.sear_burn_of(game, p);
   return { ready: p.cook >= pm.sear_ready(p), hot: burnAt < pm.NEVER_BURN && p.cook >= burnAt - 6, label, key };
 }
@@ -830,7 +857,7 @@ function drawKitchen() {
   for (let i = 0; i < n; i++) {
     const c = slotXY(i), p = game.slots[i];
     if (p) {
-      PMDrawItem(ctx, p, c.x, c.y, bayRad, pm, now / 1000);
+      drawGrillItem(p, c.x, c.y, bayRad, now);                          // a melt's Swiss = Joe's draped ladder; else PMDrawItem
       drawCookPrompt(p, c.x, c.y, bayRad, bayY - bayRad - 6);           // ▸ FLIP / ▸ CHEESE above the bay
       drawJoinFX(p, c.x, c.y, bayRad, bayY - bayRad - 6);
     }
@@ -850,9 +877,52 @@ function drawKitchen() {
   const asmX1 = r.x + r.w - (SCREENS === 2 ? 48 : 20);     // leave clearance before the seam/PASS
   drawAssembly(asmX0, SLY, asmX1 - asmX0, SLB - SLY);
   // the SPATULAS — ride the airy spring to the engine cursor over the bays / toaster
+  // TWO SPATULAS PER COOK (Joe 1026, lib/spatulas.js): every food move is done by the pair, no hands on the food.
+  // PMDrawItem already flips the patty itself (selfFlip), so the pair slides under + claps around it.
   const spat = kitchenSpat(game, { slotXY, gridN: n, tcells, ox: GX, oy: bayY });
-  for (let pi = 0; pi < game.players.length; pi++) drawSpatula(spat[pi], pi, game.flash);
+  const spatXY = (i) => { const c = i < n ? slotXY(i) : (tcells && tcells[i - n]) || { x: GX, y: bayY };
+    return { x: c.x, y: c.y, r: bayRad }; };
+  PMSpat.observe(game);
+  for (let pi = 0; pi < game.players.length; pi++)
+    PMSpat.drawPair(ctx, game, pi, { x: spat[pi].x, y: spat[pi].y, vx: spat[pi].vx }, { slotXY: spatXY, food: spatFood,
+      h: bayRad * 1.3, foodW: bayRad * 2, selfFlip: true, filter: pi === 1 ? "hue-rotate(150deg) saturate(1.2)" : "",
+      rim: pi === 0 ? "rgba(255,110,80,.9)" : "rgba(120,190,255,.9)" });
+  drawSafetyCard(GX, GY, GW, GH);                         // shift open: NO HANDS ON THE FOOD — it's all about food safety
   drawPlaters({ asmX0, asmX1, SLY, SLB, coop });           // Patty the plater (+ Chrissy in co-op) — acts on every serve
+}
+
+// ONE grill item: PMDrawItem's procedural side-view, except where Joe's painted toppings take over (Joe 1027,
+// lib/spatulas.js): a melt's ONIONS ride the patty raw ▸ soft ▸ golden ▸ burnt across the Swiss step's window, and
+// once the Swiss is on, the draped-slice art (it carries its own patty) is the item: fresh ▸ melting ▸ browned.
+// A bunned melt waiting on Billy gets its rye lid. Burgers keep the procedural American cheese. Render-only.
+function drawGrillItem(p, x, y, rad, now) {
+  if (PMSpat.swissStage(p) && PMSpat.topping("swiss-" + PMSpat.swissStage(p) + "-draped")) {
+    ctx.save(); ctx.globalAlpha = 0.30; ctx.fillStyle = "#000";                       // ground contact shadow (PMDrawItem's)
+    ctx.beginPath(); ctx.ellipse(x, y + rad * 0.44, rad * 1.1, rad * 0.17, 0, 0, 7); ctx.fill(); ctx.restore();
+    PMSpat.drawSwiss(ctx, x, y + rad * 0.02, rad * 2.35, p, "draped");
+    if (p.bunned && SPAT_FOOD_IMG.rye) { const w = rad * 2.0, h = w * SPAT_FOOD_IMG.rye.height / SPAT_FOOD_IMG.rye.width;
+      ctx.drawImage(SPAT_FOOD_IMG.rye, x - w / 2, y - rad * 0.32 - h / 2, w, h); }
+    return;
+  }
+  PMDrawItem(ctx, p, x, y, rad, pm, now / 1000);
+  if (PMSpat.onionsOn(p)) PMSpat.drawOnions(ctx, x, y - rad * 0.3, rad * 1.75, p, game, "top");   // the onions sit on the melt
+}
+
+// THE FOOD-SAFETY CARD (Joe 1026) — every shift opens on it: two spatulas, no hands on the food. Told to the audience.
+const _safetySeen = new WeakMap();
+function drawSafetyCard(x, y, w, h) {
+  if (QA_STILL) return;
+  if (!_safetySeen.has(game)) _safetySeen.set(game, performance.now());
+  const k = (performance.now() - _safetySeen.get(game)) / 3600; if (k >= 1) return;
+  const a = k < 0.1 ? k / 0.1 : k > 0.8 ? (1 - k) / 0.2 : 1, SF = PMSpat.SAFETY[SCHOOL ? "school" : "diner"];
+  const bh = 84, by = y + (h - bh) / 2;
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.fillStyle = "rgba(8,6,4,.84)"; ctx.fillRect(x + 24, by, w - 48, bh);
+  ctx.strokeStyle = COL.good; ctx.lineWidth = 2; ctx.strokeRect(x + 24.5, by + 0.5, w - 49, bh - 1);
+  txt("✋✗  " + SF[0], x + w / 2, by + 24, 18, COL.cream, "center", 800);
+  txt(SF[1], x + w / 2, by + 46, 13, COL.cheese, "center", 700);
+  txt(SF[2], x + w / 2, by + 70, 18, COL.good, "center", 800);
+  ctx.restore();
 }
 
 // THE BUN TOASTER station — a BOXED unit beside the grill, slots stacked raw ▸ toasting ▸ READY (glow) ▸ burnt.
@@ -954,13 +1024,13 @@ function drawDining() {
       const mx = f.mx == null ? f.x : f.mx, my = f.my == null ? f.y : f.my, bt = f.bt || 0;
       if (f.t < bt) {                          // PHASE 1 — the order stacks bun▸patty▸cheese▸top bun at the counter
         const b = f.t / bt, bob = Math.sin(b * Math.PI) * 2;
-        drawCarryPlate(f.x, f.y - bob, b);
+        drawCarryPlate(f.x, f.y - bob, b, f.item);
       } else {                                 // PHASE 2 — the finished plate runs to the pass, then out to the table
         const kk = (f.t - bt) / (f.life - bt);
         let x, y;
         if (kk < 0.4) { const u = kk / 0.4; x = f.x + (mx - f.x) * u; y = f.y + (my - f.y) * u; }
         else { const u = (kk - 0.4) / 0.6; x = mx + (f.tx - mx) * u; y = my + (f.ty - my) * u - Math.sin(u * Math.PI) * 20; }
-        drawCarryPlate(x, y);
+        drawCarryPlate(x, y, 1, f.item);
         if (kk > 0.86) txt("♥", f.tx, f.ty - 22, 16, COL.cheese, "center", 800);
       } }
     else if (f.k === "walk") { const wx = f.x + (door.x - f.x) * k, wy = f.y + (door.y - f.y) * k;   // storms to the door
@@ -1018,7 +1088,7 @@ function drawBilly() {
     ctx.save(); ctx.translate(footX, footY - bob); ctx.scale(fr.face, 1);
     ctx.drawImage(fr.im, -w / 2, -h, w, h);
     ctx.restore();
-    if (carrying) drawCarryPlate(footX + fr.face * h * 0.16, footY - bob - h * 0.52);   // a plate in his hands
+    if (carrying) drawCarryPlate(footX + fr.face * h * 0.16, footY - bob - h * 0.52, 1, readyItem() || lastPlateItem);   // a plate in his hands
   } else drawBillyVec(footX, footY - h * 0.5, T);
   const y = footY - h * 0.5;
   const coop = game.players.length === 2;
@@ -1037,7 +1107,13 @@ function drawBilly() {
 }
 // a small plate-with-burger (the finished order). build (0..1) STACKS the layers in turn for the
 // ASSEMBLY build animation; default 1 = fully assembled (Billy's carry, the pass ledge, the ready plate).
-function drawCarryPlate(x, y, build = 1) {
+function drawCarryPlate(x, y, build = 1, item = null) {
+  if (item && pm.TOAST_ITEMS.has(item) && PMSpat.topping(SCHOOL ? "plated-heroes" : "plated-diner")) {   // the plated PATTY MELT (Joe 1027)
+    ctx.save(); ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.beginPath(); ctx.ellipse(x, y + 4, 16, 4.5, 0, 0, 7); ctx.fill();
+    if (build < 1) ctx.globalAlpha = Math.max(0, Math.min(1, (build - 0.2) / 0.5));   // it settles onto the counter as it's plated
+    PMSpat.drawPlated(ctx, SCHOOL, x, y - 4 - (1 - Math.min(1, build * 1.6)) * 8, 40); ctx.restore();
+    return;
+  }
   ctx.save();
   ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.beginPath(); ctx.ellipse(x, y + 3, 13, 4, 0, 0, 7); ctx.fill();
   ctx.fillStyle = COL.cream; ctx.beginPath(); ctx.ellipse(x, y, 13, 5, 0, 0, 7); ctx.fill();     // plate
@@ -1070,7 +1146,7 @@ function drawPass() {
   // a plate waits on the ledge whenever there's a finished order ready to run
   const ready = game.slots.some((p) => p && p.stage === S.DONE && (!pm.TOAST_ITEMS.has(p.item) || p.bunned))
     || (game.toaster && game.toaster.some((b) => b && b.stage === S.DONE));
-  if (ready) { drawCarryPlate(sx, ledgeY - 4); txt("ORDER UP", sx, wy.y1 + 26, 11,
+  if (ready) { drawCarryPlate(sx, ledgeY - 4, 1, readyItem()); txt("ORDER UP", sx, wy.y1 + 26, 11,
       (performance.now() / 300 | 0) % 2 ? COL.cheese : COL.good, "center", 800); }
 }
 
@@ -1104,7 +1180,7 @@ function render() {
   if (phase === "initials") drawInitials();
   if (phase === "board") drawBoard();
   if (phase === "bonus") drawMini(mini);
-  if (paused)    banner("PAUSED", COL.cream);
+  if (paused && !QA_STILL) banner("PAUSED", COL.cream);
 }
 function banner(s, c) { ctx.fillStyle = "rgba(10,5,4,.66)"; ctx.fillRect(0, H / 2 - 34, W, 68);
   txt(s, W / 2, H / 2 + 8, 30, c, "center", 800); }

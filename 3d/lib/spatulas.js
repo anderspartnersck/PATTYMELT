@@ -32,6 +32,46 @@
   const SPR = {};
   function load(base) {
     const im = new Image(); im.onload = () => { SPR.level = im; }; im.src = base + "spatula/spatula-level.png";
+    // JOE'S TOPPINGS (1027, tools/cut_toppings.py): the onion + Swiss cook ladders, the prep pans, the plated melt.
+    // Each one appears the instant it loads; absent = the procedural stand-in below stays (game always playable).
+    const files = {};
+    for (const st of ONION_ST) for (const v of ["top", "side"]) files["onion-" + st + "-" + v] = base + "onion-" + st + "-" + v + ".png";
+    for (const st of SWISS_ST) for (const v of ["slice", "draped"]) files["swiss-" + st + "-" + v] = base + "swiss-" + st + "-" + v + ".png";
+    for (const b of ["onions", "swiss", "american"]) files["bin-" + b] = base + "bin-" + b + ".png";
+    for (const t of ["diner", "heroes"]) files["plated-" + t] = base + "../dining/plated-pattymelt-" + t + ".png";
+    for (const [k, f] of Object.entries(files)) { const t = new Image(); t.onload = () => { t.pmPad = 16; TOP[k] = t; }; t.src = f; }
+  }
+  // ---- THE TOPPING LADDERS (render-only: read the engine's step/stage/cook, never write) ----
+  const ONION_ST = ["raw", "soft", "golden", "burnt"], SWISS_ST = ["fresh", "melting", "browned"];
+  const TOP = {};
+  const OFF = typeof location !== "undefined" && /[?&]toppings=0\b/.test(location.search);   // QA: the old procedural look
+  const isMeltItem = (p) => !!(p && p.stage !== undefined && PM && PM.RECIPES[p.item] && PM.RECIPES[p.item].includes("ONION"));
+  // The melt's ONIONS step: the onions go on (engine: step passes ONION, cook resets to 0) and then cook in the
+  // Swiss step's own sear window until the Swiss lands. raw when laid ▸ soft ▸ GOLDEN across the go-window
+  // (cook >= sear_ready = the perfect time to lay the Swiss) ▸ burnt in the red near-burn band (the last 6 ticks
+  // before the engine burns the melt — the same band the slot ring flashes red). KIDS never burn: the band sits at
+  // 2x ready so overstaying still shows.
+  function onionStage(p, s) {
+    if (!onionsOn(p)) return null;
+    const ready = PM.sear_ready(p), burn = Math.min(s && s.cfg ? PM.sear_burn_of(s, p) : PM.SEAR_BURN, ready * 2);
+    if (p.cook >= burn - 6) return "burnt";
+    if (p.cook >= ready) return "golden";
+    return p.cook < ready * 0.35 ? "raw" : "soft";
+  }
+  // The Swiss on a melt (MELT ▸ DONE): fresh as laid, melting through the melt window, BROWNED once a finished melt
+  // has sat on the flat-top past twice the melt time (jammed waiting on its bun or on Billy = overcooked).
+  const BROWN_AFTER = 2;                                   // x MELT_DONE ticks sitting DONE on the grill
+  function swissStage(p) {
+    if (!isMeltItem(p)) return null;
+    if (p.stage === "MELT") return p.cook < PM.MELT_DONE * 0.3 ? "fresh" : "melting";
+    if (p.stage === "DONE") return p.cook >= PM.MELT_DONE * BROWN_AFTER ? "browned" : "melting";
+    return null;
+  }
+  function topping(key) { return OFF ? null : (TOP[key] || null); }
+  // draw a topping sprite centred on (x,y), w wide (keeps the art's aspect; the 16px clear border is trimmed off)
+  function drawTop(ctx, im, x, y, w) {
+    const B = 16, iw = im.width - 2 * B, ih = im.height - 2 * B, h = w * ih / iw;
+    ctx.drawImage(im, B, B, iw, ih, x - w / 2, y - h / 2, w, h); return h;
   }
   // the blade's centre in spatula-level.png (600×412; blade lower-left, handle upper-right), as fractions
   const BLADE_AX = 0.18, BLADE_AY = 0.60;
@@ -148,9 +188,11 @@
   }
   function food(ctx, o, name, x, y, w, rot, sy, height) {  // a food item riding the blades (or in the air)
     shadow(ctx, x + 4 + height * 0.35, y + w * 0.18 + height, w * (0.55 + height * 0.004), w * 0.16, Math.max(0.12, 0.8 - height / 70));
-    const im = name === "onion" ? null : o.food(name);
+    const tp = name === "onion" ? topping("onion-raw-side") : name === "swiss" ? topping("swiss-fresh-slice") : null;   // Joe's art rides the blade
+    const im = tp ? null : (name === "onion" ? null : o.food(name === "swiss" ? "cheese" : name));
     ctx.save(); ctx.translate(x, y); ctx.rotate(rot || 0); ctx.scale(1, sy == null ? 1 : sy);
-    if (im && im.width) { const h = w * im.height / im.width; ctx.drawImage(im, -w / 2, -h / 2, w, h); }
+    if (tp) drawTop(ctx, tp, 0, 0, w * (name === "onion" ? 0.95 : 0.9));
+    else if (im && im.width) { const h = w * im.height / im.width; ctx.drawImage(im, -w / 2, -h / 2, w, h); }
     else if (name === "onion") onionMix(ctx, w);
     else if (name === "cheese") { ctx.fillStyle = "#f2c230"; ctx.fillRect(-w * 0.42, -w * 0.32, w * 0.84, w * 0.64);
       ctx.fillStyle = "rgba(255,240,170,.6)"; ctx.fillRect(-w * 0.42, -w * 0.32, w * 0.84, w * 0.1); }
@@ -219,7 +261,7 @@
       if (onlyOnion) { spatula(ctx, x + r * 0.95, y + r * 0.02, +1, 0.05, h, 2, f, rim); return; }   // the right blade steadies it
       const inn = seg(k, c0, c0 + 0.3), tip = seg(k, c0 + 0.3, c0 + 0.45), back = seg(k, c0 + 0.45, 1);
       const cx = lerp(x + r * 2.6, x + r * 0.2, inn) + back * r * 0.9, cy = y - r * 0.9 * (1 - inn) - r * 0.25;
-      if (k < c0 + 0.45) food(ctx, o, "cheese", lerp(cx - r * 0.1, x, tip), lerp(cy - r * 0.2, y - r * 0.2, tip), W * 0.82, -0.2 + tip * 0.2, 1, 10 * (1 - tip));
+      if (k < c0 + 0.45) food(ctx, o, PM.TOAST_ITEMS.has(a.item) ? "swiss" : "cheese", lerp(cx - r * 0.1, x, tip), lerp(cy - r * 0.2, y - r * 0.2, tip), W * 0.82, -0.2 + tip * 0.2, 1, 10 * (1 - tip));
       spatula(ctx, cx, cy, +1, 0.1 + tip * 0.55 - back * 0.4, h, 10 + (1 - inn) * 8, f, rim);
     } else if (a.kind === "TOAST" || a.kind === "BUN") {     // bread carried in flat on both blades, then pressed twice
       const inn = seg(k, 0, 0.45), press = k > 0.5 ? Math.abs(Math.sin((k - 0.5) / 0.5 * Math.PI * 2)) : 0;
@@ -260,6 +302,35 @@
   // the onions sit on a melt once laid, until the Swiss goes over them: pages draw this over the patty
   function onionsOn(p) { if (!p || p.stage === undefined || !PM || !PM.RECIPES[p.item]) return false;
     const i = PM.RECIPES[p.item].indexOf("ONION"); return i >= 0 && p.step === i + 1 && p.stage === "SEAR_B"; }   // (the Swiss then covers them)
-  function drawOnions(ctx, x, y, w) { ctx.save(); ctx.translate(x, y); onionMix(ctx, w); ctx.restore(); }
-  global.PMSpat = { load, observe, hidden, drawPair, onionsOn, drawOnions, SAFETY, DUR, _force };
+  // drawOnions(ctx, x, y, w [, p, s, view]) — with the patty + state: Joe's sprite for its onionStage ('top' on the
+  // grill, 'side' where the food is seen side-on); without (or art absent): the procedural mix, as before.
+  function drawOnions(ctx, x, y, w, p, s, view) {
+    const st = p ? onionStage(p, s) : null, im = st && topping("onion-" + st + "-" + (view || "top"));
+    if (im) { drawTop(ctx, im, x, y, w); return; }
+    ctx.save(); ctx.translate(x, y); onionMix(ctx, w); ctx.restore();
+  }
+  // drawSwiss(ctx, x, y, w, p [, view]) — the melt's Swiss for its swissStage. 'draped' = the slice over a patty
+  // (it carries its own patty: draw it INSTEAD of the patty), 'slice' = the flat slice alone. false = no art.
+  function drawSwiss(ctx, x, y, w, p, view) {
+    const st = swissStage(p), im = st && topping("swiss-" + st + "-" + (view || "draped"));
+    if (!im) return false; drawTop(ctx, im, x, y, w); return true;
+  }
+  // the prep pans the blades scoop from: 'onions' | 'swiss' | 'american'
+  function drawBin(ctx, kind, x, y, w) { const im = topping("bin-" + kind); if (!im) return false; drawTop(ctx, im, x, y, w); return true; }
+  // the plated patty melt (toasted marble rye, cut on the diagonal): diner plate, or the blue HEROES tray (school)
+  function drawPlated(ctx, school, x, y, w) { const im = topping(school ? "plated-heroes" : "plated-diner"); if (!im) return false; drawTop(ctx, im, x, y, w); return true; }
+  // QA (?fill=melt | melt2 on kitchen.html / cabinet.html): stage the melt's topping ladder across the grill so one
+  // still frame shows every onion + Swiss state. Writes ONLY a QA game's slots (the page pauses it); never in play.
+  function stageMelts(g, set) {
+    const M = PM.Item.PATTY_MELT, mk = (item, step, stage, cook, bunned) => {
+      const p = PM.Patty(0, item, stage); p.step = step; p.stage = stage; p.cook = cook; p.bunned = !!bunned; return p; };
+    const rows = set === "melt2"
+      ? [mk(M, 3, "DONE", PM.MELT_DONE * BROWN_AFTER + 4), mk(M, 3, "DONE", 3, true), mk(PM.Item.SMASH_MELT, 2, "SEAR_B", 22),
+         mk(PM.Item.SMASH_MELT, 3, "MELT", 9), mk(PM.Item.BURGER, 2, "MELT", 9), mk(PM.Item.BURGER, 1, "SEAR_B", 6)]
+      : [mk(M, 2, "SEAR_B", 1), mk(M, 2, "SEAR_B", 8), mk(M, 2, "SEAR_B", 16), mk(M, 2, "SEAR_B", 24),
+         mk(M, 3, "MELT", 2), mk(M, 3, "MELT", 10)];
+    for (let i = 0; i < g.slots.length; i++) g.slots[i] = rows[i % rows.length];
+  }
+  global.PMSpat = { load, stageMelts, observe, hidden, drawPair, onionsOn, drawOnions, SAFETY, DUR, _force,
+                    isMeltItem, onionStage, swissStage, drawSwiss, drawBin, drawPlated, topping };
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -53,21 +53,21 @@
     // ---- per ENGINE TICK: what did the engine just do? ----
     S.onTick = function (g) {
       const TI = opts.toastItems || new Set();
-      const snap = { slots: g.slots.map((p) => p ? { born: p.born, srv: servable(p, TI), us: !!p.understeared } : null),
-                     toaster: (g.toaster || []).map((e) => e ? { born: e.born, srv: e.stage !== undefined && servable(e, TI), us: !!e.understeared } : null),
+      const snap = { slots: g.slots.map((p) => p ? { born: p.born, srv: servable(p, TI), us: !!p.understeared, item: p.item } : null),
+                     toaster: (g.toaster || []).map((e) => e ? { born: e.born, srv: e.stage !== undefined && servable(e, TI), us: !!e.understeared, item: e.item } : null),
                      n: g.served + g.sent_back, holler: g.billy };
       const pv = S.prev; S.prev = snap; if (!pv) return;
       let k = snap.n - pv.n; if (k <= 0) return;
       const half = Math.floor(g.slots.length / 2), found = [];
-      pv.slots.forEach((q, i) => { if (q && q.srv && (!snap.slots[i] || snap.slots[i].born !== q.born)) found.push({ k: i < half ? 0 : 1, us: q.us, from: "slot" + i }); });
-      pv.toaster.forEach((q, j) => { if (q && q.srv && (!snap.toaster[j] || snap.toaster[j].born !== q.born)) found.push({ k: 0, us: q.us, from: "toaster" + j }); });
+      pv.slots.forEach((q, i) => { if (q && q.srv && (!snap.slots[i] || snap.slots[i].born !== q.born)) found.push({ k: i < half ? 0 : 1, us: q.us, from: "slot" + i, item: q.item }); });
+      pv.toaster.forEach((q, j) => { if (q && q.srv && (!snap.toaster[j] || snap.toaster[j].born !== q.born)) found.push({ k: 0, us: q.us, from: "toaster" + j, item: q.item }); });
       for (let n = 0; n < k; n++) {
         const f = found[n] || { k: 0, us: false, from: "?" };
         const seated = Math.max(2, Math.min(geo.seats.length, opts.seated ? opts.seated(g) : geo.seats.length));
         let seat;
         if (S.party && S.party.left > 0 && S.party.seat < seated) { seat = S.party.seat; S.party.left--; }
         else { seat = (S.seatRR++) % seated; S.party = { seat, left: seat >= 6 ? PARTY - 1 : 0 }; }
-        const p = { id: S.nextId++, k: f.k, seat, sent: f.us, from: f.from, state: "plating", t0: S.t, q: 0, tick: g.ticks };
+        const p = { id: S.nextId++, k: f.k, seat, sent: f.us, from: f.from, item: f.item || null, state: "plating", t0: S.t, q: 0, tick: g.ticks };   // item: which dish (the plated melt art)
         S.plates.push(p); log("serve", { plate: p.id, k: p.k, seat, sent: p.sent, from: f.from, tick: g.ticks });
       }
     };
