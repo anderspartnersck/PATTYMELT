@@ -4,6 +4,10 @@ A grill rush. You're Patty. Billy is expediting, and Billy is not reliable.
 
 ## ▶ [PLAY IT IN YOUR BROWSER](https://anderspartnersck.github.io/PATTYMELT/)
 
+### ▶ [3D KITCHEN](https://anderspartnersck.github.io/PATTYMELT/3d/) · [HEROES 3D CAFETERIA](https://anderspartnersck.github.io/PATTYMELT/3d/heroes.html) · [COOKS FROM BEHIND](https://anderspartnersck.github.io/PATTYMELT/3d/rear.html)
+
+The 3D edition (two spatulas per cook, lit 3D kitchen art) lives in `3d/`, separate from the 2D game above.
+
 A Castle Killscreen game by **Anders & Partners**.
 
 > ### ⚠︎ Working build — not a finished game
@@ -48,6 +52,10 @@ private Castle Killscreen tree:
 ```
 cd "ANDERS CASTLE KILLSCREEN/PATTY MELT"
 python3 tools/build_pages.py
+
+# the 3D edition (3d/ + assets/art3d/), from the art-3d-kitchen worktree:
+cd "ANDERS CASTLE KILLSCREEN/PATTY_MELT_ART3D"
+python3 tools/build_pages_3d.py
 ```
 
 The bundler shrinks art by **resolution, not by pruning**: these engines build most asset
