@@ -46,6 +46,7 @@
   <div id="tag">◄ ► move (grill + toaster) · F flip · C cheese · X toast bun · SPACE = HEY BILLY! · CO-OP: G/U handoff · T/O drop · R restart · S sound</div>
 </div></div>
 <script src="engine.js"></script>
+<script src="service.js"></script>
 <script src="campaign.js"></script>
 <script src="sprites.js"></script>
 <script src="art3d.js"></script>
@@ -427,6 +428,10 @@ const READY_SECS = 3.2;         // GET READY countdown after START, before the g
 //   phase "play"    — the real shift (this is the only phase the sim ticks for real input)
 let phase, readyT = 0, blink = 0;
 let game, billyPos, lastServed, lastFails, fx, fxId, paused, continueT, continuesUsed;
+const SERVICE_PRACTICE = ["demo", "bot", "auto", "ticks", "warm", "fill", "at", "selftest", "bonus", "mini", "ready", "board", "hs"].some(k => Q.has(k));
+const serviceUI = PMService.mount({ pm, view:"kitchen", pause:value=>{ if (phase === "play") paused = value == null ? !paused : value; } });
+addEventListener("pagehide", event => { if (!event.persisted) serviceUI.finish(game, {excluded:SERVICE_PRACTICE || BATTLE}); });
+
 let _asmPlate = null;                        // where the assembled plate sits (set each frame by drawAssembly)
 // ---------- THE CAMPAIGN (campaign.js) — authored deterministic SHIFTS on the proven engine ----------
 // A shift = a classic-arcade level. The table drives new_game's levers (mode/grill/items/quota); the
@@ -450,6 +455,7 @@ function saveScores() { try { localStorage.setItem(HS_KEY, JSON.stringify(scores
 scores = loadScores();
 const totalScore = () => runScore + (game ? game.score : 0);   // the run total (banked + current shift)
 function submitRun() {           // end of a campaign run → initials if it qualifies, else back to the title
+  serviceUI.finish(game, {excluded:SERVICE_PRACTICE || BATTLE});
   entryScore = totalScore();
   if (pm.qualifies(scores, entryScore)) { entryName = [0, 0, 0]; entryPos = 0; entryRank = -1; phase = "initials"; }
   else toAttract();
@@ -467,8 +473,9 @@ function buildBattle() {        // the shared-grill grill-off: one grill, one Bi
 let BR = null;                                    // ?art=3d: Billy's run + the pass (billy_run.js)
 function seatedCount(g) { return Math.max(1, Math.round(2 + pm.buried_index(g) * (SEATS.length - 2))); }
 function newBillyRun() { BR = (ART3D_ON && globalThis.ART3D && ART3D.ready && ART3D.m.billy) ? BillyRun.create(ART3D.m.billy, { toastItems: pm.TOAST_ITEMS, seated: seatedCount }) : null; }
-function reset() {
-  game = BATTLE ? buildBattle() : CAMP.build(pm, shift(), PLAYERS, SKIN, ITEMS);   // ITEMS override wins for jailbreak
+function reset(profile = SERVICE_PRACTICE ? "legacy" : "service") {
+  serviceUI.finish(game, {excluded:SERVICE_PRACTICE || BATTLE});
+  game = BATTLE ? buildBattle() : CAMP.build(pm, shift(), PLAYERS, SKIN, ITEMS, profile);   // ITEMS override wins for jailbreak
   billyPos = 0;                 // 0 = out in the dining room (bussing), 1 = at the kitchen pass (expo)
   lastServed = 0; lastFails = 0; fx = []; fxId = 0; paused = false; continueT = -1; continuesUsed = 0;
   cook = [{ serves: 0, score: 0 }, { serves: 0, score: 0 }]; battleWinner = -1;
@@ -502,15 +509,16 @@ function startBonus(kind, nextIdx) {   // FREEZER (no-fail) / BASEMENT (quota-or
   readyNext = "bonus"; phase = "ready"; readyT = READY_SECS; wakeAudio();
 }
 function endBonus() { runScore += mini.score; startShift(bonusNext); }   // bank the bonus, on to the next shift
-function toAttract() { shiftIdx = DEMO_IDX; reset(); phase = "attract"; continueT = -1; }   // back to title / demo loop
+function toAttract() { shiftIdx = DEMO_IDX; reset("legacy"); phase = "attract"; continueT = -1; }   // back to title / demo loop
 function billyBack() {          // a button during the break: Billy returns, breathe, cook on (same shift)
   game.over = false; game.wait = pm.WAIT_FULL * 0.45; game.billy = pm.BILLY_FULL; continueT = -1; continuesUsed++;
 }
-reset();
+reset("legacy");
 // skip straight to PLAY for the demo + QA rigs (screenshots, ?warm/?ticks/?fill); otherwise open on ATTRACT
 phase = (Q.has("demo") || Q.has("fill") || Q.has("play")
       || parseInt(Q.get("warm") || "0", 10) > 0 || parseInt(Q.get("ticks") || "0", 10) > 0) ? "play" : "attract";
-if (phase === "attract") { shiftIdx = DEMO_IDX; reset(); }   // load the lively demo shift behind the title
+if (phase === "play") reset(SERVICE_PRACTICE ? "legacy" : "service");
+if (phase === "attract") { shiftIdx = DEMO_IDX; reset("legacy"); }   // load the lively demo shift behind the title
 if (Q.has("ready")) { shiftIdx = START_IDX; reset(); phase = "ready"; readyT = 99; }   // QA: freeze on the SHIFT card (?shift=N)
 if (BATTLE) battleT = BATTLE_SECS;    // seed the service clock (real play goes through startBattle; this covers ?play/?ready QA)
 if (Q.has("board")) phase = "board";                                  // QA: the high-score table
@@ -565,15 +573,16 @@ let last = performance.now(), acc = 0;
 function loop(now) { let e = now - last; last = now; if (e > 250) e = 250; acc += e; blink += e / 1000;
   while (acc >= SIM_DT) { step(); acc -= SIM_DT; }
   if (phase === "ready") { readyT -= e / 1000; if (readyT <= 0) phase = readyNext; }   // 3·2·1·GO! → play or bonus
-  if (phase === "play" && BATTLE) {                    // MELTDOME: the service clock ends it (or a buried diner)
+  if (phase === "play" && BATTLE && !paused) {                    // MELTDOME: the service clock ends it (or a buried diner)
     battleT = Math.max(0, battleT - e / 1000);
     if (battleT <= 0 || game.over) endBattle();
-  } else if (phase === "play" && game.over && !game.won) {   // campaign continue (Billy's break countdown)
+  } else if (phase === "play" && game.over && !game.won && !paused) {   // campaign continue (Billy's break countdown)
     if (continueT === -1) continueT = CONTINUE_SECS;
     else if (continueT > 0) continueT = Math.max(0, continueT - e / 1000);
   }
   pollPads();                             // ARCADE STICK + BUTTONS (2-player) — polled once per frame
   audio.setBed(phase === "play" && !game.over && !game.won && !paused, pm.buried_index(game));   // beds only during the shift
+  serviceUI.update(game, {scene:phase, excluded:SERVICE_PRACTICE || BATTLE, paused});
   const _r0 = performance.now(); render(); perfNote(e, performance.now() - _r0); requestAnimationFrame(loop); }
 const PERF = { on: Q.has("fps"), n: 0, frame: 0, rend: 0, worst: 0, samples: [], slow: [] };
 globalThis.__perf = PERF;
@@ -601,6 +610,7 @@ function padDir(gp) {                       // fold stick / right-stick / d-pad 
 }
 function pressed(gp, i) { return Ghost.btn(gp, i) || (gp.buttons[i] && gp.buttons[i].value > 0.5); }
 function pollPads() {
+  if (paused) return;
   try {
     const pads = (navigator.getGamepads && navigator.getGamepads()) || [];
     const nP = game.players.length;
@@ -667,7 +677,7 @@ function step() {
     pm.auto_step(game); pm.tick(game); if (BR) BR.onTick(game);
     if (game.served > lastServed) { spawnServeFX(goneItem(pre)); lastServed = game.served; }
     if (game.fails > lastFails)  { spawnWalkout();  lastFails = game.fails; }
-    if (game.over || game.won) reset();   // never lets the demo end — restart the shift silently
+    if (game.over || game.won) reset("legacy");   // never lets the demo end — restart the shift silently
     return;
   }
   if (DEMO) pm.auto_step(game);
@@ -879,7 +889,7 @@ function grillKey3D(p, i) {           // engine Stage → the rendered patty for
   let st;
   if (p.stage === S.SEAR_A) st = "SEAR_A";                         // raw side up, side A searing
   else if (p.stage === S.SEAR_B) st = "SEAR_B";                    // flipped: seared side up
-  else if (p.stage === S.MELT) st = p.cook < pm.MELT_DONE / 2 ? "MELT_0" : "MELT_1";   // the slice slumps as it melts
+  else if (p.stage === S.MELT) st = p.cook < pm.melt_done(game) / 2 ? "MELT_0" : "MELT_1";   // the slice slumps as it melts
   else if (p.stage === S.DONE) st = pm.RECIPES[p.item].includes(pm.Action.CHEESE) ? "DONE" : "DONE_PLAIN";
   else if (p.stage === S.BURNT) st = "BURNT";
   else return null;                                                // (TOAST on the grill = legacy; vector fallback)
@@ -887,7 +897,7 @@ function grillKey3D(p, i) {           // engine Stage → the rendered patty for
 }
 function toastKey3D(b, j) {           // toaster[j]: a Bun (no .stage) by its cook, or a grilled cheese by its Stage
   if (b.stage === undefined) {
-    const lv = b.cook >= pm.TOAST_BURN ? "BURNT" : b.cook >= pm.TOAST_READY ? "READY" : b.cook >= pm.TOAST_READY * 0.5 ? "TOASTING" : "RAW";
+    const lv = b.cook >= pm.toast_burn(game) ? "BURNT" : b.cook >= pm.toast_ready(game) ? "READY" : b.cook >= pm.toast_ready(game) * 0.5 ? "TOASTING" : "RAW";
     return "toaster.BUN_" + lv + ".slot" + j;
   }
   const st = b.stage === S.MELT ? "MELT" : b.stage === S.DONE ? "DONE" : b.stage === S.BURNT ? "BURNT" : "TOAST";
@@ -975,7 +985,7 @@ function drawKitchen3D() {
     } else if (p) {
       const k = grillKey3D(p, i), sw = swissOver3D(p, i, r);
       if (sw) {}                                                         // a melt's Swiss: Joe's draped ladder IS the item
-      else if (!k || !ART3D.draw(ctx, k, r.x, r.y)) PMDrawItem(ctx, p, c.x, c.y, 15, pm, now / 1000);
+      else if (!k || !ART3D.draw(ctx, k, r.x, r.y)) PMDrawItem(ctx, p, c.x, c.y, 15, { ...pm, MELT_DONE:pm.melt_done(game) }, now / 1000);
       if (PMSpat.onionsOn(p)) { const ps = ART3D.m.sprites["grill.SEAR_B.slot" + i], ow = ps ? ps.w * 0.82 : 28;   // sized to the rendered patty
         PMSpat.drawOnions(ctx, ps ? r.x + ps.x + ps.w / 2 : c.x, ps ? r.y + ps.y + ps.h * 0.36 : c.y - 4, ow, p, game, "top"); }   // raw ▸ soft ▸ golden ▸ burnt until the Swiss
     }
@@ -998,7 +1008,7 @@ function drawKitchen3D() {
     const b = T[j]; if (!b) continue;
     ART3D.draw(ctx, toastKey3D(b, j), r.x, r.y);
     if (b.stage === undefined) {
-      const ready = b.cook >= pm.TOAST_READY, near = b.cook >= pm.TOAST_BURN - 6;
+      const ready = b.cook >= pm.toast_ready(game), near = b.cook >= pm.toast_burn(game) - 6;
       if (ready) txt(near ? "BURNING!" : "READY", cx, cy - 22, 11, near ? COL.bad : COL.cheese, "center", 800);
     } else drawCookPrompt(b, cx, cy, 15, cy - 22);
   }
@@ -1176,7 +1186,7 @@ function drawGrillItem(p, x, y, rad, now) {
       ctx.drawImage(SPAT_FOOD_IMG.rye, x - w / 2, y - rad * 0.32 - h / 2, w, h); }
     return;
   }
-  PMDrawItem(ctx, p, x, y, rad, pm, now / 1000);
+  PMDrawItem(ctx, p, x, y, rad, { ...pm, MELT_DONE:pm.melt_done(game) }, now / 1000);
   if (PMSpat.onionsOn(p)) PMSpat.drawOnions(ctx, x, y - rad * 0.3, rad * 1.75, p, game, "top");   // the onions sit on the melt
 }
 
@@ -1228,9 +1238,9 @@ function drawToaster(bx, by, bw, bh, gridN) {
     ctx.fillStyle = "rgba(120,70,30,.10)"; ctx.fillRect(cx, cy, cellW, cellH);
     const mcx = cx + cellW / 2, mcy = cy + cellH / 2, b = T[ti];
     if (b && b.stage === undefined) {                     // a BUN toasting for a melt (fungible)
-      const ready = b.cook >= pm.TOAST_READY;
-      const frac = Math.min(1, b.cook / pm.TOAST_BURN);
-      const nearBurn = b.cook >= pm.TOAST_BURN - 6;       // about to burn — flash a warning
+      const ready = b.cook >= pm.toast_ready(game);
+      const frac = Math.min(1, b.cook / pm.toast_burn(game));
+      const nearBurn = b.cook >= pm.toast_burn(game) - 6;       // about to burn — flash a warning
       const brown = ready ? (nearBurn && (now / 120 | 0) % 2 ? COL.bad : "#e0a83c") : "#d9c08a";
       ctx.fillStyle = brown; ctx.fillRect(mcx - cellW * 0.34, mcy - 8, cellW * 0.68, 16);
       if (ready) { ctx.strokeStyle = COL.cheese; ctx.lineWidth = 2; ctx.strokeRect(mcx - cellW * 0.37, mcy - 11, cellW * 0.74, 22);
@@ -1239,7 +1249,7 @@ function drawToaster(bx, by, bw, bh, gridN) {
       ctx.fillStyle = "#241c12"; ctx.fillRect(cx + 4, cy + cellH - 6, cellW - 8, 4);
       ctx.fillStyle = nearBurn ? COL.bad : ready ? COL.good : COL.amber; ctx.fillRect(cx + 4, cy + cellH - 6, (cellW - 8) * frac, 4);
     } else if (b) {                                        // a GRILLED CHEESE cooking ON the toaster (a Patty)
-      PMDrawItem(ctx, b, mcx, mcy, Math.min(cellW, cellH) * 0.34, pm, now / 1000);
+      PMDrawItem(ctx, b, mcx, mcy, Math.min(cellW, cellH) * 0.34, { ...pm, MELT_DONE:pm.melt_done(game) }, now / 1000);
       const done = b.stage === S.DONE;
       drawCookPrompt(b, mcx, mcy, Math.min(cellW, cellH) * 0.34, cy + 12);   // ▸ TOAST / ▸ CHEESE
       if (!cookPrompt(b) || !cookPrompt(b).ready)
@@ -1431,17 +1441,26 @@ function drawBilly3D() {
   if (im && im.width) { const w = h * im.width / im.height; ctx.save(); ctx.translate(x, y); ctx.scale(face, 1); ctx.drawImage(im, -w / 2, -h, w, h); ctx.restore(); }
   // the tray: exactly the plates he picked up, in order (a refused plate rides back marked)
   const tp = BR.trayPlates(), sp = ART3D.m.sprites["to_pass.0.5"];
+  // Keep dishes readable as Billy recedes. A full tray uses two rows of
+  // three, rather than squeezing six plates into a 9px-spaced line.
+  const carryW = Math.max(24, Math.min(32, h * 0.3)), cols = Math.min(3, tp.length), rows = Math.ceil(tp.length / (cols || 1));
   tp.forEach((p, i) => {
-    const px = x + face * h * 0.22 + (i - (tp.length - 1) / 2) * 9, py = y - h * 0.52 - i * 2;
-    if (sp && isMeltPlate(p)) { const sh = 18 * sp.h / sp.w; PMSpat.drawPlated(ctx, SCHOOL, px, py - sh * 0.45, 20); }   // a melt rides plated
-    else if (sp) { const sw = 18, sh = sw * sp.h / sp.w; ctx.drawImage(ART3D.atl[sp.a], sp.sx, sp.sy, sp.w, sp.h, px - sw / 2, py - sh, sw, sh); }
-    if (p.state === "rejected") txt("✗", px, py - 12, 12, COL.bad, "center", 800);
+    const row = Math.floor(i / 3), col = i % 3, rowCount = Math.min(3, tp.length - row * 3);
+    const px = x + face * h * 0.22 + face * (col - (rowCount - 1) / 2) * carryW * 0.72;
+    const py = y - h * 0.52 - (rows - 1 - row) * carryW * 0.4;
+    let dishH = sp ? carryW * sp.h / sp.w : carryW * 0.5;
+    if (isMeltPlate(p)) {
+      const im = PMSpat.topping(SCHOOL ? "plated-heroes" : "plated-diner");
+      dishH = carryW * (im.height - 32) / (im.width - 32);
+      PMSpat.drawPlated(ctx, SCHOOL, px, py - dishH / 2, carryW);
+    } else if (sp) ctx.drawImage(ART3D.atl[sp.a], sp.sx, sp.sy, sp.w, sp.h, px - carryW / 2, py - dishH, carryW, dishH);
+    if (p.state === "rejected") txt("✗", px, py - dishH - 4, 12, COL.bad, "center", 800);
   });
   // plates handed off sit at their seats for a few seconds
   for (const p of BR.plates) if (p.state === "served" && sp && !p.taken) {
     const d = G.seats[p.seat].drop, a = Math.min(1, Math.max(0, 1 - (BR.t - p.tServed - 3000) / 1000));
-    ctx.globalAlpha = a; const sw = 16, sh = sw * sp.h / sp.w;
-    if (isMeltPlate(p)) PMSpat.drawPlated(ctx, SCHOOL, DIN.x + d[0], DIN.y + d[1] - sh * 0.2, 18);   // the melt at its seat
+    ctx.globalAlpha = a; const sw = 22, sh = sw * sp.h / sp.w;
+    if (isMeltPlate(p)) PMSpat.drawPlated(ctx, SCHOOL, DIN.x + d[0], DIN.y + d[1] - sh * 0.2, sw);   // the melt at its seat
     else ctx.drawImage(ART3D.atl[sp.a], sp.sx, sp.sy, sp.w, sp.h, DIN.x + d[0] - sw / 2, DIN.y + d[1] - sh * 0.7, sw, sh);
     ctx.globalAlpha = 1;
     if (BR.t - p.tServed < 700) txt("♥", DIN.x + d[0], DIN.y + d[1] - 16, 14, COL.cheese, "center", 800);
@@ -1811,6 +1830,7 @@ addEventListener("keydown", (e) => {
   }
   if (k === "r") { BATTLE ? startBattle() : startShift(shiftIdx); return; }    // rematch / retry THIS shift
   if (k === "p") { paused = !paused; return; }
+  if (paused) return;
   if (game.over) { if (BATTLE) return; if (continueT > 0) billyBack(); else submitRun(); return; }   // (battle end = the clock)
   if (game.won && (k === " " || k === "enter")) { nextShift(); return; }   // ROUND CLEAR → next shift (or campaign complete)
   // P1 (PATTY): arrows / a,d + f,c,x + space/v HEY BILLY

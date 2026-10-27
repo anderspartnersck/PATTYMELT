@@ -81,9 +81,9 @@
   }
 
   // Build a fresh game for a shift. `itemsOverride` (jailbreak FULL MENU) wins if provided.
-  function build(pm, sh, players, theme, itemsOverride) {
+  function build(pm, sh, players, theme, itemsOverride, profile = "legacy") {
     const items = itemsOverride && itemsOverride.length ? itemsOverride : itemSeq(pm, sh.items);
-    const g = pm.new_game(sh.rnd || 1, sh.mode || "family", players || 1, theme || "diner", sh.grill || 6, items);
+    const g = pm.new_game(sh.rnd || 1, sh.mode || "family", players || 1, theme || "diner", sh.grill || 6, items, profile);
     if (sh.quota) { g.cfg.orders = sh.quota; g.orders_left = sh.quota; }   // authored level length
     return g;
   }
