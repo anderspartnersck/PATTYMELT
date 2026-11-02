@@ -2,11 +2,11 @@
 
 A grill rush. You're Patty. Billy is expediting, and Billy is not reliable.
 
-## ▶ [PLAY IT IN YOUR BROWSER](https://anderspartnersck.github.io/PATTYMELT/)
+## ▶ [PLAY IT IN YOUR BROWSER](https://anderspartnersck.github.io/PATTYMELT/3d/)
 
-### ▶ [3D KITCHEN](https://anderspartnersck.github.io/PATTYMELT/3d/) · [HEROES 3D CAFETERIA](https://anderspartnersck.github.io/PATTYMELT/3d/heroes.html) · [COOKS FROM BEHIND](https://anderspartnersck.github.io/PATTYMELT/3d/rear.html)
+### ▶ [HEROES CAFETERIA](https://anderspartnersck.github.io/PATTYMELT/3d/heroes.html) · [COOKS FROM BEHIND](https://anderspartnersck.github.io/PATTYMELT/3d/rear.html)
 
-The 3D edition (two spatulas per cook, lit 3D kitchen art) lives in `3d/`, separate from the 2D game above.
+The 3D kitchen: two spatulas per cook, lit 3D kitchen art.
 
 A Castle Killscreen game by **Anders & Partners**.
 
@@ -41,7 +41,6 @@ on the side — it *is* the score, played as drama.
 
 ## What still needs work
 
-- The HEROES / School cab has **no dining room art** — `cafeteria-room.png` doesn't exist yet, so that backdrop draws empty.
 - Co-op and the MeltDome battle mode are built but under-tuned.
 
 ## Rebuilding this bundle
@@ -68,3 +67,8 @@ Created by **Joseph Coleman**, with Claude, ChatGPT, and Blender.
 Anders & Partners.
 
 <sub>Generated from the private Castle Killscreen tree. Edit there, not here.</sub>
+
+## OLD 2D VERSION
+
+The original flat-sprite game, kept playable but no longer the main game:
+[OLD 2D VERSION](https://anderspartnersck.github.io/PATTYMELT/).

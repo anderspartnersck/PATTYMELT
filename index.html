@@ -46,6 +46,7 @@
   <div id="tag">◄ ► move (grill + toaster) · F flip · C cheese · X toast bun · SPACE = HEY BILLY! · CO-OP: G/U handoff · T/O drop · R restart · S sound</div>
 </div></div>
 <script src="engine.js"></script>
+<script src="service.js"></script>
 <script src="campaign.js"></script>
 <script src="sprites.js"></script>
 <script src="lib/audio.js?v=1"></script>
@@ -407,6 +408,10 @@ const READY_SECS = 3.2;         // GET READY countdown after START, before the g
 //   phase "play"    — the real shift (this is the only phase the sim ticks for real input)
 let phase, readyT = 0, blink = 0;
 let game, billyPos, lastServed, lastFails, fx, fxId, paused, continueT, continuesUsed;
+const SERVICE_PRACTICE = ["demo", "bot", "auto", "ticks", "warm", "fill", "at", "selftest", "bonus", "mini", "ready", "board", "hs"].some(k => Q.has(k));
+const serviceUI = PMService.mount({ pm, view:"kitchen", pause:value=>{ if (phase === "play") paused = value == null ? !paused : value; } });
+addEventListener("pagehide", event => { if (!event.persisted) serviceUI.finish(game, {excluded:SERVICE_PRACTICE || BATTLE}); });
+
 let _asmPlate = null;                        // where the assembled plate sits (set each frame by drawAssembly)
 // ---------- THE CAMPAIGN (campaign.js) — authored deterministic SHIFTS on the proven engine ----------
 // A shift = a classic-arcade level. The table drives new_game's levers (mode/grill/items/quota); the
@@ -430,6 +435,7 @@ function saveScores() { try { localStorage.setItem(HS_KEY, JSON.stringify(scores
 scores = loadScores();
 const totalScore = () => runScore + (game ? game.score : 0);   // the run total (banked + current shift)
 function submitRun() {           // end of a campaign run → initials if it qualifies, else back to the title
+  serviceUI.finish(game, {excluded:SERVICE_PRACTICE || BATTLE});
   entryScore = totalScore();
   if (pm.qualifies(scores, entryScore)) { entryName = [0, 0, 0]; entryPos = 0; entryRank = -1; phase = "initials"; }
   else toAttract();
@@ -444,8 +450,9 @@ function buildBattle() {        // the shared-grill grill-off: one grill, one Bi
   g.cfg.orders = 99999; g.orders_left = 99999;   // the CLOCK ends the service, never a quota
   return g;
 }
-function reset() {
-  game = BATTLE ? buildBattle() : CAMP.build(pm, shift(), PLAYERS, SKIN, ITEMS);   // ITEMS override wins for jailbreak
+function reset(profile = SERVICE_PRACTICE ? "legacy" : "service") {
+  serviceUI.finish(game, {excluded:SERVICE_PRACTICE || BATTLE});
+  game = BATTLE ? buildBattle() : CAMP.build(pm, shift(), PLAYERS, SKIN, ITEMS, profile);   // ITEMS override wins for jailbreak
   billyPos = 0;                 // 0 = out in the dining room (bussing), 1 = at the kitchen pass (expo)
   lastServed = 0; lastFails = 0; fx = []; fxId = 0; paused = false; continueT = -1; continuesUsed = 0;
   cook = [{ serves: 0, score: 0 }, { serves: 0, score: 0 }]; battleWinner = -1;
@@ -477,15 +484,16 @@ function startBonus(kind, nextIdx) {   // FREEZER (no-fail) / BASEMENT (quota-or
   readyNext = "bonus"; phase = "ready"; readyT = READY_SECS; wakeAudio();
 }
 function endBonus() { runScore += mini.score; startShift(bonusNext); }   // bank the bonus, on to the next shift
-function toAttract() { shiftIdx = DEMO_IDX; reset(); phase = "attract"; continueT = -1; }   // back to title / demo loop
+function toAttract() { shiftIdx = DEMO_IDX; reset("legacy"); phase = "attract"; continueT = -1; }   // back to title / demo loop
 function billyBack() {          // a button during the break: Billy returns, breathe, cook on (same shift)
   game.over = false; game.wait = pm.WAIT_FULL * 0.45; game.billy = pm.BILLY_FULL; continueT = -1; continuesUsed++;
 }
-reset();
+reset("legacy");
 // skip straight to PLAY for the demo + QA rigs (screenshots, ?warm/?ticks/?fill); otherwise open on ATTRACT
 phase = (Q.has("demo") || Q.has("fill") || Q.has("play")
       || parseInt(Q.get("warm") || "0", 10) > 0 || parseInt(Q.get("ticks") || "0", 10) > 0) ? "play" : "attract";
-if (phase === "attract") { shiftIdx = DEMO_IDX; reset(); }   // load the lively demo shift behind the title
+if (phase === "play") reset(SERVICE_PRACTICE ? "legacy" : "service");
+if (phase === "attract") { shiftIdx = DEMO_IDX; reset("legacy"); }   // load the lively demo shift behind the title
 if (Q.has("ready")) { shiftIdx = START_IDX; reset(); phase = "ready"; readyT = 99; }   // QA: freeze on the SHIFT card (?shift=N)
 if (BATTLE) battleT = BATTLE_SECS;    // seed the service clock (real play goes through startBattle; this covers ?play/?ready QA)
 if (Q.has("board")) phase = "board";                                  // QA: the high-score table
@@ -540,15 +548,16 @@ let last = performance.now(), acc = 0;
 function loop(now) { let e = now - last; last = now; if (e > 250) e = 250; acc += e; blink += e / 1000;
   while (acc >= SIM_DT) { step(); acc -= SIM_DT; }
   if (phase === "ready") { readyT -= e / 1000; if (readyT <= 0) phase = readyNext; }   // 3·2·1·GO! → play or bonus
-  if (phase === "play" && BATTLE) {                    // MELTDOME: the service clock ends it (or a buried diner)
+  if (phase === "play" && BATTLE && !paused) {                    // MELTDOME: the service clock ends it (or a buried diner)
     battleT = Math.max(0, battleT - e / 1000);
     if (battleT <= 0 || game.over) endBattle();
-  } else if (phase === "play" && game.over && !game.won) {   // campaign continue (Billy's break countdown)
+  } else if (phase === "play" && game.over && !game.won && !paused) {   // campaign continue (Billy's break countdown)
     if (continueT === -1) continueT = CONTINUE_SECS;
     else if (continueT > 0) continueT = Math.max(0, continueT - e / 1000);
   }
   pollPads();                             // ARCADE STICK + BUTTONS (2-player) — polled once per frame
   audio.setBed(phase === "play" && !game.over && !game.won && !paused, pm.buried_index(game));   // beds only during the shift
+  serviceUI.update(game, {scene:phase, excluded:SERVICE_PRACTICE || BATTLE, paused});
   render(); requestAnimationFrame(loop); }
 
 // ---------- 2-PLAYER ARCADE GAMEPAD (self-contained, additive, parity-safe) ----------
@@ -565,6 +574,7 @@ function padDir(gp) {                       // fold stick / right-stick / d-pad 
 }
 function pressed(gp, i) { return Ghost.btn(gp, i) || (gp.buttons[i] && gp.buttons[i].value > 0.5); }
 function pollPads() {
+  if (paused) return;
   try {
     const pads = (navigator.getGamepads && navigator.getGamepads()) || [];
     const nP = game.players.length;
@@ -631,7 +641,7 @@ function step() {
     pm.auto_step(game); pm.tick(game);
     if (game.served > lastServed) { spawnServeFX(goneItem(pre)); lastServed = game.served; }
     if (game.fails > lastFails)  { spawnWalkout();  lastFails = game.fails; }
-    if (game.over || game.won) reset();   // never lets the demo end — restart the shift silently
+    if (game.over || game.won) reset("legacy");   // never lets the demo end — restart the shift silently
     return;
   }
   if (DEMO) pm.auto_step(game);
@@ -904,7 +914,7 @@ function drawGrillItem(p, x, y, rad, now) {
       ctx.drawImage(SPAT_FOOD_IMG.rye, x - w / 2, y - rad * 0.32 - h / 2, w, h); }
     return;
   }
-  PMDrawItem(ctx, p, x, y, rad, pm, now / 1000);
+  PMDrawItem(ctx, p, x, y, rad, { ...pm, MELT_DONE:pm.melt_done(game) }, now / 1000);
   if (PMSpat.onionsOn(p)) PMSpat.drawOnions(ctx, x, y - rad * 0.3, rad * 1.75, p, game, "top");   // the onions sit on the melt
 }
 
@@ -956,9 +966,9 @@ function drawToaster(bx, by, bw, bh, gridN) {
     ctx.fillStyle = "rgba(120,70,30,.10)"; ctx.fillRect(cx, cy, cellW, cellH);
     const mcx = cx + cellW / 2, mcy = cy + cellH / 2, b = T[ti];
     if (b && b.stage === undefined) {                     // a BUN toasting for a melt (fungible)
-      const ready = b.cook >= pm.TOAST_READY;
-      const frac = Math.min(1, b.cook / pm.TOAST_BURN);
-      const nearBurn = b.cook >= pm.TOAST_BURN - 6;       // about to burn — flash a warning
+      const ready = b.cook >= pm.toast_ready(game);
+      const frac = Math.min(1, b.cook / pm.toast_burn(game));
+      const nearBurn = b.cook >= pm.toast_burn(game) - 6;       // about to burn — flash a warning
       const brown = ready ? (nearBurn && (now / 120 | 0) % 2 ? COL.bad : "#e0a83c") : "#d9c08a";
       ctx.fillStyle = brown; ctx.fillRect(mcx - cellW * 0.34, mcy - 8, cellW * 0.68, 16);
       if (ready) { ctx.strokeStyle = COL.cheese; ctx.lineWidth = 2; ctx.strokeRect(mcx - cellW * 0.37, mcy - 11, cellW * 0.74, 22);
@@ -967,7 +977,7 @@ function drawToaster(bx, by, bw, bh, gridN) {
       ctx.fillStyle = "#241c12"; ctx.fillRect(cx + 4, cy + cellH - 6, cellW - 8, 4);
       ctx.fillStyle = nearBurn ? COL.bad : ready ? COL.good : COL.amber; ctx.fillRect(cx + 4, cy + cellH - 6, (cellW - 8) * frac, 4);
     } else if (b) {                                        // a GRILLED CHEESE cooking ON the toaster (a Patty)
-      PMDrawItem(ctx, b, mcx, mcy, Math.min(cellW, cellH) * 0.34, pm, now / 1000);
+      PMDrawItem(ctx, b, mcx, mcy, Math.min(cellW, cellH) * 0.34, { ...pm, MELT_DONE:pm.melt_done(game) }, now / 1000);
       const done = b.stage === S.DONE;
       drawCookPrompt(b, mcx, mcy, Math.min(cellW, cellH) * 0.34, cy + 12);   // ▸ TOAST / ▸ CHEESE
       if (!cookPrompt(b) || !cookPrompt(b).ready)
@@ -1371,6 +1381,7 @@ addEventListener("keydown", (e) => {
   }
   if (k === "r") { BATTLE ? startBattle() : startShift(shiftIdx); return; }    // rematch / retry THIS shift
   if (k === "p") { paused = !paused; return; }
+  if (paused) return;
   if (game.over) { if (BATTLE) return; if (continueT > 0) billyBack(); else submitRun(); return; }   // (battle end = the clock)
   if (game.won && (k === " " || k === "enter")) { nextShift(); return; }   // ROUND CLEAR → next shift (or campaign complete)
   // P1 (PATTY): arrows / a,d + f,c,x + space/v HEY BILLY

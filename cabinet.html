@@ -1,0 +1,2061 @@
+<!DOCTYPE html>
+<!-- PATTY MELT — playable web cabinet.  *** Dedicated to Christine & Phillip Coleman. ***
+     Zero dependency. The engine (engine.js, UMD) is the SAME ruleset AND the same
+     numbers as the Python build (parity-proven by `node web/engine.js`).
+     Loaded as a plain <script> exposing globalThis.PM — NOT an ES module — so the
+     cabinet runs straight off the filesystem (double-click works; browsers block
+     module imports over file://). The loop here is a FIXED-TIMESTEP ACCUMULATOR
+     (sim dt = 1/TPS), NOT a dt loop — so reaction windows are frame-quantized the
+     same on 60Hz / 144Hz, exactly like the arcade board (the CLAUDE.md lesson).
+     Art note: the on-screen deck is drawn in the LOCKED panel colors (FLIP=mustard,
+     CHEESE=cheese-yellow, HEY BILLY=cream, red stick) as the placeholder the
+     registered PNG panel layers swap into later (see docs/SPEC_SHEET.md). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PATTY MELT</title>
+<style>
+  :root {
+    --steel:#15110d; --steel2:#221a12; --amber:#ffb43a; --amber-dim:#7a4d12;
+    --cream:#f3e6c8; --mustard:#e0a92e; --cheese:#ffd23f;
+    --ketchup:#d33a2b; --cabblue:#1d3a5f; --grillglow:#ff7a1a; --ink:#0c0a07;
+    --good:#7ad17a; --bad:#ff5a4d;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:#000; overflow:hidden;
+    font-family:"Saira Condensed","Arial Narrow",system-ui,sans-serif; color:var(--cream); }
+  #cab { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(120% 120% at 50% 0%, #241a10 0%, #0a0806 70%, #000 100%); }
+  /* the cabinet body is BLUE (why HEY BILLY is cream, not blue) */
+  #bezel { position:relative; width:min(96vw, calc(96vh * 0.72)); aspect-ratio:72/100;
+    background:linear-gradient(180deg,#24456e,#16263f 60%,#0e1a2c);
+    border-radius:18px; padding:2.2% 2.2% 1.4%;
+    box-shadow:0 0 0 3px #0a1422, 0 0 60px #0008 inset, 0 18px 60px #000a;
+    display:flex; flex-direction:column; }
+  #marquee { text-align:center; padding:0.4em 0 0.5em; letter-spacing:.06em;
+    text-shadow:0 0 18px #ffb43a55; }
+  #marquee .t { font-size:clamp(18px,4.6vmin,46px); font-weight:800; color:var(--amber);
+    letter-spacing:.04em; }
+  #marquee .s { font-size:clamp(9px,1.7vmin,16px); color:var(--cream); opacity:.8; letter-spacing:.32em; }
+  /* the screen */
+  #screenwrap { position:relative; flex:1 1 auto; background:#05060a; border-radius:8px;
+    border:2px solid #0a1422; box-shadow:0 0 0 4px #2b5384 inset, 0 0 40px #000a inset;
+    overflow:hidden; min-height:0; }
+  canvas#screen { display:block; width:100%; height:100%; image-rendering:pixelated; }
+  /* ---- ?bare : full-screen canvas, no cab/bezel chrome (legible QA + "just the game" embed) ---- */
+  body.bare #cab { background:#000; }
+  body.bare #cabart, body.bare #marquee, body.bare #deck, body.bare #credits, body.bare #bezelart,
+    body.bare #mute, body.bare #fs, body.bare #hint { display:none !important; }
+  body.bare #cabframe { width:100vw; height:100vh; max-width:100vw; max-height:100vh; aspect-ratio:auto; }
+  body.bare #bezel { width:100%; height:100%; aspect-ratio:auto; padding:0; border-radius:0;
+    background:#000; box-shadow:none; }
+  body.bare #screenwrap { position:absolute; inset:0; width:100%; height:100%; border:none; border-radius:0;
+    box-shadow:none; padding:0; }
+  /* ---- GINGHAM SCREEN BEZEL (red=diner · blue=school): image behind, canvas inset 6% ---- */
+  #bezelart { position:absolute; inset:0; width:100%; height:100%; object-fit:fill;
+    z-index:0; pointer-events:none; display:none; }
+  body.gingham #bezelart { display:block; }
+  body.gingham #screenwrap { background:#000; border:none; box-shadow:none; padding:var(--bz,6%); }
+  body.gingham #screenwrap canvas#screen { position:relative; z-index:1; }   /* play area above the bezel */
+  /* diegetic control deck */
+  #deck { display:grid; grid-template-columns:1.1fr 2fr; gap:2.2%; padding:1.4% 1% 0; align-items:center; }
+  #deck .stickcell, #deck .btncell { background:linear-gradient(180deg,#1a1410,#0d0a07);
+    border:2px solid #3a2a16; border-radius:10px; padding:.5em; }
+  #stick { display:flex; align-items:center; justify-content:center; gap:.5em; }
+  #stick .ball { width:clamp(22px,5vmin,44px); aspect-ratio:1; border-radius:50%;
+    background:radial-gradient(35% 35% at 35% 30%, #ff8a7a, #b81f12 70%, #6e0f08);
+    box-shadow:0 3px 8px #000a; }
+  #stick .lbl { font-size:clamp(8px,1.4vmin,13px); color:var(--amber); letter-spacing:.18em; }
+  #btns { display:grid; grid-template-columns:repeat(3,1fr); gap:6%; }
+  .btn { text-align:center; }
+  .btn .dome { width:clamp(28px,7vmin,64px); aspect-ratio:1; border-radius:50%; margin:0 auto;
+    box-shadow:0 4px 10px #000b, 0 0 0 3px #00000055 inset; transition:transform .05s, filter .08s;
+    filter:brightness(.62) saturate(.9); }
+  .btn.lit .dome { filter:brightness(1.18) saturate(1.1); transform:translateY(2px) scale(.97); }
+  .btn .cap { margin-top:.35em; font-size:clamp(8px,1.5vmin,14px); letter-spacing:.12em; font-weight:700; }
+  .btn .key { font-size:clamp(7px,1.1vmin,11px); opacity:.55; }
+  .dome.flip   { background:radial-gradient(35% 35% at 38% 30%, #ffe08a, var(--mustard) 65%, #8a5e10); }
+  .dome.cheese { background:radial-gradient(35% 35% at 38% 30%, #fff0a0, var(--cheese) 65%, #b8920f); }
+  .dome.toast  { background:radial-gradient(35% 35% at 38% 30%, #f0c98a, #c9863f 62%, #6e3f16); }
+  .dome.billy  { background:radial-gradient(35% 35% at 38% 30%, #fffaf0, var(--cream) 60%, #9c8d68); }
+  .cap.flip{color:var(--mustard);} .cap.cheese{color:var(--cheese);} .cap.toast{color:#e09a4e;} .cap.billy{color:var(--cream);}
+  /* TOAST is the FULL-MENU action (grilled cheese + patty melt) — hidden on burger-only cabs */
+  #b-toast{ display:none; }
+  body.fullmenu #b-toast{ display:block; }
+  body.fullmenu #btns{ grid-template-columns:repeat(4,1fr); }
+  #credits { display:flex; justify-content:center; gap:1.2%; flex-wrap:wrap; padding:.6% 0 .2%;
+    font-size:clamp(6px,1vmin,10px); opacity:.7; letter-spacing:.08em; }
+  #credits span { border:1px solid #3a2a16; border-radius:4px; padding:.1em .5em; }
+  .approved { color:var(--good); border-color:#2c5a2c !important; }
+  /* overlays */
+  #hint { position:absolute; left:0; right:0; bottom:6px; text-align:center;
+    font-size:clamp(8px,1.4vmin,13px); color:#ffe9b0cc; pointer-events:none; }
+  #mute { position:absolute; top:6px; right:8px; z-index:3; width:26px; height:26px;
+    border-radius:50%; border:1px solid #2b5384; background:#0a1422cc; color:var(--cream);
+    font-size:14px; line-height:1; padding:0; cursor:pointer; opacity:.5; transition:opacity .1s; }
+  #mute:hover { opacity:.95; }
+  #mute.off { color:var(--bad); opacity:.85; }
+  #fs { position:absolute; top:6px; left:8px; z-index:3; width:26px; height:26px;
+    border-radius:6px; border:1px solid #2b5384; background:#0a1422cc; color:var(--cream);
+    font-size:15px; line-height:1; padding:0; cursor:pointer; opacity:.5; transition:opacity .1s; }
+  #fs:hover { opacity:.95; }
+
+  /* ---- CABINET ART MODE: baked 1UP cab render as the frame, live canvas in the screen cutout ---- */
+  #cabframe { display:contents; }                 /* fallback: bezel just centers in #cab as before */
+  #cabart   { display:none; }                     /* shown only once the art loads */
+  #cab.art  #cabart { display:block; position:absolute; inset:0; width:100%; height:100%; object-fit:fill; }
+  #cab.art  #cabframe { display:block; position:relative;
+    aspect-ratio:var(--cab-ar, 1/1);
+    width:min(100vw, calc(100vh * var(--cab-arw,1) / var(--cab-arh,1)));
+    max-width:100vw; max-height:100vh; }
+  #cab.art  #bezel { position:absolute; inset:0; width:auto; padding:0; border-radius:0;
+    background:none; box-shadow:none; display:block; }
+  #cab.art  #marquee, #cab.art #deck, #cab.art #credits { display:none; }   /* the art provides these */
+  #cab.art  #screenwrap { position:absolute; border:none; border-radius:0; box-shadow:none; background:#05060a;
+    left:var(--sl,34%); top:var(--st,21.5%); width:var(--sw,32%); height:var(--sh,26%); }
+  #cab.reg  #screenwrap { outline:2px dashed var(--bad); outline-offset:-1px; }   /* registration guide */
+  /* screen-registration panel (type "rect" to toggle) — lets you align the cutout yourself */
+  #reg { position:fixed; top:8px; left:8px; z-index:9; background:#0b1426ee; border:1px solid #2b5384;
+    border-radius:8px; padding:8px 10px; font-size:12px; color:var(--cream); width:188px; }
+  #reg[hidden] { display:none; }
+  #reg h4 { margin:0 0 6px; font-size:12px; color:var(--amber); letter-spacing:.06em; }
+  #reg .row { display:flex; align-items:center; justify-content:space-between; margin:3px 0; }
+  #reg button { background:#16263f; color:var(--cream); border:1px solid #2b5384; border-radius:4px;
+    width:22px; height:20px; cursor:pointer; font-size:13px; line-height:1; padding:0; }
+  #reg .val { font-variant-numeric:tabular-nums; min-width:46px; text-align:center; }
+  #reg .save { width:100%; height:24px; margin-top:6px; color:var(--good); }
+  #reg .hintline { opacity:.6; font-size:10px; margin-top:5px; line-height:1.3; }
+
+  /* ---- ?view=panel : play the cab-beauty ZOOM intro, then drop into the desktop PANEL layout ----
+     The baked cab is gorgeous but the game superimposed in its little screen cutout isn't really
+     playable. So we show the cab, push the "camera" INTO the monitor, then cut to the live deck
+     layout (big screen + on-screen control panel) that's already running underneath. */
+  #cabintro { position:fixed; inset:0; z-index:60; background:#05060a; overflow:hidden; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; }
+  #cabintro img { width:100%; height:100%; object-fit:contain; will-change:transform;
+    transform-origin:var(--zx,47%) var(--zy,52%);
+    animation:cabpush 2.7s cubic-bezier(.42,0,.28,1) forwards; }
+  #cabintro.fade { animation:introfade .55s ease forwards; }
+  #cabintro[hidden] { display:none; }
+  #cabintro .skip { position:absolute; bottom:18px; right:22px; font-size:12px; letter-spacing:.22em;
+    color:#f3e6c8; opacity:.5; pointer-events:none; text-shadow:0 1px 4px #000; }
+  @keyframes cabpush { 0%{transform:scale(1);} 12%{transform:scale(1.015);} 100%{transform:scale(2.85);} }
+  @keyframes introfade { to { opacity:0; } }
+</style>
+</head>
+<body>
+<div id="cab"><div id="cabframe">
+  <img id="cabart" alt="PATTY MELT cabinet" src="assets/cab/cab-1up-diner.png">
+  <div id="bezel">
+  <div id="marquee"><div class="t" id="mq-t">PATTY MELT</div><div class="s" id="mq-s">BIG GRILL ENERGY</div></div>
+  <div id="screenwrap"><img id="bezelart" alt=""><canvas id="screen" width="720" height="600"></canvas>
+    <button id="mute" aria-label="toggle sound">♪</button>
+    <button id="fs" aria-label="fullscreen">⛶</button><div id="hint"></div></div>
+  <div id="deck">
+    <div class="stickcell"><div id="stick"><span class="ball"></span><span class="lbl">◄ SPATULA ►</span></div></div>
+    <div class="btncell"><div id="btns">
+      <div class="btn" id="b-flip"><div class="dome flip"></div><div class="cap flip">FLIP</div><div class="key">SPACE</div></div>
+      <div class="btn" id="b-cheese"><div class="dome cheese"></div><div class="cap cheese">CHEESE</div><div class="key">C</div></div>
+      <div class="btn" id="b-toast"><div class="dome toast"></div><div class="cap toast">TOAST</div><div class="key">X</div></div>
+      <div class="btn" id="b-billy"><div class="dome billy"></div><div class="cap billy">HEY BILLY!</div><div class="key">B</div></div>
+    </div></div>
+  </div>
+  <div id="credits">
+    <span>25¢ PER PLAY</span><span class="approved">ANDERS APPROVED</span>
+    <span>ANDERS &amp; PARTNERS LLC</span><span>for Christine &amp; Phillip Coleman</span>
+  </div>
+</div></div>
+  <div id="cabintro" hidden><img id="cabintro-art" alt="PATTY MELT cabinet"><div class="skip">CLICK TO SKIP</div></div>
+  <div id="reg" hidden>
+    <h4>SCREEN REGISTRATION</h4>
+    <div class="row"><span>left</span><button data-f="sl" data-d="-0.5">‹</button><span class="val" id="v-sl">34%</span><button data-f="sl" data-d="0.5">›</button></div>
+    <div class="row"><span>top</span><button data-f="st" data-d="-0.5">‹</button><span class="val" id="v-st">21.5%</span><button data-f="st" data-d="0.5">›</button></div>
+    <div class="row"><span>width</span><button data-f="sw" data-d="-0.5">‹</button><span class="val" id="v-sw">32%</span><button data-f="sw" data-d="0.5">›</button></div>
+    <div class="row"><span>height</span><button data-f="sh" data-d="-0.5">‹</button><span class="val" id="v-sh">26%</span><button data-f="sh" data-d="0.5">›</button></div>
+    <button class="save" id="reg-save">SAVE</button>
+    <div class="hintline">align the dashed box to the cab screen, then SAVE. type "rect" to close.</div>
+  </div>
+</div>
+
+<script src="./engine.js"></script>
+<script src="service.js"></script>
+<script src="./lib/ghost.js?v=1"></script>
+<script src="./lib/spatulas.js?v=1"></script>
+<script>
+const pm = globalThis.PM;   // UMD engine — single source, parity-proven vs Python
+
+const cv = document.getElementById("screen");
+const ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height;
+const hint = document.getElementById("hint");
+const mqT = document.getElementById("mq-t"), mqS = document.getElementById("mq-s");
+const COL = { steel:"#0c0a07", panel:"#15110d", amber:"#ffb43a", cream:"#f3e6c8",
+  mustard:"#e0a92e", cheese:"#ffd23f", ketchup:"#d33a2b", good:"#7ad17a", bad:"#ff5a4d",
+  raw:"#c98a5a", melt:"#ffd23f", done:"#e9a23b", grid:"#2a2018", glow:"#ff7a1a", dim:"#6b5a3a" };
+
+// =================================================================== MENU / RECIPE
+// THE classic — Patty's house standard, the literal "recipe in the code." A proper
+// American cheeseburger, cooked the way the PERFECT GRILL demands:
+//   • 1 fresh-ground beef patty (80/20), smashed thin, salt + pepper on the flat-top
+//   • 1 slice American cheese, melted to a glossy drape — watch the MELTOMETER
+//   • toasted potato bun, yellow mustard, ketchup, dill pickles, raw onion
+//   • THE GRILL RULE:  sear side A → FLIP → sear side B → CHEESE → MELT → SERVE
+//   • TIME IT:  too early = RAW (sent back) · too late = BURNT · perfect grilling
+//     lives in the sweet spot between.  Good burgers, Walter.
+const RECIPE = {
+  diner:  { title:"THE PERFECT CHEESEBURGER",
+            steps:["SEAR","FLIP","SEAR","CHEESE","MELT","SERVE"],
+            note:"perfect grilling — every single time" },
+  school: { title:"THE PERFECT LUNCH TRAY",
+            steps:["HEAT","FLIP","HEAT","CHEESE","MELT","SERVE"],
+            note:"made with love — every single tray" },
+};
+// NOTE: a cosmetic "today's specials" board (mushroom/bacon/fries) was prototyped
+// here and removed on request — a menu of orders that don't exist as distinct play
+// reads as a promise the engine doesn't keep. Every ticket is the one cheeseburger
+// above; real order variety would be a deliberate, parity-breaking engine change.
+// Visible flavor is theme-aware: the DINER is rowdy-but-wholesome; the SCHOOL skin
+// (PATTY MELT'S HEROES) stays kind + classroom-safe — Billy helps, nobody gets roasted.
+const FLAVOR = {
+  diner: {
+    // CHATTER = the live kitchen patter. You hear `good` when the shift's clean; it flips
+    // to `rough` as the line gets buried (the mood comes off buried_index / fail pressure).
+    chatter: {
+      good: ["THOSE ARE GOOD BURGERS, WALTER", "PERFECT GRILLING, EVERY TIME", "NOW THAT'S A MELT",
+             "SIZZLIN' RIGHT ALONG", "ORDER UP! NICE.", "WATCH THE MELTOMETER", "GRILL'S SINGIN' TODAY",
+             "TWO SPATULAS, ZERO PROBLEMS", "NO HANDS. FOOD SAFETY.", "SMELLS LIKE LUNCH RUSH", "KEEP IT MOVIN', LOOKIN' GOOD",
+             "BILLY'S ACTUALLY HELPING?!", "NAIL THE PERFECT GRILL"],
+      rough: ["WE'RE IN THE WEEDS!", "WHERE'S BILLY?!", "HUSTLE, HUSTLE, HUSTLE", "DON'T BURN IT!",
+              "WE'RE SLAMMED!", "PICK UP! PICK UP!", "GRILL'S PACKED, MOVE IT", "ORDER UP— C'MON!",
+              "LOSIN' THE LINE...", "COME ON, FOCUS!", "TOO MANY ON THE FLAT-TOP!"],
+    },
+    // Billy's the Dave-of-this-game: blowing off expo. "Expediting" (he is on his phone).
+    excuses: ["on break", "texting...", "lost the tongs", "reading comics", "in the walk-in",
+              "where IS he?", "vibin'", "restockin'(?)", "high score run", "petting a dog"],
+    // the wall of the place — diner lore ticker on attract
+    barker: ["EST. 1987 · DINERETTES SOFTBALL CHAMPS", "TWO SPATULAS. ONE GRILL. NO MERCY.",
+             "BILLY BUNS, CONDIMENT KID — STILL EMPLOYED (BARELY)", "TIP YOUR COOK",
+             "RESPEK LOGIC ART UREA", "ANDERS APPROVED ✓", "HER SPATULAS SING AS LOUD AS SHE DOES",
+             "NO HANDS ON THE FOOD · TWO SPATULAS, EVERY ITEM · IT'S ALL ABOUT FOOD SAFETY"],
+  },
+  school: {
+    chatter: {
+      good: ["PERFECT GRILLING, EVERY TRAY", "GREAT JOB, TEAM ♥", "MADE WITH LOVE",
+             "EVERYONE LOVES BURGER DAY", "NICE AND STEADY", "TRAYS LOOKIN' GREAT",
+             "WATCH THE MELTOMETER", "MRS. GRIDDLE'D BE PROUD", "SPATULAS ONLY — FOOD SAFETY!", "LUNCH BELL'S GONNA LOVE THIS"],
+      rough: ["OOH, WE'RE BUSY!", "KEEP UP, HEROES!", "TRAYS PILING UP!", "STEADY NOW, STEADY",
+              "C'MON BILLY, FOCUS!", "THE BELL'S COMING!", "DEEP BREATH — HUSTLE!", "ALMOST UNDERWATER!"],
+    },
+    // school Billy is friendly + a little distracted — kind, never roasted
+    excuses: ["helping a friend", "counting milks", "found a hairnet", "tying his apron",
+              "fetching trays", "wiping a spill", "back in a sec!", "being helpful(?)"],
+    barker: ["EVERYONE LOVES BURGER DAY", "SCHOOL LUNCH · MADE WITH LOVE", "GREAT JOB, TEAM ♥",
+             "MILK FOR EVERYONE", "WASH YOUR HANDS, HEROES", "ANDERS APPROVED ✓",
+             "PATTY & CHRISSY, LUNCH-LADY HEROES",
+             "NO HANDS ON THE FOOD · TWO SPATULAS, EVERY TRAY · IT'S ALL ABOUT FOOD SAFETY"],
+  },
+};
+const activeTheme = () => (scene === "play" && game) ? game.theme : menu.theme;
+const pick = (arr, periodMs) => arr[Math.floor(performance.now() / periodMs) % arr.length];
+// shift mood for the chatter: "rough" once the line backs up or the weeds climb, else "good"
+function shiftMood(s) {
+  const wf = pm.WAIT_FULL ? s.wait / pm.WAIT_FULL : 0;
+  return (pm.buried_index(s) >= pm.BURIED_RESTLESS || wf >= 0.5) ? "rough" : "good";
+}
+// marquee + attract stay upbeat (advertising surfaces) → always the `good` pool
+const grillTip = () => pick(FLAVOR[activeTheme()].chatter.good, 2600);
+// ------ House rules, posted by the register (cabinet-only easter eggs; engine never sees them) ------
+//   1. Patty cooks. Billy expedites. Billy is "expediting" (he is on his phone).
+//   2. If Billy flakes, hit the espresso machine: Konami it — Up Up Down Down Left Right Left Right B A.
+//   3. Health inspector gave us a B+. We framed it. It is on the wall. Do not look behind it.
+//   4. Type WALTER for the house motto. Type BILLY and he'll wave (he will not work any harder).
+//   5. "for Christine & Phillip Coleman" — the only rule that actually matters.
+
+// ====================================================================== AUDIO
+// Zero-dependency WebAudio (synthesized — no asset files, runs off file://). It
+// READS engine state only; it NEVER touches the deterministic engine (no RNG into
+// gameplay). Action sounds fire from the input handlers (success-gated by the
+// engine's _say flash); consequence sounds fire from a PURE per-tick state diff
+// (audioEvents, proven headless). The singing-spatula FLIP is the signature voice
+// ("her spatulas sing as loud as she does"). The speaker (top-right) toggles mute.
+function audioSnap(s) {
+  return { served:s.served, sent_back:s.sent_back, fails:s.fails, combo:s.combo, won:s.won, over:s.over };
+}
+function audioEvents(prev, s, FLOW) {                 // PURE — tested in node, keep in sync
+  const ev = [];
+  if (!prev) return ev;
+  if (s.served < prev.served || s.fails < prev.fails || s.sent_back < prev.sent_back) return ev; // new game/round
+  if (s.served > prev.served) ev.push({ t:"serve", combo:s.combo });
+  if (s.sent_back > prev.sent_back) ev.push({ t:"sentback" });
+  const burntOrLost = (s.fails - prev.fails) - (s.sent_back - prev.sent_back);
+  for (let i = 0; i < burntOrLost; i++) ev.push({ t:"fail" });
+  if (prev.combo < FLOW && s.combo >= FLOW) ev.push({ t:"flow" });
+  if (s.won && !prev.won) ev.push({ t:"win" });
+  if (s.over && !prev.over) ev.push({ t:"over" });
+  return ev;
+}
+
+class AudioBus {
+  constructor() { this.ctx = null; this.master = null; this.sizzle = null; this.crowd = null;
+    this.noiseBuf = null; this.muted = false;
+    try { this.muted = localStorage.getItem("pattymelt.muted") === "1"; } catch {} }
+  on() { return this.ctx && !this.muted; }
+  ensure() {                                          // lazy — must follow a user gesture
+    if (this.ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try {
+      this.ctx = new AC();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = this.muted ? 0 : 0.45;
+      this.master.connect(this.ctx.destination);
+      const len = Math.floor(this.ctx.sampleRate * 1.2);
+      this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+      const d = this.noiseBuf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;   // decoration RNG only
+      const bed = (lp) => { const src = this.ctx.createBufferSource(); src.buffer = this.noiseBuf; src.loop = true;
+        const f = this.ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = lp;
+        const g = this.ctx.createGain(); g.gain.value = 0; src.connect(f).connect(g).connect(this.master);
+        src.start(); return g; };
+      this.sizzle = bed(2000);   // griddle hiss
+      this.crowd = bed(360);     // diner murmur
+    } catch { this.ctx = null; }
+  }
+  resume() { if (this.ctx && this.ctx.state === "suspended") this.ctx.resume(); }
+  setMuted(m) { this.muted = m; try { localStorage.setItem("pattymelt.muted", m ? "1" : "0"); } catch {}
+    if (this.master) this.master.gain.value = m ? 0 : 0.45; }
+  // --- synth primitives ---
+  _tone(t0, f0, f1, dur, type, peak) {
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = type; o.frequency.setValueAtTime(f0, t0);
+    if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t0 + dur);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(peak, t0 + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g).connect(this.master); o.start(t0); o.stop(t0 + dur + 0.03);
+  }
+  _noise(t0, dur, lp, peak) {
+    const src = this.ctx.createBufferSource(), f = this.ctx.createBiquadFilter(), g = this.ctx.createGain();
+    src.buffer = this.noiseBuf; f.type = "lowpass"; f.frequency.value = lp;
+    g.gain.setValueAtTime(peak, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(f).connect(g).connect(this.master); src.start(t0); src.stop(t0 + dur + 0.03);
+  }
+  _arp(notes, step, dur, type, peak) { if (!this.on()) return; const t = this.ctx.currentTime;
+    notes.forEach((f, i) => this._tone(t + i * step, f, f, dur, type, peak)); }
+  // --- voices ---
+  spatula() { if (!this.on()) return; const t = this.ctx.currentTime;     // singing two-note ting
+    this._tone(t, 720, 1180, 0.10, "triangle", 0.22);
+    this._tone(t + 0.06, 1180, 1560, 0.09, "triangle", 0.17);
+    this._tone(t, 2200, 2500, 0.05, "square", 0.035); }
+  fwump() { if (!this.on()) return; const t = this.ctx.currentTime;       // cheese plop
+    this._noise(t, 0.13, 850, 0.45); this._tone(t, 190, 95, 0.13, "sine", 0.12); }
+  holler() { if (!this.on()) return; const t = this.ctx.currentTime;      // "hey!" two-syllable
+    this._noise(t, 0.09, 1300, 0.16);
+    this._tone(t, 430, 520, 0.10, "square", 0.10); this._tone(t + 0.1, 520, 300, 0.10, "square", 0.085); }
+  bell(combo) { if (!this.on()) return; const t = this.ctx.currentTime;   // order-up ding, rises with combo
+    const f = 660 + Math.min(combo, 10) * 46;
+    this._tone(t, f, f, 0.22, "sine", 0.20); this._tone(t, f * 2.01, f * 2.01, 0.22, "sine", 0.06);
+    this._tone(t + 0.015, f * 1.5, f * 2.3, 0.07, "square", 0.05); }   // coin blip
+  buzzer() { if (!this.on()) return; const t = this.ctx.currentTime;     // sour fail
+    this._tone(t, 210, 120, 0.22, "sawtooth", 0.16); this._noise(t, 0.10, 1400, 0.16); }
+  flow() { this._arp([523, 659, 784, 1047], 0.06, 0.12, "triangle", 0.16); }       // BIG GRILL ENERGY
+  win() { this._arp([523, 659, 784, 1047, 1319], 0.10, 0.30, "triangle", 0.18); }  // round clear
+  over() { this._arp([392, 330, 294, 247], 0.13, 0.34, "sawtooth", 0.16); }        // BILLY'S FIRED
+  fire(ev) {
+    switch (ev.t) {
+      case "serve": this.bell(ev.combo); break;
+      case "flow":  this.flow(); break;
+      case "sentback":
+      case "fail":  this.buzzer(); break;
+      case "win":   this.win(); break;
+      case "over":  this.over(); break;
+    }
+  }
+  setBed(active, buried) { if (!this.ctx) return; const t = this.ctx.currentTime;
+    const sz = active ? 0.035 + buried * 0.05 : 0;
+    const cr = active ? 0.02 + buried * 0.10 : 0;
+    this.sizzle.gain.setTargetAtTime(sz, t, 0.25);
+    this.crowd.gain.setTargetAtTime(cr, t, 0.4); }
+}
+const audio = new AudioBus();
+let audioPrev = null;
+function audioTick(s) {                              // per SIM tick: fire consequence sounds
+  for (const e of audioEvents(audioPrev, s, pm.FLOW_COMBO)) audio.fire(e);
+  audioPrev = audioSnap(s);
+}
+
+// ---------- SERVE HANDOFF FX (render-only, parity-safe): the payoff the engine omits ----------
+// A successful Billy serve just nulls the slot in the engine — there's no on-screen beat, so the
+// hand-off (the whole point of the cook) reads as the burger silently vanishing. We DIFF state per
+// sim tick (the audioEvents pattern) and spawn a transient chit at the served slot: an "ORDER UP!"
+// pop rising off the plate, or a red "SENT BACK" reject. Also lights billyServeFlash so the expo
+// visibly reacts. Scoped to the LIVE game only (demo reuses none of this) — no shared-state bleed.
+let fx = [], fxPrev = null, billyServeFlash = 0, lastServeSlot = -1;
+function fxReset() { fx = []; fxPrev = null; billyServeFlash = 0; lastServeSlot = -1; }
+function fxSnap(s) {
+  return { served: s.served, sent_back: s.sent_back,
+           slots: s.slots.map((p) => p ? { stage: p.stage, under: p.understeared, item: p.item } : null) };
+}
+function fxTick(s) {
+  const prev = fxPrev; fxPrev = fxSnap(s);
+  if (!prev) return;
+  if (s.served < prev.served || s.sent_back < prev.sent_back) return;   // new round/game — don't spawn
+  const servedUp = s.served - prev.served, sentUp = s.sent_back - prev.sent_back;
+  if (!servedUp && !sentUp) return;
+  // find the slot that LEFT the DONE stage this tick (Billy serves one/tick). A served slot can be
+  // refilled from the pile in the same tick(), so "gone" = now empty OR replaced by a brand-new patty.
+  for (let i = 0; i < s.slots.length; i++) {
+    const was = prev.slots[i]; if (!was || was.stage !== pm.Stage.DONE) continue;
+    const now = s.slots[i];
+    if (now !== null && now.born !== s.ticks) continue;                 // still the same DONE patty
+    if (was.under && sentUp) fx.push({ slot: i, born: performance.now(), kind: "sentback" });
+    else if (servedUp) {
+      fx.push({ slot: i, born: performance.now(), kind: "serve", combo: s.combo, item: was.item,
+                pts: (pm.SERVE_POINTS + pm.PERFECT_BONUS) * pm.combo_mult(s.combo) });
+      billyServeFlash = performance.now(); lastServeSlot = i;
+    }
+    break;
+  }
+  if (fx.length > 12) fx = fx.slice(-12);                              // cap (purely cosmetic)
+}
+
+function actionSfx() {                               // after a P1/P2 input: success-gated action sound
+  if (!game || game.flash_t !== pm.TPS) return;      // _say fired this press == it succeeded
+  const f = game.flash;
+  if (f === "FLIP!") audio.spatula();
+  else if (f === "CHEESE!") audio.fwump();
+  else if (f.indexOf("BILLY") !== -1) audio.holler();
+}
+function wakeAudio() { audio.ensure(); audio.resume(); }
+
+const muteBtn = document.getElementById("mute");
+function syncMute() { muteBtn.textContent = audio.muted ? "✕" : "♪"; muteBtn.classList.toggle("off", audio.muted); }
+muteBtn.addEventListener("pointerdown", (e) => {
+  e.preventDefault(); e.stopPropagation(); wakeAudio(); audio.setMuted(!audio.muted); syncMute();
+});
+syncMute();
+
+// desktop cabinet mode: fill the screen with the cab (F11 also works natively)
+document.getElementById("fs").addEventListener("pointerdown", (e) => {
+  e.preventDefault(); e.stopPropagation();
+  try { if (document.fullscreenElement) document.exitFullscreen();
+    else document.getElementById("cab").requestFullscreen(); } catch {}
+});
+
+// ---------- CABINET ART: baked 1UP render as the frame; live canvas in the screen cutout ----------
+const cabEl = document.getElementById("cab");
+const cabart = document.getElementById("cabart");
+const cabframe = document.getElementById("cabframe");
+// % of the cab-1up.png screen cutout — MEASURED from the art (PIL bbox of the black screen),
+// then fitted to the 720x600 canvas aspect & centered (slivers are black-on-black). Tune via "rect".
+// MEASURED from the current 0613 1up art (cab-1up-diner / cab-1up-popup, identical body geometry):
+// black-screen interior bbox = sl35.2/st41.9/sw23.8/sh20.4 (1271x1238 render), ~6:5 so the canvas fills clean.
+// (Was sl37.1/st28.7 for the retired "1 up MELT" art — that put the canvas up in the marquee.) Fine-tune via `rect`.
+const DEFAULT_RECT = { sl:35.2, st:41.9, sw:23.8, sh:20.4 };
+
+// ---------- THE CAB SELECT: ?cab=diner|popup (the two 1UP machines) ----------
+// DINER  = the 1UP ARCADE, the original (burger only, the shifts in their glory).
+// POP UP = the JAILBREAK (FULL MENU recipes — the uncut feed).        ← variety lives here + the 2up cabs.
+// HEROES is now a 2UP-ONLY machine (web/kitchen.html?frame=2up-heroes, art cab-2up-heroes.png). The old
+// 1up "school" cab (cab-1up-school.png) was a landscape dual-deck render with NO screen cutout — RETIRED to
+// PATTY MELT/old/ (the museum). The school THEME still lives (EDITIONS "TEACHING" runs it in the diner body).
+// The cab picks the art frame + screen rect + marquee + theme + item sequence; the EDITIONS menu still
+// sets the shift (grill × headcount × mode) within it. Default = the original (diner).
+const CABS = {
+  diner:  { art:"cab-1up-diner.png",  title:"PATTY MELT",          sub:"BIG GRILL ENERGY",
+            theme:"diner",  items:null,             defaultEd:1, rect:DEFAULT_RECT },
+  popup:  { art:"cab-1up-popup.png",  title:"PATTY'S POP-UP",      sub:"FULL MENU · JAILBREAK",
+            theme:"diner",  items:"ITEMS_FULL_MENU", defaultEd:2, rect:DEFAULT_RECT },
+  // HEROES (school) — the free cafeteria edition serves the WHOLE menu incl. grilled cheese (kids' favorite)
+  heroes: { art:"cab-1up-diner.png",  title:"PATTY MELT'S HEROES", sub:"SCHOOL LUNCH · FULL MENU",
+            theme:"school", items:"ITEMS_FULL_MENU", defaultEd:0, rect:DEFAULT_RECT },
+};
+const CAB_ID = (new URLSearchParams(location.search).get("cab") || "diner").toLowerCase();
+const activeCab = CABS[CAB_ID] || CABS.diner;
+const cabItems = () => activeCab.items ? pm[activeCab.items] : null;   // the engine item sequence (or null = burger)
+cabart.src = "assets/cab/" + activeCab.art;                         // swap the baked frame to this cab
+document.getElementById("mq-t").textContent = activeCab.title;         // CSS-fallback marquee (art carries its own)
+document.getElementById("mq-s").textContent = activeCab.sub;
+// FULL MENU cab (grilled cheese + patty melt) → reveal the TOAST button (4-button deck)
+{ const _it = cabItems(); if (_it && _it.some((x) => x !== pm.Item.BURGER)) document.body.classList.add("fullmenu"); }
+
+let srect = loadRect();
+function loadRect() {
+  try { const r = JSON.parse(localStorage.getItem("pattymelt.screenrect." + CAB_ID));   // per-cab (bodies differ)
+    if (r && ["sl","st","sw","sh"].every(k => typeof r[k] === "number")) return r; } catch {}
+  return { ...activeCab.rect };
+}
+function applyRect() {
+  for (const k of ["sl","st","sw","sh"]) {
+    cabEl.style.setProperty("--" + k, srect[k] + "%");
+    const el = document.getElementById("v-" + k); if (el) el.textContent = srect[k] + "%";
+  }
+}
+const Q = new URLSearchParams(location.search);
+const BARE = Q.has("bare");                                       // QA/embed: full-screen canvas, no cab chrome
+const VIEW = (Q.get("view") || "").toLowerCase();
+const PANEL = VIEW === "panel" || VIEW === "desktop";   // PLAYABLE view: cab-zoom intro → desktop + control-panel layout
+if (BARE) document.body.classList.add("bare");
+cabart.addEventListener("load", () => {                  // the art exists → become the cabinet
+  if (BARE) return;                                      // bare mode wants the big canvas, not the cab render
+  cabframe.style.setProperty("--cab-arw", cabart.naturalWidth);
+  cabframe.style.setProperty("--cab-arh", cabart.naturalHeight);
+  cabframe.style.setProperty("--cab-ar", cabart.naturalWidth + "/" + cabart.naturalHeight);
+  if (PANEL) { playCabIntro(); return; }                 // panel mode: keep the deck layout, play the zoom intro over it
+  cabEl.classList.add("art"); applyRect();
+});
+
+// ---------- CAB INTRO (panel mode): push the camera INTO the cab monitor, then reveal the deck layout ----------
+// The deck/panel cabinet is already live underneath (running attract), so the cut is seamless: you watch the
+// beauty cab, the view zooms into its screen, then it fades to the big, actually-playable panel build.
+function playCabIntro() {
+  const intro = document.getElementById("cabintro");
+  const introArt = document.getElementById("cabintro-art");
+  if (!intro || !introArt) return;
+  introArt.style.setProperty("--zx", (srect.sl + srect.sw / 2) + "%");   // zoom toward the screen cutout center
+  introArt.style.setProperty("--zy", (srect.st + srect.sh / 2) + "%");
+  introArt.src = cabart.src;                              // already cached (cabart loaded) → shows instantly
+  intro.hidden = false;
+  let done = false;
+  const finish = () => {
+    if (done) return; done = true;
+    intro.classList.add("fade");
+    setTimeout(() => { intro.hidden = true; }, 600);
+  };
+  intro.addEventListener("pointerdown", finish, { once:true });          // CLICK TO SKIP
+  setTimeout(finish, 2450);                               // ...or auto-cut once the push lands
+}
+cabart.addEventListener("error", () => {});              // no file yet → keep the CSS-cabinet fallback
+applyRect();
+
+// ---------- GINGHAM SCREEN BEZEL: red=diner / blue=school, swaps with the skin ----------
+// A picnic-check frame around the play area (the place's tablecloth). The image sits BEHIND
+// the canvas; the canvas insets `--bz` (6% = the gingham border width) so only the frame shows.
+// Image-presence driven (like the cab render): absent file → no gingham, original screen.
+const bezelArt = document.getElementById("bezelart");
+const BEZEL_SRC = { diner: "assets/cab/RED%20GINGHAM%20BEZEL.png", school: "assets/cab/blue%20GINGHAM%20BEZEL.png" };
+bezelArt.addEventListener("load", () => document.body.classList.add("gingham"));
+bezelArt.addEventListener("error", () => {});            // no file → CSS screen frame stays
+let bezelTheme = null;
+function syncBezel() {                                   // swap red/blue with the active theme
+  const th = activeTheme();
+  if (th === bezelTheme) return;
+  bezelTheme = th;
+  bezelArt.src = BEZEL_SRC[th] || BEZEL_SRC.diner;       // change triggers (re)load
+}
+// NOTE: first call comes from render() — NOT here — because activeTheme() reads `menu`,
+// which is declared further down (calling it at setup time is a temporal-dead-zone crash).
+
+// ---------- in-screen GRILL SPRITES: real art per cook stage, vector fallback per-sprite ----------
+const GRILL_SPR = {};
+const SPR_FILES = { raw:"patty-raw", seared:"patty-seared", done:"patty-done", burnt:"patty-burnt",
+                    plate_diner:"plate-diner", tray_school:"tray-school",     // empty-slot art (theme-aware)
+                    bread:"bread", bread_rye:"bread-rye",                     // FULL MENU: grilled cheese + patty-melt lid
+                    cheese_fresh:"cheese-fresh", cheese_melting:"cheese-melting", cheese_burnt:"cheese-burnt" };
+for (const [k, f] of Object.entries(SPR_FILES)) {       // cut from the sheets (tools/cut_sheet.py / crop.py)
+  const im = new Image();
+  im.onload = () => { GRILL_SPR[k] = im; };              // appears the instant the file loads; absent = vector
+  im.src = "assets/sprites/grill/" + f + ".png";
+}
+PMSpat.load("assets/sprites/grill/");                  // THE TWO-SPATULA MANDATE (lib/spatulas.js): no hands on the food
+const SPAT_FOOD = { raw:"raw", seared:"seared", done:"done", burnt:"burnt", cheese:"cheese_fresh", bread:"bread", rye:"bread_rye" };
+const spatFood = (n) => GRILL_SPR[SPAT_FOOD[n]] || null;
+const slotArt = (s) => s.theme === "school" ? GRILL_SPR.tray_school : GRILL_SPR.plate_diner;  // diner plate / school tray
+
+// ---------- EVENT CALLOUTS: UH-OH! / OOPS! / FOCUS, BILLY! stickers (from PLATES AND TRAYS) ----------
+const CALLOUT = {};
+for (const [k, f] of [["uhoh","callout-uhoh"], ["oops","callout-oops"], ["focus","callout-focus"]]) {
+  const im = new Image(); im.onload = () => { CALLOUT[k] = im; }; im.src = "assets/sprites/ui/" + f + ".png";
+}
+const FORCE_CO = Q.get("co");                            // QA hook (tools/shot.mjs): ?co=uhoh|oops|focus
+function calloutFor(s) {                                 // which sticker to pop, if any
+  if (FORCE_CO && CALLOUT[FORCE_CO]) return CALLOUT[FORCE_CO];
+  if (s.flash === "BURNT!" || s.flash === "ORDER LOST!") return CALLOUT.uhoh;
+  if (s.flash === "SENT BACK!") return CALLOUT.oops;     // raw served back
+  // Billy slacking: a DONE burger jamming a slot while the expo's checked out → nudge him (blink)
+  if (s.flash_t === 0 && s.billy < s.cfg.billy_serve_min && Math.floor(s.ticks / pm.TPS) % 3 === 0
+      && s.slots.some((p) => p && p.stage === pm.Stage.DONE)) return CALLOUT.focus;
+  return null;
+}
+function drawCallout(im, cx, cy, scale) {
+  const dw = Math.min(W * 0.36, im.width) * scale, dh = dw * im.height / im.width;
+  ctx.drawImage(im, cx - dw/2, cy - dh/2, dw, dh);
+}
+
+// ---------- GRILL-STATE BACKGROUND: the flat-top art swaps with how buried the line is ----------
+// Baked panels (CLASSIC GRILL WORK sheet) cut to assets/sprites/grill/grill-<state>.png.
+// Absent = the vector gradient griddle stays the fallback (game always playable).
+const GRILL_BG = {};
+for (const n of ["empty", "cluttered", "steaming", "overloaded", "disaster"]) {
+  const im = new Image();
+  im.onload = () => { GRILL_BG[n] = im; };
+  im.src = "assets/sprites/grill/grill-" + n + ".png";
+}
+// buried_index → grill state, on the mapped mood bands (palette.md: cool ≤0.3 ·
+// restless ≥0.55 · barking ≥0.78). EMPTY→CLUTTERED→STEAMING→OVERLOADED→DISASTER(flames).
+function grillBgFor(b) {
+  if (b >= pm.BURIED_BARKING) return GRILL_BG.disaster;      // ≥0.78 — barking / on fire
+  if (b >= pm.BURIED_RESTLESS) return GRILL_BG.overloaded;   // ≥0.55 — restless → hot
+  if (b >= 0.30) return GRILL_BG.steaming;                   // warming up (cool ceiling)
+  if (b >= 0.15) return GRILL_BG.cluttered;                  // cool — a few going
+  return GRILL_BG.empty;                                     // clean grill
+}
+
+// ---------- IDENT logos: the CASTLE GRILLSCREEN neon cold-open (house pattern) ----------
+const IDENT = {};
+for (const [k, f] of [["grill", "ident-grillscreen"], ["flames", "ident-grillscreen-flames"], ["ck", "ident-killscreen"]]) {
+  const im = new Image(); im.onload = () => { IDENT[k] = im; }; im.src = "assets/logo/" + f + ".png";
+}
+
+// ---------- CHARACTER sprites — the cast seam (Patty/Chrissy avatars + Billy the expo) ----------
+// Drop art into assets/chars/ and it lights up on reload; absent = the built-in vector read stays
+// (the house "missing file degrades gracefully" rule). Billy is STATE-keyed (slack/serve/turn) so
+// the expo visibly reads busy-vs-slacking — the gap that made the line "just happen to you".
+// THEME-KEYED (cast manifest, docs/CAST_SPRITES.md): diner + school are SEPARATE reskins.
+//   billy-<state>.png         = diner skin (default)
+//   billy-school-<state>.png  = school/HEROES reskin
+// School falls back to diner art if its file is absent, then to the meter+word read.
+// PATTY is POSE-keyed (idle/flip/serve/cheer) — the four action poses Joe delivered map to engine
+// flashes exactly like Billy's slack/serve/turn, so the cook visibly REACTS to her own grill work
+// (cut from refs/chars-master via tools/cut_chars.py). Absent art = the spatula cursor carries her.
+const PATTY = {}, CHRISSY = {}, BILLY = { diner: {}, school: {} };
+for (const st of ["idle", "flip", "serve", "cheer"]) {
+  const im = new Image(); im.onload = () => { PATTY[st] = im; }; im.src = "assets/chars/patty-" + st + ".png";
+}
+// CHRISSY "the Relief" (2-UP P2) — 3 poses cut from her turnaround sheet (serve falls back to idle).
+for (const st of ["idle", "flip", "cheer"]) {
+  const im = new Image(); im.onload = () => { CHRISSY[st] = im; }; im.src = "assets/chars/chrissy-" + st + ".png";
+}
+for (const th of ["diner", "school"]) for (const st of ["slack", "serve", "turn"]) {
+  const im = new Image(); im.onload = () => { BILLY[th][st] = im; };
+  im.src = "assets/chars/billy-" + (th === "school" ? "school-" : "") + st + ".png";
+}
+// pick Billy's pose art for a theme+state, school→diner fallback (absent = caller draws the meter read)
+function billyPose(theme, st) { const t = theme === "school" ? "school" : "diner";
+  return (BILLY[t] && BILLY[t][st]) || BILLY.diner[st] || null; }
+// Billy's read-state from pure engine values — ONE source of truth that drives the meter color,
+// the state word, the per-slot HEY-BILLY nudge, AND which Billy pose to draw. Returns:
+//   turn  = 2P mid-swing (serving no one)   serve = just served (brief flash)
+//   onit  = at/above the serve threshold    slack = below it (needs a holler)
+function billyState(s) {
+  if (window.__billyForce) return window.__billyForce; // QA
+  if (s.billy_turn_t > 0) return "turn";
+  if (performance.now() - billyServeFlash < 380) return "serve";
+  return s.billy >= s.cfg.billy_serve_min ? "onit" : "slack";
+}
+// Patty's reactive pose from pure engine signals (render-only, mirrors billyState — reads s + the
+// render-side serve flash, never mutates). serve > flip > cheer > idle. A brief HOLD keeps a
+// reaction on screen long enough to read instead of strobing back to idle the next frame.
+let _pbPose = "idle", _pbHoldUntil = 0;
+function pattyState(s) {
+  if (s.won) return "cheer";                                        // round clear — she celebrates
+  if (s.over) return "idle";
+  const now = performance.now();
+  let want = "idle";
+  if (now - billyServeFlash < 300) want = "serve";                 // a burger just went out the window
+  else if (s.flash === "FLIP!" || s.flash === "CHEESE!" || s.flash === "TOAST!") want = "flip";  // mid-action
+  else if (s.combo >= pm.FLOW_COMBO) want = "cheer";               // BIG GRILL ENERGY — she's rockin'
+  if (want !== "idle") { _pbPose = want; _pbHoldUntil = now + 380; }
+  else if (now < _pbHoldUntil) want = _pbPose;                     // hold the last reaction briefly
+  return want;
+}
+const pattyPose = (st) => PATTY[st] || PATTY.idle || null;
+const chrissyPose = (st) => CHRISSY[st] || CHRISSY.idle || null;   // 2-UP relief; serve→idle fallback
+// COOK BUSTS — the cook(s) as a lower-corner foreground bust, reacting to the grill (Joe's call).
+// Patty lower-LEFT (P1); Chrissy lower-RIGHT, mirrored to face inward (P2, 2-UP only). Render-only;
+// absent art = nothing drawn (the spatula cursors already represent them on the grill). The width
+// helpers let drawDinerStrip inset its content so the regulars don't collide with a cook.
+const PATTY_BUST_H = 196;                                          // visible height, bottom-anchored at the floor
+function bustWidth(poseFn, s) {
+  const pose = poseFn(pattyState(s));
+  return pose ? PATTY_BUST_H * pose.width / pose.height : 0;
+}
+function drawBust(poseFn, s, side) {
+  const st = pattyState(s), pose = poseFn(st);
+  if (!pose) return 0;
+  const ph = PATTY_BUST_H, pw = ph * pose.width / pose.height;
+  const bob = (st === "cheer" ? Math.sin(performance.now() / 110) * 2.5 : Math.sin(performance.now() / 520) * 1.2);
+  const baseY = H - 2, ty = baseY - ph + bob;
+  const x = side === "right" ? W - 4 - pw : 4;
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.30)"; ctx.beginPath();            // soft contact shadow — she stands in front of the house
+  ctx.ellipse(x + pw * 0.5, baseY - 4, pw * 0.42, 8, 0, 0, 7); ctx.fill();
+  if (side === "right") { ctx.translate(x + pw, ty); ctx.scale(-1, 1); ctx.drawImage(pose, 0, 0, pw, ph); }  // face inward
+  else ctx.drawImage(pose, x, ty, pw, ph);
+  ctx.restore();
+  return pw;
+}
+const pattyBustWidth = (s) => bustWidth(pattyPose, s);
+const chrissyBustWidth = (s) => s.players.length === 2 ? bustWidth(chrissyPose, s) : 0;
+// BILLY at the PASS — the expo kid himself, standing at the counter between the grill and the house,
+// reacting to his own meter (serve = presenting the order · turn = hustling over · slack = collapsed,
+// checked out). billyState already keys the meter/word; we reuse it so the figure and the bar can't
+// disagree (onit shows the attentive serve pose). He's a touch smaller + feet higher than the cooks
+// (he's a step back at the pass), right-of-center, mirrored to face the grill. Absent art = the
+// meter+word carries him, exactly as before.
+const BILLY_PASS_H = 150, BILLY_PASS_CX = 0.70;                    // height · center as a fraction of W
+function billyArt(s) {
+  const st = billyState(s);
+  return billyPose(s.theme, st === "onit" ? "serve" : st);
+}
+function drawBillyPass(s) {
+  const pose = billyArt(s);
+  if (!pose) return;
+  const ph = BILLY_PASS_H, pw = ph * pose.width / pose.height;
+  const bob = Math.sin(performance.now() / 480) * 1.4;
+  const feetY = 486, ty = feetY - ph + bob, cx = W * BILLY_PASS_CX;
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.28)"; ctx.beginPath();            // contact shadow on the pass counter
+  ctx.ellipse(cx, feetY - 3, pw * 0.4, 7, 0, 0, 7); ctx.fill();
+  ctx.translate(cx + pw / 2, ty); ctx.scale(-1, 1);               // mirror → faces left, into the grill
+  ctx.drawImage(pose, 0, 0, pw, ph);
+  ctx.restore();
+}
+function drawCookBusts(s) {                                        // Billy at the pass (behind), then the cook(s) in front
+  drawBillyPass(s);
+  drawBust(pattyPose, s, "left");
+  if (s.players.length === 2) drawBust(chrissyPose, s, "right");
+}
+const zoneHasDone = (s) => s.slots.some((p) => p && p.stage === pm.Stage.DONE);
+// draw a neon-on-black logo with additive glow + a blurred bloom halo
+function drawIdent(im, cx, cy, scale, alpha) {
+  if (!im || !im.width) return false;
+  const fit = Math.min(W * 0.72 / im.width, H * 0.52 / im.height) * scale;
+  const dw = im.width * fit, dh = im.height * fit;
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";        // neon adds; the black bg contributes nothing
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  try { ctx.filter = "blur(7px)"; ctx.drawImage(im, cx - dw/2, cy - dh/2, dw, dh); ctx.filter = "none"; } catch {}
+  ctx.drawImage(im, cx - dw/2, cy - dh/2, dw, dh);
+  ctx.restore();
+  return true;
+}
+
+// GRILL ZONES — where each engine slot DRAWS. Pure layout: the slot COUNT is pm.SLOTS
+// (balance-locked, parity), only POSITIONS live here. Switch COLS/ROWS to fit a painted
+// grill (e.g. the BIG HEROES flat-top) without touching the engine. COLS*ROWS must == SLOTS.
+function grillZones(area, n) {                            // one row of `n` slots — GRILL-SIZE aware
+  const cols = n || pm.SLOTS, rows = 1;                   // (editions vary the grill; default = 6)
+  const gx = area.w * 0.011, gyy = area.h * 0.07;
+  const cw = (area.w - gx * (cols + 1)) / cols, ch = (area.h - gyy * (rows + 1)) / rows;
+  const z = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++)
+    z.push({ x: area.x + gx + c * (cw + gx), y: area.y + gyy + r * (ch + gyy), w: cw, h: ch });
+  return z;
+}
+// JOE'S SWISS (1027, lib/spatulas.js): on a melt in MELT/DONE the draped-Swiss art (slice over its own patty) IS the
+// item — fresh ▸ melting ▸ browned off the engine's stage + cook. Burgers keep the American ladder. null = no art.
+const swissDraped = (p) => { const st = PMSpat.swissStage(p); return st ? PMSpat.topping("swiss-" + st + "-draped") : null; };
+function pattySprite(p) {
+  const sw = swissDraped(p); if (sw) return sw;
+  // GRILLED CHEESE has no beef — its BASE is always bread (cheese is overlaid on melt/done below)
+  if (p.item === pm.Item.GRILLED_CHEESE) {
+    if (p.stage === pm.Stage.BURNT) return GRILL_SPR.burnt;
+    return GRILL_SPR.bread || GRILL_SPR.seared;
+  }
+  // HAMBURGER is plain — no cheese; once cooked it's just the seared patty (no melt-cheese sprite)
+  if (p.item === pm.Item.HAMBURGER && (p.stage === pm.Stage.MELT || p.stage === pm.Stage.DONE)) return GRILL_SPR.seared;
+  // BURGER + PATTY MELT + DOUBLE share the beef ladder (the melt gets a bread lid via pattyOverlay)
+  if (p.stage === pm.Stage.SEAR_A) return GRILL_SPR.raw;
+  if (p.stage === pm.Stage.SEAR_B) return GRILL_SPR.seared;
+  if (p.stage === pm.Stage.TOAST)  return GRILL_SPR.seared;
+  if (p.stage === pm.Stage.MELT || p.stage === pm.Stage.DONE) return GRILL_SPR.done;
+  if (p.stage === pm.Stage.BURNT) return GRILL_SPR.burnt;
+  return null;
+}
+// composited topper drawn OVER the base: cheese on a grilled-cheese melt, a bread lid on a patty melt
+function pattyOverlay(p) {
+  if (p.item === pm.Item.GRILLED_CHEESE) {
+    if (p.stage === pm.Stage.MELT) return { img: GRILL_SPR.cheese_melting, scale: 0.78, dy: 0.04 };
+    if (p.stage === pm.Stage.DONE) return { img: GRILL_SPR.cheese_fresh,   scale: 0.78, dy: 0.04 };
+    if (p.stage === pm.Stage.BURNT) return { img: GRILL_SPR.cheese_burnt,  scale: 0.78, dy: 0.04 };
+  } else if (p.item === pm.Item.PATTY_MELT || p.item === pm.Item.SMASH_MELT) {
+    if (swissDraped(p)) return p.bunned ? { img: GRILL_SPR.bread_rye, scale: 0.9, dy: -0.16 } : null;   // Joe's Swiss shows until the rye joins
+    if (p.item === pm.Item.PATTY_MELT && (p.stage === pm.Stage.TOAST || p.stage === pm.Stage.MELT || p.stage === pm.Stage.DONE))
+      return { img: GRILL_SPR.bread_rye, scale: 1.0, dy: -0.26 };   // the rye lid sits on the patty (no Swiss art)
+  }
+  return null;
+}
+
+// ---------- THE DINING ROOM — the SHOW-DON'T-TELL scoreboard ----------
+// The house fills with demand; its MOOD is the WAIT meter. A packed, happy, tipping room = you're
+// winning. Antsy faces + walkouts = the weeds. You read the ROOM, not a number. (Pure render off
+// engine state — parity untouched. Ported/compacted from the 2up kitchen.html dining room.)
+const REGULARS_DINER = [
+  {name:"WALTER",shirt:"#b5352b"},{name:"DOT",shirt:"#2f6fb0"},{name:"GUS",shirt:"#3a7a3a"},
+  {name:"MAE",shirt:"#c9863f"},{name:"SAL",shirt:"#7a4d9c"},{name:"HANK",shirt:"#2a8a8a"},
+  {name:"RAE",shirt:"#c94f7a"},{name:"NED",shirt:"#8a7a2a"}];
+const REGULARS_SCHOOL = [
+  {name:"PIP",shirt:"#2f6fb0"},{name:"JUNE",shirt:"#c94f7a"},{name:"MO",shirt:"#3a7a3a"},
+  {name:"BEX",shirt:"#c9863f"},{name:"ACE",shirt:"#7a4d9c"},{name:"GIL",shirt:"#2a8a8a"},
+  {name:"SUE",shirt:"#b5352b"},{name:"TYE",shirt:"#8a7a2a"}];
+// the regulars ORDER — barked in-character when the engine mints a new ticket (the rush has a voice).
+const ORDER_BARKS = {
+  diner: {
+    BURGER: ["GIMME A CHEESEBURGER!","ANOTHER CHEESEBURGER!","CHEESEBURGER, CHAMP!","ONE CHEESE, BUDDY!",
+             "YO — CHEESEBURGER!","CHEESEBURGER. NOW.","MAKE IT A CHEESEBURGER!"],
+    HAMBURGER: ["JUST A HAMBURGER!","HOLD THE CHEESE, PAL!","ONE HAMBURGER, PLAIN!","NO CHEESE, BUDDY!","HAMBURGER — NO FRILLS!"],
+    DOUBLE_CHEESE: ["DOUBLE CHEESE, BUDDAY!","GIMME A DOUBLE!","TWO PATTIES, CHAMP!","DOUBLE UP, PAL!","THE BIG ONE — DOUBLE!"],
+    GRILLED_CHEESE: ["GRILLED CHEESE, PAL!","ONE GRILLED CHEESE!","CHEESE TOASTIE, CHAMP!","GIMME A GRILLED CHEESE!"],
+    PATTY_MELT: ["PATTY MELT, BUDDAY!","GIMME A MELT!","ONE MELT, SWEETHEART!","PATTY MELT, LET'S GO!"],
+  },
+  school: {
+    BURGER: ["CAN I GET A CHEESEBURGER?","CHEESEBURGER PLEASE!","OOH, A CHEESEBURGER!"],
+    HAMBURGER: ["JUST A HAMBURGER PLEASE!","NO CHEESE FOR ME!","PLAIN BURGER PLEASE!"],
+    DOUBLE_CHEESE: ["A DOUBLE?! WHOA!","DOUBLE CHEESE PLEASE!","TWO PATTIES!!"],
+    GRILLED_CHEESE: ["GRILLED CHEESE PLEASE!","CHEESE PLEASE!","ONE GRILLED CHEESE!"],
+    PATTY_MELT: ["A PATTY MELT?! YES!","MELT PLEASE!","CAN I GET A MELT?"],
+  },
+};
+let _dinScore = -1, _dinFails = -1, _dinDropped = -1; const dinerFx = [];
+
+// ---------- END-OF-SHIFT RECEIPT — old-time register + funny soda/fry sales + a Cheers-vibe shift line ----------
+const SHIFT_COMMENTS = {
+  great: ["Best shift all week — Walter had three.", "The grill never cooled and nobody waited.",
+          "Cheesiest night in Grillscreen history.", "Even the health inspector left happy."],
+  ok:    ["Solid shift. We're outta pickles.", "Held the line — Billy only wandered off twice.",
+          "Good burgers, Walter. Good burgers.", "Nobody walked. We'll call that a win."],
+  rough: ["Brutal rush — the fryer never cooled.", "We got buried, but the doors stayed open.",
+          "Survived it. Barely. Tip your cook.", "That, friends, was a Friday."],
+};
+function shiftReceipt(s) {
+  if (s.service) return { line:PMService.cashSummary(s), comment:"Actual served orders only; menu prices before tax. Arcade points are separate." };
+  const burgers = s.served || 0;
+  const sodas = burgers + Math.round(burgers * 0.5) + (s.combo_best || 0);   // everyone wants a pop
+  const fries = Math.round(burgers * 0.7) + 2;
+  const take  = burgers * 0.21 + sodas * 0.10 + fries * 0.15;                // 50s register, blended
+  const tier  = s.won ? "great" : (s.rnd >= 6 ? "ok" : "rough");
+  const pool  = SHIFT_COMMENTS[tier];
+  return { line: `HISTORICAL FLAVOR: SOLD ${burgers} burgers · ${sodas} sodas · ${fries} fries — TODAY'S TAKE $${take.toFixed(2)}`,
+           comment: pool[(burgers + s.rnd) % pool.length] };
+}
+function drawDinerStrip(s, leftInset = 0, rightInset = 0) {
+  const school = activeTheme() === "school", REG = school ? REGULARS_SCHOOL : REGULARS_DINER;
+  const r = { x:8, y:486, w:W-16, h:H-492 };
+  const ix = r.x + leftInset, iw = r.w - leftInset - rightInset;               // interior span — clears the cook bust(s)
+  ctx.fillStyle = "#16100c"; ctx.fillRect(r.x, r.y, r.w, r.h);                 // the room (full-width; Patty sits in front)
+  ctx.fillStyle = "rgba(255,200,120,.05)"; ctx.fillRect(r.x, r.y, r.w, 2);
+  ctx.fillStyle = "#3a241a"; ctx.fillRect(r.x, r.y + r.h - 14, r.w, 14);       // the counter
+  txt(school ? "THE STUDENT SECTION" : "THE HOUSE", ix + 10, r.y + 15, 12, COL.amber, "left", 800);
+  // serve (score up) = a tip ♥ ; fail (fails up) = a walkout — only after the counters are primed
+  if (_dinScore >= 0 && !s.won && !s.over) {
+    if (s.score > _dinScore) dinerFx.push({ k:"tip",  x: r.x + r.w*(0.18 + 0.64*((s.ticks%7)/7)), y: r.y + 34, t:0, life:55 });
+    if (s.fails > _dinFails) dinerFx.push({ k:"walk", x: r.x + r.w*0.4, y: r.y + r.h - 30, t:0, life:70 });
+  }
+  _dinScore = s.score; _dinFails = s.fails;
+  const wf = Math.min(1, s.wait / pm.WAIT_FULL), buried = pm.buried_index(s);  // patience = WAIT meter
+  const seated = Math.max(1, Math.round(2 + buried * (REG.length - 2)));        // room fills with demand
+  const T = performance.now() / 1000, baseY = r.y + r.h - 22;
+  const regCx = (i) => ix + 64 + i * ((iw - 116) / (REG.length - 1));
+  // a NEW order minted (s.dropped ↑) → a seated regular BARKS for it, in character (the rush gets a voice)
+  if (_dinDropped >= 0 && s.dropped > _dinDropped && !s.won && !s.over) {
+    const seq = (s.cfg && s.cfg.item_seq) || [];
+    const it = seq.length ? seq[((s.dropped - 1) % seq.length + seq.length) % seq.length] : pm.Item.BURGER;
+    const pool = ORDER_BARKS[school ? "school" : "diner"][it] || ORDER_BARKS.diner.BURGER;
+    const ri = seated > 0 ? (s.dropped * 3 + s.ticks) % seated : 0;
+    if (dinerFx.filter((f) => f.k === "bark").length < 4)
+      dinerFx.push({ k:"bark", ri, text: pool[(s.dropped + s.ticks) % pool.length], t:0, life:135 });
+  }
+  _dinDropped = s.dropped;
+  for (let i = 0; i < REG.length; i++) {
+    if (i >= seated) continue;
+    const cx = regCx(i), reg = REG[i];
+    const ang = Math.min(1, wf * (0.7 + 0.3 * ((i*7%5)/4)));
+    const cc = ang >= .78 ? COL.bad : ang >= .5 ? COL.amber : COL.good;
+    const bob = (ang >= .78 ? Math.sin(T*14+i)*2 : Math.sin(T*2.2+i*1.7)*1.4);
+    const hy = baseY - 13 + bob;
+    ctx.fillStyle = reg.shirt; ctx.fillRect(cx-9, baseY-5, 18, 13);            // shoulders
+    ctx.fillStyle = "#e8c9a0"; ctx.beginPath(); ctx.arc(cx, hy, 8, 0, 7); ctx.fill();   // head (bobs)
+    ctx.fillStyle = cc; ctx.beginPath(); ctx.arc(cx+8, hy-6, 3, 0, 7); ctx.fill();      // mood dot
+    if (ang >= .85) txt("!", cx, hy-12, 14, COL.bad, "center", 800);
+    else if (ang >= .58) txt("…", cx, hy-11, 13, COL.amber, "center", 800);
+  }
+  for (let i = dinerFx.length - 1; i >= 0; i--) {                              // tips fly up · walkouts · order barks
+    const f = dinerFx[i], k = f.t / f.life; f.t++;
+    if (f.k === "tip") txt("♥", f.x, f.y - k*22, 15, COL.cheese, "center", 800);
+    else if (f.k === "walk") { ctx.globalAlpha = 1 - k; txt("✗", f.x + k*60, f.y, 16, COL.bad, "center", 800); ctx.globalAlpha = 1; }
+    else if (f.k === "bark") {                                                 // a regular shouting their order
+      const w2 = f.text.length * 5.8 + 12;
+      const bx = Math.max(ix + w2/2 + 2, Math.min(ix + iw - w2/2 - 2, regCx(f.ri))), by = r.y + 30;
+      ctx.globalAlpha = k > 0.82 ? Math.max(0, (1 - k) / 0.18) : 1;
+      ctx.fillStyle = "rgba(8,6,4,.82)"; ctx.fillRect(bx - w2/2, by - 12, w2, 16);
+      ctx.fillStyle = COL.amber; ctx.fillRect(bx - w2/2, by - 12, w2, 1);
+      txt(f.text, bx, by, 11, COL.cream, "center", 800);
+      ctx.globalAlpha = 1;
+    }
+    if (f.t >= f.life) dinerFx.splice(i, 1);
+  }
+  if (s.combo >= pm.FLOW_COMBO)
+    txt(school ? "♥ THE CAFETERIA'S BUZZING ♥" : "♥ THE HOUSE IS PACKED & HAPPY ♥", r.x + r.w/2, r.y + r.h - 3, 11, COL.cheese, "center", 800);
+  if (s.combo >= pm.FLOW_COMBO) { ctx.fillStyle = "rgba(255,180,90,.07)"; ctx.fillRect(r.x, r.y, r.w, r.h); }   // warm when rockin'
+  if (buried > 0.4) { ctx.fillStyle = "rgba(200,30,20," + Math.min(.34,(buried-0.4)*0.7).toFixed(2) + ")"; ctx.fillRect(r.x, r.y, r.w, r.h); }  // red wash when buried
+}
+
+// screen-registration panel (type "rect" to toggle): nudge the cutout to the art, then SAVE.
+let regOpen = false;
+function toggleReg() { regOpen = !regOpen; document.getElementById("reg").hidden = !regOpen; cabEl.classList.toggle("reg", regOpen); }
+document.querySelectorAll("#reg button[data-f]").forEach(b => b.addEventListener("click", () => {
+  const f = b.dataset.f, d = parseFloat(b.dataset.d);
+  srect[f] = Math.max(0, Math.min(100, Math.round((srect[f] + d) * 10) / 10)); applyRect();
+}));
+document.getElementById("reg-save").addEventListener("click", () => {
+  try { localStorage.setItem("pattymelt.screenrect." + CAB_ID, JSON.stringify(srect)); } catch {}
+  setToast("SCREEN SAVED — " + ["sl","st","sw","sh"].map(k => srect[k] + "%").join(" / "));
+});
+
+// ---------- scenes: ATTRACT (CK ident -> Ken Burns -> demo) / MENU / PLAY / MINI / OVER ----------
+let scene = "attract";
+let attractT = 0;                       // attract clock (seconds)
+let demo = null;                        // auto-played state during attract
+let game = null;                        // live game
+const SERVICE_PRACTICE = ["demo", "bot", "auto", "ticks", "warm", "fill", "at", "selftest", "bonus", "mini", "ready", "board", "hs", "play"].some(k => Q.has(k));
+const serviceUI = PMService.mount({ pm, view:"cabinet", pause:value=>{ if (game && scene === "play") game._paused = value == null ? !game._paused : value; } });
+addEventListener("pagehide", event => { if (!event.persisted) serviceUI.finish(game, {excluded:SERVICE_PRACTICE}); });
+let mini = null;                        // back-of-house MiniState (FREEZER/BASEMENT) while scene==="mini";
+                                        // `game` stays the just-cleared round until advanceFromMini carries it
+let menu = { edition:activeCab.defaultEd, players:1, theme:activeCab.theme };   // edition = index into EDITIONS; cab sets the default + skin
+// THE EDITIONS — same pure engine, each set by the two levers (grill size × headcount) + skin.
+// Audited in tools/proto_wait_meter.py + docs/ANDERS_AUDIT.md. The menu picks one.
+const EDITIONS = [
+  { key:"teaching", mode:"kids",   grill:8, headcount:8,    skin:"school", name:"TEACHING",  sub:"Patty Melt's Heroes", blurb:"big grill · easy · cook for kids" },
+  { key:"lunch",    mode:"family", grill:6, headcount:null, skin:"diner",  name:"LUNCH RUSH", sub:"the house",           blurb:"the everyday shift" },
+  { key:"arcade",   mode:"arcade", grill:6, headcount:null, skin:"diner",  name:"ARCADE",     sub:"what we do",          blurb:"the gauntlet — quarter-eater" },
+  { key:"audit",    mode:"arcade", grill:4, headcount:18,   skin:"diner",  name:"THE AUDIT",  sub:"A&P deep dive",       blurb:"cramped · maximal crowd · condemned" },
+];
+let activeEdition = EDITIONS[1];
+function applyHeadcount(g, ed) {                           // the HEADCOUNT lever — set the order quota
+  if (ed.headcount != null) { g.cfg.orders = ed.headcount; g.orders_left = ed.headcount; }
+}
+const apModeNow = () => activeEdition && activeEdition.key === "audit";   // THE AUDIT compliance reskin?
+// The A&P VERDICT (Spiral G9) — the graded shift-end finding, keyed off how deep into the shift you
+// got before the weeds closed you. The institution always finds SOMETHING.
+function verdictFor(s) {
+  if (s.won) return { grade: "PERFECT AUDIT PASS", col: COL.good };
+  if (s.rnd >= 8) return { grade: "CITED — FLAGGED FOR REVIEW", col: COL.amber };
+  if (s.rnd >= 4) return { grade: "CLOSED PENDING INSPECTION", col: COL.glow };
+  return { grade: "FACILITY CONDEMNED", col: COL.bad };
+}
+let board = loadScores();
+let overRank = -1, enteringInitials = false, initials = [0,0,0], initPos = 0;
+// CONTINUE — Billy goes on a BREAK (not fired); an arcade countdown lets you bring him back.
+const CONTINUE_SECS = 10;
+let continueT = -1, continuesUsed = 0;            // -1 = not on break; >=0 = the break clock is running
+function billyBack() {                             // a button during the break: Billy returns, breathe, cook on
+  game.over = false; game.wait = pm.WAIT_FULL * 0.45; game.billy = pm.BILLY_FULL;
+  continueT = -1; continuesUsed++;
+}
+
+// ---------- ATTRACT REELS — two reels (diner + heroes), see docs/ATTRACT_REELS.md ----------
+// The cabinet advertises BOTH editions: after the CK cold-open it cycles title → cast →
+// how-to → live demo → high scores → insert-coin, then FLIPS skin and loops. Pure
+// presentation — the demo is the real engine; nothing here touches parity.
+const IDENT_END = 4.2;                  // CK cold-open length (sec)
+const REEL_SCHED = [                     // post-ident scene schedule (sec each)
+  { id:"title", t:3.5 }, { id:"cast", t:6.0 }, { id:"howto", t:4.5 },
+  { id:"demo",  t:16  }, { id:"scores", t:4.0 }, { id:"coin", t:3.5 },
+];
+const REEL_TOTAL = REEL_SCHED.reduce((a,s) => a + s.t, 0);
+let attractTheme = "diner";             // the skin the reel is currently advertising (flips per loop)
+const REEL = {
+  diner: {
+    title: ["PATTY MELT", "★ BIG GRILL ENERGY ★", "BURGERS · FRIES · SHAKES"],
+    ignite: "BIG GRILL ENERGY",
+    cast: [
+      ["PATTY", "THE COOK · TWO SINGING SPATULAS · POOR PATTY"],
+      ["BILLY BUNS", "THE CONDIMENT KID · WON'T SERVE 'TIL YOU HOLLER", "STILL EMPLOYED (BARELY)"],
+      ["CHRISSY CHEESY", "THE RELIEF · 2-UP · FASTEST CHEESE IN THE VALLEY"],
+    ],
+    recipe: "SEAR → FLIP → CHEESE → MELT → HEY BILLY!",
+    rule: "TIME THE SWEET SPOT — too early = RAW, too late = BURNT",
+    coin: "INSERT 25¢ · PRESS START",
+  },
+  school: {
+    title: ["PATTY MELT'S HEROES", "SCHOOL LUNCH · MADE WITH LOVE", "BURGER DAY IS THE BEST DAY"],
+    ignite: "MADE WITH LOVE",
+    cast: [
+      ["CAPTAIN PATTY MELT", "GRILL MASTER · BURGER DAY LEGEND"],
+      ["CHRISSY CHEESY", "THE RELIEF · CHEESE SPECIALIST"],
+      ["MRS. GRIDDLE", "THE VETERAN · EVERYBODY'S FAVORITE"],
+      ["MISS TATER", "FRY-STATION QUEEN · SMALL · FAST"],
+      ["SLOPPY JO", "BIG HEART · LOVES FEEDING KIDS"],
+      ["MRS. STERN", "GLASSES · CLIPBOARD · ATTITUDE"],
+    ],
+    recipe: "HEAT → FLIP → CHEESE → MELT → C'MON BILLY!",
+    rule: "MADE WITH LOVE, EVERY TRAY",
+    coin: "EVERYONE EATS · PRESS START",
+  },
+};
+function reelSceneAt(rt) {               // reel-time (after ident) → {id, p:0..1, i}
+  let acc = 0;
+  for (let i = 0; i < REEL_SCHED.length; i++) {
+    if (rt < acc + REEL_SCHED[i].t) return { id: REEL_SCHED[i].id, p: (rt - acc) / REEL_SCHED[i].t, i };
+    acc += REEL_SCHED[i].t;
+  }
+  return { id: "coin", p: 1, i: REEL_SCHED.length - 1 };
+}
+function enterMenuFromAttract() { menu.theme = attractTheme; scene = "menu"; }   // keep the skin you watched
+
+const LETTERS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+// ---------- FIXED-TIMESTEP ACCUMULATOR (the load-bearing loop) ----------
+const SIM_DT = 1000 / pm.TPS;           // ms per sim tick (100ms at TPS=10)
+let last = performance.now(), acc = 0;
+
+function frame(now) {
+  let elapsed = now - last; last = now;
+  if (elapsed > 250) elapsed = 250;     // clamp after a tab-stall (no spiral of death)
+  acc += elapsed;
+  while (acc >= SIM_DT) { stepSim(); acc -= SIM_DT; }   // sim advances in fixed quanta only
+  pollPads();                           // ARCADE STICK + BUTTONS (2-player) — once per frame
+  serviceUI.update(game, {scene, excluded:SERVICE_PRACTICE, paused:!!(game && game._paused)});
+  render(acc / SIM_DT);                 // pass interpolation alpha (unused by ASCII-grid, kept for later)
+  requestAnimationFrame(frame);
+}
+
+// ---------- 2-PLAYER ARCADE GAMEPAD (self-contained, additive, parity-safe) ----------
+// Polled once per frame. Pad 0 → P1 (routed through the fireAction echo bus); pad 1 → P2
+// (CHRISSY, co-op only — direct engine calls, matching the P2 keyboard path). Direction is
+// HELD (throttled); face buttons are EDGE-detected. On attract/menu/over/won, a fresh press
+// mirrors the keyboard's advance. All wrapped in try/catch — no pad = no-op.
+const PAD_MOVE_IV = 6;                      // frames between held-direction moves (Ghost owns the deadzone)
+const _pad = [{ btn: [], moveCD: 0 }, { btn: [], moveCD: 0 }];
+function padDir(gp) {
+  // THE GHOST: one self-calibrating normalizer handles every HID stick (F300 dead
+  // axes 2/3, 8BitDo right-stick, POV hat, d-pad). .x is the dead-axis-filtered
+  // 8-way X intent in {-1,0,1}; the cabinet only steers horizontally, so use it directly.
+  return Ghost.read(gp).x;
+}
+function padPressed(gp, i) { return Ghost.btn(gp, i) || (gp.buttons[i] && gp.buttons[i].value > 0.5); }
+function pollPads() {
+  if (game && game._paused) return;
+  try {
+    const pads = (navigator.getGamepads && navigator.getGamepads()) || [];
+    const nP = (game && game.players) ? game.players.length : 1;
+    for (let pi = 0; pi < 2; pi++) {
+      if (pi === 1 && nP < 2) { _pad[1].btn = []; continue; }     // P2 only in co-op
+      const gp = pads[pi]; const st = _pad[pi];
+      if (!gp) { st.btn = []; continue; }
+      const fresh = (i) => padPressed(gp, i) && !st.btn[i];
+      let anyEdge = false;
+      for (let i = 0; i < gp.buttons.length; i++) if (fresh(i)) { anyEdge = true; break; }
+      const d = padDir(gp);
+      if (pi === 0) {                       // P1 — through the scene logic / echo bus
+        if (scene === "attract") { if (anyEdge) enterMenuFromAttract(); }
+        else if (scene === "menu") {
+          if (fresh(0) || fresh(9)) startGame(EDITIONS[menu.edition]);   // A / Start
+          else { if (d !== 0 && st.moveCD <= 0) {                        // stick = edition select
+            const N = EDITIONS.length; menu.edition = (menu.edition + (d < 0 ? N - 1 : 1)) % N;
+            menu.theme = EDITIONS[menu.edition].skin; st.moveCD = PAD_MOVE_IV; }
+            if (d === 0) st.moveCD = 0; else if (st.moveCD > 0) st.moveCD--; }
+        } else if (scene === "mini") {
+          if (mini && !mini.done) {
+            if (d !== 0) { if (st.moveCD <= 0) { pm.mini_move(mini, d); st.moveCD = PAD_MOVE_IV; } else st.moveCD--; }
+            else st.moveCD = 0;
+          } else if (mini && mini.done && anyEdge) advanceFromMini();
+        } else if (scene === "over") {
+          if (anyEdge && !enteringInitials) scene = "menu";
+        } else if (scene === "play" && game) {
+          if (game.won) {
+            if (anyEdge) {                  // mirror the keyboard SPACE/Enter win-advance (day → back of house)
+              const cleared = game.rnd, hot = game.combo_best >= pm.FLOW_COMBO;
+              if (cleared % pm.PERIODS.length === 0) {
+                mini = pm.mini_new(hot ? pm.BASEMENT : pm.FREEZER); scene = "mini"; fxReset();
+              } else { game = pm.advance_round(game, activeEdition.grill, activeEdition.headcount); fxReset(); }
+            }
+          }
+          else if (game.over) { if (anyEdge) { if (continueT > 0) billyBack(); else finishGame(); } }
+          else {
+            if (d === 0) st.moveCD = 0;
+            else if (st.moveCD <= 0) { fireAction(d < 0 ? "left" : "right"); st.moveCD = PAD_MOVE_IV; }
+            else st.moveCD--;
+            if (fresh(0)) fireAction("flip");
+            if (fresh(1)) fireAction("cheese");
+            if (fresh(2)) fireAction("toast");
+            if (fresh(3) || fresh(7)) fireAction("billy");
+          }
+        }
+      } else if (scene === "play" && game && !game.over && !game.won) {   // P2 — direct (co-op)
+        if (d === 0) st.moveCD = 0;
+        else if (st.moveCD <= 0) { pm.move(game, d, 1); st.moveCD = PAD_MOVE_IV; }
+        else st.moveCD--;
+        if (fresh(0)) { pm.flip(game, 1); actionSfx(); }
+        if (fresh(1)) { pm.add_cheese(game, 1); actionSfx(); }
+        if (fresh(2)) { pm.toast(game, 1); actionSfx(); }
+        if (fresh(3) || fresh(7)) { pm.hey_billy(game, 1); actionSfx(); }
+      }
+      const cur = []; for (let i = 0; i < gp.buttons.length; i++) cur[i] = padPressed(gp, i);
+      st.btn = cur;
+    }
+  } catch (err) { /* absent / flaky gamepad API — no-op */ }
+}
+
+function stepSim() {
+  if (scene === "attract") {
+    attractT += SIM_DT / 1000;
+    const rt = attractT - IDENT_END;
+    if (rt > REEL_TOTAL) {              // reel done → flip skin, replay the cold-open
+      attractTheme = attractTheme === "diner" ? "school" : "diner";
+      attractT = 0; demo = null; return;
+    }
+    if (rt >= 0) {                      // demo simulates through the post-ident reel
+      if (!demo || demo.over || demo.won) demo = pm.new_game(1, "arcade", 1, attractTheme, pm.SLOTS, cabItems());
+      pm.auto_step(demo); pm.tick(demo); audioTick(demo);
+    }
+  } else if (scene === "play" && game && !game.over && !game.won && !game._paused) {
+    pm.tick(game); audioTick(game); fxTick(game);
+  } else if (scene === "play" && game && game.over && !game.won && !game._paused) {
+    if (continueT < 0) continueT = CONTINUE_SECS;        // Billy just went on break — start the clock
+    else { continueT -= SIM_DT / 1000; if (continueT <= 0) finishGame(); }
+  } else if (scene === "mini" && mini && !mini.done) {
+    pm.mini_tick(mini);                 // the cart is player-driven; the clock + items advance on the sim quantum
+  }
+}
+
+// ---------- INPUT ----------
+const lit = {};                         // button flash for the deck
+function flashBtn(id) { lit[id] = performance.now(); const el = document.getElementById(id);
+  if (el) { el.classList.add("lit"); setTimeout(() => el.classList.remove("lit"), 90); } }
+
+// ---------- INPUT / ECHO BUS — the art seam (so this isn't throwaway) ----------
+// Every P1 control input — keyboard, deck-button pointer, and (later) the baked ONE
+// TIMER panel hit-spots — funnels through fireAction(name). It lights the ABSTRACT deck
+// echo state, flashes the matching lo-fi button, calls the engine, then fires the action
+// sfx. The on-screen DOM deck and a future registered PANEL OFF/ON + STICK L/R art are
+// just two skins reading the SAME echo state — swapping art needs ZERO logic change.
+const deck = { flipT:0, cheeseT:0, toastT:0, billyT:0, stickT:0, stickDir:0 };   // *T = perf.now() of last light
+const ACTIONS = {
+  left:   { fn: () => pm.move(game, -1, 0),    echo: "stick", dir: -1 },
+  right:  { fn: () => pm.move(game,  1, 0),    echo: "stick", dir:  1 },
+  flip:   { fn: () => pm.flip(game, 0),        echo: "flipT",   btn: "b-flip"   },
+  cheese: { fn: () => pm.add_cheese(game, 0),  echo: "cheeseT", btn: "b-cheese" },
+  toast:  { fn: () => pm.toast(game, 0),       echo: "toastT",  btn: "b-toast"  },   // FULL MENU: grilled cheese + patty melt
+  billy:  { fn: () => pm.hey_billy(game, 0),   echo: "billyT",  btn: "b-billy"  },
+};
+function fireAction(name) {
+  const a = ACTIONS[name];
+  if (!a || !game || game.over || game.won || game._paused) return;
+  if (a.echo === "stick") { deck.stickT = performance.now(); deck.stickDir = a.dir; }
+  else deck[a.echo] = performance.now();
+  if (a.btn) flashBtn(a.btn);
+  a.fn();                                // engine call
+  actionSfx();                           // success-gated by the engine's _say flash
+}
+// Fractional hit-spots over the control-deck rect (x,y,w,h as 0..1). The lo-fi DOM deck
+// hits its own elements; a baked panel <img> drops in by mapping pointer offsets through
+// deckHitAt() → the SAME action names. Dormant until the registered OFF/ON/STICK layer
+// art exists (the one real remaining art blocker — see docs/SPEC_SHEET.md §1).
+const HITSPOTS = [
+  { name: "left",   x: 0.00, y: 0.15, w: 0.13, h: 0.70 },
+  { name: "right",  x: 0.15, y: 0.15, w: 0.13, h: 0.70 },
+  { name: "flip",   x: 0.40, y: 0.08, w: 0.18, h: 0.84 },
+  { name: "cheese", x: 0.60, y: 0.08, w: 0.18, h: 0.84 },
+  { name: "billy",  x: 0.80, y: 0.08, w: 0.18, h: 0.84 },
+];
+function deckHitAt(xf, yf) {             // normalized deck coords → action name (ready for baked layers)
+  for (const h of HITSPOTS) if (xf >= h.x && xf <= h.x + h.w && yf >= h.y && yf <= h.y + h.h) return h.name;
+  return null;
+}
+// the lo-fi stick echoes the abstract state: tilt + press toward the last move direction
+function syncDeck() {
+  const ball = document.querySelector("#stick .ball");
+  if (!ball) return;
+  const lit = performance.now() - deck.stickT < 150;
+  ball.style.transition = "transform .06s";
+  ball.style.transform = lit ? `translateX(${deck.stickDir * 8}px) scale(.95)` : "translateX(0) scale(1)";
+}
+
+// ---------- CHEATS / easter eggs (cabinet-only; never touch the engine's rules) ----------
+let cheatBuf = "", toast = "", toastUntil = 0, creditsOpen = false;
+const CHEAT_KEY = { ArrowUp:"U", ArrowDown:"D", ArrowLeft:"L", ArrowRight:"R" };
+function setToast(msg, ms = 2800) { toast = msg; toastUntil = performance.now() + ms; }
+function feedCheat(e, k) {
+  const ch = CHEAT_KEY[e.key] || (k.length === 1 ? k : "");
+  if (!ch) return;
+  cheatBuf = (cheatBuf + ch).slice(-16);
+  if (cheatBuf.endsWith("UUDDLRLRba")) {            // the Konami code → BILLY'S ESPRESSO
+    if (scene === "play" && game && !game.over && !game.won) game.billy = pm.BILLY_FULL;  // safe: clamped range
+    setToast("☕ BILLY'S ESPRESSO — HE'S WIRED!"); audio.flow();
+  } else if (cheatBuf.endsWith("walter")) { setToast("🍔 THOSE ARE GOOD BURGERS, WALTER"); audio.bell(4); }
+  else if (cheatBuf.endsWith("billy")) { setToast("👋 BILLY SAYS HI (he is not coming to help)"); audio.holler(); }
+  else if (cheatBuf.endsWith("respek")) { creditsOpen = true; audio.win(); }   // the dedication card
+  else if (cheatBuf.endsWith("rect")) toggleReg();                             // screen-registration tool
+}
+
+addEventListener("keydown", (e) => {
+  const k = (e.key.length === 1 ? e.key.toLowerCase() : e.key);
+  if (["ArrowLeft","ArrowRight"," ","ArrowUp","ArrowDown"].includes(e.key)) e.preventDefault();
+  wakeAudio();                            // first keypress is the gesture that unlocks WebAudio
+  if (creditsOpen) { creditsOpen = false; return; }   // any key closes the dedication card
+  feedCheat(e, k);                        // layered on top of normal handling — keys still do their job
+
+  if (scene === "attract") { enterMenuFromAttract(); return; }
+
+  if (scene === "menu") {
+    const N = EDITIONS.length;
+    if (k === "ArrowUp") { menu.edition = (menu.edition + N - 1) % N; menu.theme = EDITIONS[menu.edition].skin; }
+    else if (k === "ArrowDown") { menu.edition = (menu.edition + 1) % N; menu.theme = EDITIONS[menu.edition].skin; }
+    else if (k === "1") menu.players = 1;
+    else if (k === "2") menu.players = 2;
+    else if (k === "t") menu.theme = menu.theme === "diner" ? "school" : "diner";
+    else if (k === "k") startGame(EDITIONS[0]);          // quick-starts (k/f/a kept for the ship-gate)
+    else if (k === "f") startGame(EDITIONS[1]);
+    else if (k === "a") startGame(EDITIONS[2]);
+    else if (k === "Enter" || k === " ") startGame(EDITIONS[menu.edition]);
+    return;
+  }
+
+  if (scene === "mini") {                                // back-of-house: drive the cart, then SPACE to bank + advance
+    if (mini && !mini.done) {
+      if (k === "ArrowLeft" || k === "a" || k === "j") pm.mini_move(mini, -1);
+      else if (k === "ArrowRight" || k === "d" || k === "l") pm.mini_move(mini, 1);
+    } else if (mini && mini.done && (k === " " || k === "Enter")) advanceFromMini();
+    return;
+  }
+
+  if (scene === "over") {
+    if (enteringInitials) { initialsKey(k, e.key); return; }
+    scene = "menu"; return;
+  }
+
+  if (scene !== "play" || !game) return;
+  if (k === "p") { game._paused = !game._paused; return; }
+  if (game._paused) return;
+  if (game.won && (k === " " || k === "Enter")) {
+    const cleared = game.rnd, hot = game.combo_best >= pm.FLOW_COMBO;
+    if (cleared % pm.PERIODS.length === 0) {              // end of a DAY → back of house (mirrors the terminal flow)
+      mini = pm.mini_new(hot ? pm.BASEMENT : pm.FREEZER); // finished hot → the high-risk BASEMENT, else the FREEZER breather
+      scene = "mini"; fxReset(); return;                  // game stays the cleared round; advanceFromMini carries it
+    }
+    game = pm.advance_round(game, activeEdition.grill, activeEdition.headcount);  // shared carry rule (weeds ease)
+    fxReset(); return;
+  }
+  if (game.over) {                                  // Billy's on break: any button brings him back; or wait it out
+    if (continueT > 0) billyBack(); else finishGame();
+    return;
+  }
+  // Player 1 (PATTY) — all routed through the echo bus / art seam
+  if (k === "ArrowLeft" || k === "a") fireAction("left");
+  else if (k === "ArrowRight" || k === "d") fireAction("right");
+  else if (k === " " || k === "f") fireAction("flip");
+  else if (k === "c") fireAction("cheese");
+  else if (k === "x") fireAction("toast");               // FULL MENU: grilled cheese + patty melt
+  else if (k === "b" || k === "v") fireAction("billy");
+  // Player 2 (CHRISSY CHEESY, the relief)
+  else if (k === "j") pm.move(game, -1, 1);
+  else if (k === "l") pm.move(game, 1, 1);
+  else if (k === "i") { pm.flip(game, 1); actionSfx(); }
+  else if (k === "k") { pm.add_cheese(game, 1); actionSfx(); }
+  else if (k === ".") { pm.toast(game, 1); actionSfx(); }
+  else if (k === "m") { pm.hey_billy(game, 1); actionSfx(); }
+});
+
+// pointer support: tap the deck buttons / drag the screen halves to move — same bus
+for (const [id, action] of [["b-flip","flip"], ["b-cheese","cheese"], ["b-toast","toast"], ["b-billy","billy"]]) {
+  document.getElementById(id).addEventListener("pointerdown", (e) => {
+    e.preventDefault(); wakeAudio();
+    if (scene === "attract") { enterMenuFromAttract(); return; }
+    if (scene === "play") fireAction(action);
+  });
+}
+cv.addEventListener("pointerdown", (e) => {
+  wakeAudio();
+  if (creditsOpen) { creditsOpen = false; return; }
+  if (scene === "attract") { enterMenuFromAttract(); return; }
+  if (scene === "mini" && mini) {
+    if (mini.done) { advanceFromMini(); return; }
+    pm.mini_move(mini, (e.offsetX / cv.clientWidth) < 0.5 ? -1 : 1); return;
+  }
+  if (scene !== "play" || !game || game.over) return;
+  const x = (e.offsetX / cv.clientWidth);
+  fireAction(x < 0.5 ? "left" : "right");
+});
+
+function startGame(ed) {                                   // start the chosen EDITION (grill × headcount); the CAB owns skin + items
+  serviceUI.finish(game, {excluded:SERVICE_PRACTICE});
+  activeEdition = ed; menu.theme = activeCab.theme;
+  game = pm.new_game(1, ed.mode, menu.players, activeCab.theme, ed.grill, cabItems(), SERVICE_PRACTICE ? "legacy" : "service");
+  applyHeadcount(game, ed);                                // FULL MENU (jailbreak) carries across days via advance_round's item_seq
+  scene = "play"; overRank = -1; continueT = -1; continuesUsed = 0; fxReset();
+}
+function advanceFromMini() {                               // bank the back-of-house bonus, start the next day's first shift
+  game = pm.advance_round(game, activeEdition.grill, activeEdition.headcount, mini.score);
+  mini = null; scene = "play"; fxReset();                  // game was the just-cleared round; advance_round carries it
+}
+function finishGame() {
+  serviceUI.finish(game, {excluded:SERVICE_PRACTICE});
+  scene = "over";
+  if (pm.qualifies(board, game.score)) { enteringInitials = true; initials = [0,0,0]; initPos = 0; }
+  else { enteringInitials = false; }
+}
+function initialsKey(k, raw) {
+  if (raw === "ArrowUp" || k === "w") initials[initPos] = (initials[initPos] + LETTERS.length - 1) % LETTERS.length;
+  else if (raw === "ArrowDown" || k === "s") initials[initPos] = (initials[initPos] + 1) % LETTERS.length;
+  else if (raw === "ArrowLeft" || k === "a") initPos = (initPos + 2) % 3;
+  else if (raw === "ArrowRight" || k === " " || k === "f") { initPos++; if (initPos >= 3) lockInitials(); }
+  else if (k === "b" || k === "v" || raw === "Enter") lockInitials();
+}
+// The leaderboard #1 is crowned THE CHEESIEST OF THEM ALL (so say we all). The cheese
+// ladder, but for the high-score board. Pure cabinet flavor — engine never sees it.
+const CHEESIEST = {
+  diner:  { crown: "THE CHEESIEST OF THEM ALL", say: "SO SAY WE ALL" },
+  school: { crown: "TOP OF THE LUNCH LINE",     say: "SO SAY WE ALL, HEROES" },
+};
+const cheesiest = () => CHEESIEST[menu.theme] || CHEESIEST.diner;
+const INITIALS_EGGS = {
+  CPC:"★ for Mom & Dad ★", BIL:"BILLY MADE THE BOARD?! (who served HIS burgers?)",
+  MOM:"hi Mom ♥", POP:"hi Pop ♥", DAD:"hi Dad ♥", PAT:"that's our cook!",
+  CHR:"CHRISSY CHEESY, THE RELIEF", ASS:"…initials only, chef", GOD:"easy, Walter",
+};
+function lockInitials() {
+  const nm = initials.map(i => LETTERS[i]).join("").trim() || "AAA";
+  [board, overRank] = pm.add_high_score(board, nm, game.score);
+  saveScores(board); enteringInitials = false;
+  if (overRank === 0) { setToast(`♛ ${cheesiest().crown} — ${cheesiest().say}`); audio.flow(); }  // dethroned the champ
+  else if (INITIALS_EGGS[nm]) setToast(INITIALS_EGGS[nm]);
+}
+
+// ---------- RENDER ----------
+function render() {
+  ctx.fillStyle = COL.steel; ctx.fillRect(0, 0, W, H);
+  if (scene === "attract") renderAttract();
+  else if (scene === "menu") renderMenu();
+  else if (scene === "play") renderPlay(game);
+  else if (scene === "mini") renderMini(mini);
+  else if (scene === "over") renderOver();
+  // cheat / easter-egg toast (drawn over everything)
+  if (toast && performance.now() < toastUntil) {
+    const w = 540, h = 42, x = (W - w) / 2, y = H - 74;
+    ctx.fillStyle = "rgba(10,16,34,0.85)"; ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = COL.amber; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
+    txt(toast, W/2, y + 27, 18, COL.cheese, "center", 700);
+  }
+  if (creditsOpen) drawCredits();
+  syncMarquee();
+  syncDeck();                           // lo-fi stick echoes the abstract deck state
+  syncBezel();                          // gingham screen frame tracks the diner/school skin
+  // ambient bed: griddle hiss + diner murmur, swelling with how buried the line is
+  const bedS = scene === "play" ? game : (scene === "attract" && attractT > 4.2 ? demo : null);
+  audio.setBed(!!(bedS && !bedS.over), bedS ? pm.buried_index(bedS) : 0);
+}
+
+// the hidden dedication card — the heart of the cabinet (cheat: type RESPEK)
+function drawCredits() {
+  ctx.fillStyle = "rgba(5,7,14,0.93)"; ctx.fillRect(0, 0, W, H);
+  txt("CASTLE KILLSCREEN", W/2, 84, 20, COL.amber, "center", 800);
+  txt(pm.THEMES[menu.theme].title, W/2, 134, 34, COL.amber, "center", 800);
+  txt("ANDERS & PARTNERS LLC", W/2, 196, 18, COL.cream, "center", 600);
+  txt("RESPEK LOGIC ART", W/2, 222, 15, COL.cream, "center", 400);
+  txt("THE CAST", W/2, 286, 13, COL.dim, "center", 700);
+  txt("PATTY  ·  CHRISSY CHEESY  ·  BILLY BUNS", W/2, 312, 16, COL.cream, "center", 500);
+  txt("♥", W/2, 384, 26, COL.ketchup, "center", 800);
+  txt("for Christine & Phillip Coleman", W/2, 416, 20, COL.amber, "center", 600);
+  txt("press any key", W/2, 506, 14, COL.cream, "center", 400);
+}
+
+function syncMarquee() {
+  const th = pm.THEMES[(scene === "play" && game) ? game.theme : menu.theme];
+  mqT.textContent = th.title;
+  mqS.textContent = (scene === "play" && game && pm.buried_index(game) >= pm.BURIED_BARKING)
+    ? pm.crowd_bark(game)
+    : (Math.floor(performance.now() / 2600) % 2 ? grillTip() : "BIG GRILL ENERGY");
+}
+
+function txt(s, x, y, size, col, align = "left", weight = 700) {
+  ctx.fillStyle = col; ctx.textAlign = align; ctx.textBaseline = "alphabetic";
+  ctx.font = `${weight} ${size}px "Saira Condensed","Arial Narrow",sans-serif`;
+  ctx.fillText(s, x, y);
+}
+
+function renderAttract() {
+  const R = REEL[attractTheme], th = pm.THEMES[attractTheme];
+  hint.textContent = "";
+  // ---- scene 0: CASTLE GRILLSCREEN cold-open (neon → push → ignite → title crossfade) ----
+  if (attractT < IDENT_END) {
+    if (IDENT.grill || IDENT.flames) {
+      ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+      const cx = W/2, cy = H * 0.44;
+      if (attractT < 0.55) {                          // neon buzzes to life
+        const blip = [0,1,0,1,1,0,1,1,1,1,1][Math.floor(attractT * 20) % 11];
+        drawIdent(IDENT.grill, cx, cy, 1, blip);
+      } else if (attractT < 2.7) {                    // steady — slow push + glow breathe
+        const p = (attractT - 0.55) / 2.15;
+        drawIdent(IDENT.grill, cx, cy, 1 + p * 0.10, 0.86 + 0.14 * Math.sin(attractT * 5));
+        txt("presents", cx, H * 0.82, 15, `rgba(243,230,200,${0.45 + 0.3*Math.sin(attractT*3)})`, "center", 400);
+      } else if (attractT < 3.6) {                    // THE GRILL FIRES UP — flames variant
+        const f = (attractT - 2.7) / 0.9;
+        drawIdent(IDENT.flames || IDENT.grill, cx, cy, 1.1 + f * 0.06, 1);
+        txt(R.ignite, cx, H * 0.82, 18, `rgba(255,150,36,${f})`, "center", 800);
+      } else {                                        // crossfade to the title
+        const f = (attractT - 3.6) / 0.6;
+        drawIdent(IDENT.flames || IDENT.grill, cx, cy, 1.16, 1 - f);
+        ctx.save(); ctx.globalAlpha = Math.min(1, f);
+        txt(R.title[0], cx, H*0.46, 54, COL.amber, "center", 800);
+        txt(R.title[2], cx, H*0.46 + 30, 16, COL.cream, "center", 400);
+        ctx.restore();
+      }
+    } else {                                          // text fallback — logos not loaded yet
+      const a = Math.min(1, attractT / 0.6);
+      txt("CASTLE GRILLSCREEN", W/2, H*0.42, 32, `rgba(255,140,30,${a})`, "center", 800);
+      txt("presents", W/2, H*0.42 + 28, 16, `rgba(243,230,200,${a*0.7})`, "center", 400);
+      if (attractT > 2.2) { txt(R.title[0], W/2, H*0.62, 46, COL.amber, "center", 800); }
+    }
+    return;
+  }
+  // ---- the reel: title → cast → how-to → live demo → high scores → insert coin ----
+  const sc = reelSceneAt(attractT - IDENT_END);
+  const fadeIn = Math.min(1, sc.p * 5);
+  if (sc.id === "title") {
+    txt(R.title[0], W/2, H*0.40, 56, COL.amber, "center", 800);
+    txt(R.title[1], W/2, H*0.40 + 34, 20, COL.cheese, "center", 700);
+    txt(R.title[2], W/2, H*0.40 + 60, 16, COL.cream, "center", 400);
+    txt("CASTLE GRILLSCREEN  presents", W/2, H*0.70, 14, COL.dim, "center", 400);
+  } else if (sc.id === "cast") {
+    txt(attractTheme === "school" ? "THE LUNCH-LADY HEROES" : "MEET THE CAST", W/2, 96, 18, COL.cream, "center", 700);
+    const n = R.cast.length, bi = Math.min(n - 1, Math.floor(sc.p * n)), beat = R.cast[bi];
+    const pose = beat[0].includes("CHRISSY") ? chrissyPose("idle")   // Patty leads both reels; Chrissy gets her beat too
+               : bi === 0 ? pattyPose("idle") : null;
+    if (pose) {                                          // pose on the left, name/desc on the right
+      const ph = H * 0.50, pw = ph * pose.width / pose.height;
+      ctx.drawImage(pose, W * 0.30 - pw / 2, H * 0.40 - ph / 2, pw, ph);
+      txt(beat[0], W * 0.66, H * 0.40, 34, COL.amber, "center", 800);
+      txt(beat[1], W * 0.66, H * 0.40 + 28, 14, COL.cream, "center", 500);
+      if (beat[2]) txt(beat[2], W * 0.66, H * 0.40 + 50, 13, COL.cheese, "center", 400);
+    } else {
+      txt(beat[0], W/2, H*0.42, 40, COL.amber, "center", 800);
+      txt(beat[1], W/2, H*0.42 + 30, 16, COL.cream, "center", 500);
+      if (beat[2]) txt(beat[2], W/2, H*0.42 + 52, 14, COL.cheese, "center", 400);
+    }
+    for (let k = 0; k < n; k++) { ctx.fillStyle = k === bi ? COL.amber : COL.dim; ctx.fillRect(W/2 - n*9 + k*18, H*0.62, 10, 10); }
+  } else if (sc.id === "howto") {
+    txt("HOW TO PLAY", W/2, 100, 22, COL.amber, "center", 800);
+    txt(R.recipe, W/2, H*0.42, 24, COL.cheese, "center", 700);
+    txt(R.rule, W/2, H*0.42 + 34, 15, COL.cream, "center", 400);
+    txt("STICK + 3 BUTTONS:  FLIP · CHEESE · " + th.holler, W/2, H*0.42 + 64, 15, COL.amber, "center", 600);
+    const SF = PMSpat.SAFETY[attractTheme] || PMSpat.SAFETY.diner;     // THE TWO-SPATULA MANDATE, told to the audience
+    txt(SF[0] + "  " + SF[1], W/2, H*0.42 + 100, 14, COL.cream, "center", 700);
+    txt(SF[2], W/2, H*0.42 + 122, 17, COL.good, "center", 800);
+  } else if (sc.id === "demo") {
+    if (demo) {
+      renderPlay(demo, true);
+      ctx.fillStyle = "rgba(5,6,10,0.25)"; ctx.fillRect(0, 0, W, H);
+      txt("● LIVE DEMO", 28, 26, 14, COL.bad, "left", 700);
+      if (Math.floor(attractT * 2) % 2) txt("PRESS ANY KEY / TAP TO PLAY", W/2, H - 42, 20, COL.cream, "center", 700);
+    } else { txt(R.title[0], W/2, H*0.45, 50, COL.amber, "center", 800); }
+  } else if (sc.id === "scores") {
+    txt("HIGH SCORES", W/2, 96, 26, COL.amber, "center", 800);
+    const cc = CHEESIEST[attractTheme] || CHEESIEST.diner;
+    txt(`♛ ${board[0][0]} — ${cc.crown} ♛`, W/2, 126, 16, COL.cheese, "center", 700);
+    drawBoardMini(W/2, 150, attractTheme);
+  } else {  // coin
+    txt(R.title[0], W/2, H*0.34, 50, COL.amber, "center", 800);
+    txt(R.title[1], W/2, H*0.34 + 30, 16, COL.cheese, "center", 500);
+    if (Math.floor(attractT * 1.5) % 2) txt(R.coin, W/2, H*0.56, 26, COL.cream, "center", 800);
+  }
+  asciiTicker(attractTheme, H - 16);      // ASCII pass: scrolling mono crawl across the reel
+}
+
+function drawBoardMini(cx, top) {        // top-5; #1 crowned (the cheesiest). Header shows the title.
+  for (let i = 0; i < 5; i++) {
+    const [n, sc] = board[i];
+    txt(`${i===0?"♛ ":"  "}${i+1}. ${n}  ${String(sc).padStart(6,"0")}`, cx, top + 8 + i*22, 15, i===0?COL.cheese:COL.cream, "center", 500);
+  }
+}
+
+function renderMenu() {
+  const th = pm.THEMES[menu.theme];
+  txt(th.title, W/2, 92, 50, COL.amber, "center", 800);
+  txt(th.sub, W/2, 120, 16, COL.cream, "center", 400);
+  txt(`[1] 1UP PATTY      [2] 2UP PATTY + CHRISSY CHEESY`, W/2, 178,
+      18, COL.cream, "center", menu.players ? 600 : 600);
+  txt(menu.players === 1 ? "▸ 1UP" : "▸ 2UP", W/2, 200, 16, COL.good, "center", 700);
+  txt(`[T] SKIN: ${menu.theme === "diner" ? "DINER" : "SCHOOL (Heroes)"}`, W/2, 234, 16, COL.cheese, "center", 600);
+  txt("CHOOSE YOUR EDITION", W/2, 274, 18, COL.cream, "center", 700);
+  EDITIONS.forEach((ed, i) => {
+    const sel = i === menu.edition;
+    const y = 304 + i * 34;
+    txt(`${sel ? "▸ " : "  "}${ed.name}`, W/2 - 70, y, 20, sel ? COL.amber : COL.cream, "right", 700);
+    txt(`${ed.sub} — ${ed.blurb}`, W/2 - 54, y, 13, sel ? COL.cheese : COL.dim, "left", 400);
+    if (sel) txt(`${ed.grill}-top grill`, W/2 + 200, y, 12, COL.good, "right", 600);
+  });
+  txt("↑/↓ pick edition · 1/2 players · T skin · ENTER cook", W/2, 470, 15, COL.cream, "center", 400);
+  const rc = RECIPE[menu.theme];
+  txt(`${rc.title}:   ${rc.steps.join("  →  ")}`, W/2, 510, 14, COL.cheese, "center", 600);
+  txt("for Christine & Phillip Coleman", W/2, 560, 13, COL.amber, "center", 400);
+  hint.textContent = "↑/↓ select · K / F / A or ENTER to start";
+}
+
+// grill cell layout
+function gridX(i) { return 28 + i * ((W - 56) / pm.SLOTS); }
+const CELLW = (W - 56) / pm.SLOTS;
+
+// ---------- ASCII PASS — real monospace homage to the terminal original (docs/ASCII-PASS.md) ----------
+// Render-only, clocked off s.ticks (no RNG into the engine; parity byte-identical).
+const MONO = '"Courier New", ui-monospace, monospace';
+function gly(ch, x, y, size, color, alpha) {            // one mono glyph, centered
+  ctx.save(); ctx.globalAlpha = alpha == null ? 1 : alpha; ctx.fillStyle = color;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.font = `700 ${size}px ${MONO}`;
+  ctx.fillText(ch, x, y); ctx.restore();
+}
+function asciiBackdrop(s) {                             // dim diner terminal behind HUD/grill
+  const school = s.theme === "school";
+  ctx.save();
+  ctx.globalAlpha = 0.09; ctx.fillStyle = "#caa24a"; ctx.font = `700 15px ${MONO}`;   // checker-tile floor
+  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  for (let yy = 396, r = 0; yy < H - 6; yy += 15, r++) {
+    let line = ""; for (let c = 0; c < 70; c++) line += (c + r) % 2 ? " . " : " : ";
+    ctx.fillText(line, 6, yy);
+  }
+  ctx.globalAlpha = 0.42; ctx.textAlign = "center"; ctx.fillStyle = COL.amber; ctx.font = `700 16px ${MONO}`;
+  ctx.shadowColor = COL.glow; ctx.shadowBlur = 8;                                  // neon bloom
+  ctx.fillText(school ? "=== HEROES CAFETERIA ===" : "=== PATTY  MELT  DINER ===", W/2, 390);   // neon sign
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 0.28; ctx.fillStyle = COL.cream; ctx.font = `700 13px ${MONO}`;
+  ctx.textAlign = "left";  ctx.fillText("[ " + (school ? "LUNCH" : "OPEN") + " ]", 16, 390);     // clock/sign
+  ctx.textAlign = "right"; ctx.fillText("[ " + s.cfg.period.split(" ")[0] + " ]", W - 16, 390);
+  ctx.restore();
+}
+function asciiGrillFx(s, zones, gy, gh) {               // steam / smoke / singing notes / sparks
+  const STEAM = ["'", "°", "~", "·"];
+  for (let i = 0; i < s.slots.length; i++) {
+    const p = s.slots[i]; if (!p) continue;
+    const z = zones[i], cx = z.x + z.w / 2;
+    const cooking = p.stage === pm.Stage.SEAR_A || p.stage === pm.Stage.SEAR_B || p.stage === pm.Stage.MELT;
+    if (!cooking) continue;
+    const burning = (p.stage === pm.Stage.SEAR_A || p.stage === pm.Stage.SEAR_B)
+      && pm.sear_burn_of(s, p) < pm.NEVER_BURN && p.cook >= pm.sear_burn_of(s, p) - 7;
+    for (let k = 0; k < 2; k++) {
+      const phase = (s.ticks * 2 + i * 9 + k * 16) % 30, yy = z.y - 8 - phase;
+      if (yy < gy - 2) continue;
+      const a = Math.max(0, (burning ? 0.85 : 0.7) - phase / 30 * 0.6);
+      const ch = burning ? "§" : STEAM[(i + k + Math.floor(s.ticks / 4)) % STEAM.length];
+      gly(ch, cx + (k ? 9 : -6), yy, burning ? 19 : 16, burning ? "#b5a07a" : "#fff3da", a);
+    }
+  }
+  if (s.flash === "FLIP!" || s.flash === "CHEESE!") {    // singing spatulas
+    const z = zones[Math.min(s.players[0].cursor, zones.length - 1)], cx = z.x + z.w / 2;   // toaster cursor → grill's right end
+    gly(s.flash === "FLIP!" ? "♪" : "♫", cx + 14, z.y - 20, 18, COL.cheese, 0.9);
+    gly("♫", cx - 12, z.y - 28, 14, COL.cream, 0.7);
+  }
+  if (s.combo >= pm.FLOW_COMBO && pm.buried_index(s) < pm.BURIED_BARKING) {   // BIG GRILL ENERGY sparks
+    for (let k = 0; k < 5; k++) {
+      const phase = (s.ticks + k * 7) % 20, x = 40 + ((k * 137 + s.ticks * 3) % (W - 80));
+      gly("✦", x, gy + 8 + (k % 2) * 6, 14, COL.glow, Math.max(0, 0.9 - phase / 20 * 0.8));
+    }
+  }
+}
+
+function asciiTicker(theme, y) {                        // scrolling mono crawl (attract)
+  const text = FLAVOR[theme].barker.join("   •••   ") + "   •••   ";
+  ctx.save(); ctx.fillStyle = COL.amber; ctx.globalAlpha = 0.6;
+  ctx.font = `700 14px ${MONO}`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  const total = ctx.measureText(text).width, off = (performance.now() / 28) % total;
+  ctx.fillText(text, -off, y); ctx.fillText(text, total - off, y);    // seamless wrap
+  ctx.restore();
+}
+function asciiStatusStrip(s, th) {                      // reactive mono "terminal status bar" above the HUD
+  const b = pm.buried_index(s);
+  const stat = s.won ? "SHIFT CLEAR" : s.over ? "OFFLINE"
+    : b >= pm.BURIED_BARKING ? "ALERT: BACKED UP"
+    : s.combo >= pm.FLOW_COMBO ? "BIG GRILL ENERGY"
+    : b >= pm.BURIED_RESTLESS ? "WARN: GETTING BURIED" : "STATUS: NOMINAL";
+  const col = (s.over || b >= pm.BURIED_BARKING) ? COL.bad
+    : s.combo >= pm.FLOW_COMBO ? COL.glow : b >= pm.BURIED_RESTLESS ? COL.amber : COL.dim;
+  ctx.save(); ctx.globalAlpha = 0.6; ctx.fillStyle = col; ctx.font = `700 11px ${MONO}`;
+  ctx.textBaseline = "middle"; ctx.textAlign = "left";
+  ctx.fillText(">> " + th.title.toUpperCase() + " GRILL :: " + stat, 28, 13);
+  ctx.textAlign = "right"; ctx.fillText("[ " + s.cfg.label + " 60HZ ]", W - 28, 13);
+  ctx.restore();
+}
+
+// ---------- AIRY SPATULA GLIDE (render-only, parity-safe) ----------
+// The air-cushion spring from ONE TIMER: THE HIGH TABLE (side.html glideKnocker — the same line
+// SUCK UP's saucer and ZEBRA's car ride):   gv += (err*accel - gv*damp)*dt ;  pos += gv*dt
+// damp 26 sits just under critical (2·√200 ≈ 28.3) → a touch of eager overshoot = the whip/bank.
+// State rides on s._spat (a render-only field the deterministic engine never reads), so parity is
+// untouched. The engine cursor stays integer; only the DRAWN spatula glides between slot centers.
+const GLIDE_ACCEL = 200, GLIDE_DAMP = 26;
+function springCursors(s, zones) {
+  // Toaster positions are legal engine cursors, beyond the grill's zones.
+  // Match the ART3D cabinet: draw them at the rightmost grill anchor.
+  const zoneAt = (c) => zones[Math.min(c, zones.length - 1)];
+  let now = performance.now();
+  let dt = (now - (springCursors._t == null ? now : springCursors._t)) / 1000;
+  springCursors._t = now;
+  if (dt > 0.05) dt = 0.05;                              // tab-stall clamp — catch up, don't warp
+  if (dt < 0) dt = 0;
+  if (!s._spat || s._spat.length !== s.players.length)   // (re)seed on a fresh game / grill resize
+    s._spat = s.players.map((pl) => { const z = zoneAt(pl.cursor); return { x: z.x + z.w / 2, v: 0 }; });
+  for (let pi = 0; pi < s.players.length; pi++) {
+    const g = s._spat[pi], z = zoneAt(s.players[pi].cursor), tx = z.x + z.w / 2;
+    g.v += ((tx - g.x) * GLIDE_ACCEL - g.v * GLIDE_DAMP) * dt;
+    g.x += g.v * dt;
+  }
+  return s._spat;
+}
+
+// THE FOOD-SAFETY CARD — every shift opens on it (live play AND the attract demo): two spatulas, no hands on the food.
+const _safetySeen = new WeakMap();
+function drawSafetyCard(s, gy, gh) {
+  if (QA_STILL) return;                                  // ?fill=melt stills: the card would cover the grill
+  if (!_safetySeen.has(s)) _safetySeen.set(s, performance.now());
+  const k = (performance.now() - _safetySeen.get(s)) / 3200; if (k >= 1) return;
+  const a = k < 0.12 ? k / 0.12 : k > 0.8 ? (1 - k) / 0.2 : 1, SF = PMSpat.SAFETY[s.theme] || PMSpat.SAFETY.diner;
+  const by = gy + gh * 0.30, bh = 86;
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.fillStyle = "rgba(8,6,4,.82)"; ctx.fillRect(40, by, W - 80, bh);
+  ctx.strokeStyle = COL.good; ctx.lineWidth = 2; ctx.strokeRect(40.5, by + 0.5, W - 81, bh - 1);
+  txt("✋✗  " + SF[0], W/2, by + 24, 18, COL.cream, "center", 800);
+  txt(SF[1], W/2, by + 46, 14, COL.cheese, "center", 700);
+  txt(SF[2], W/2, by + 70, 18, COL.good, "center", 800);
+  ctx.restore();
+}
+
+function renderPlay(s, isDemo = false) {
+  const th = pm.THEMES[s.theme];
+  asciiBackdrop(s);                       // ASCII pass: dim diner terminal behind everything
+  asciiStatusStrip(s, th);                // mono status line at the very top
+  // HUD row 1
+  txt(`${th.title}`, 28, 36, 26, COL.amber, "left", 800);
+  txt(`[${s.cfg.label}]`, W - 28, 36, 18, COL.cheese, "right", 700);
+  txt(`ORDERS ${String(s.orders_left).padStart(2)}   SCORE ${String(s.score).padStart(6,"0")}   ${s.cfg.period} (DAY ${s.cfg.day})`,
+      28, 62, 17, COL.cream, "left", 600);
+  // THE WEEDS — the collapse clock, the dreaded creeping bar (loss at FULL). Green→amber→red as
+  // you fall behind; carries across rounds. This IS the lose condition now (no more fails count).
+  const wf = Math.min(1, s.wait / pm.WAIT_FULL);
+  const wcol = wf >= 0.78 ? COL.bad : wf >= 0.5 ? COL.glow : COL.good;
+  const wbw = 150, wbx = W - 28 - wbw, wby = 52, wbh = 12;
+  const apMode = !isDemo && apModeNow();                  // THE AUDIT edition → A&P compliance copy
+  txt(apMode ? "LIABILITY" : "THE WEEDS", wbx - 8, 62, 14, wf >= 0.78 ? COL.bad : COL.cream, "right", 700);
+  ctx.fillStyle = "#241c12"; ctx.fillRect(wbx, wby, wbw, wbh);
+  ctx.fillStyle = wcol; ctx.fillRect(wbx, wby, wbw * wf, wbh);
+  ctx.strokeStyle = "#000"; ctx.lineWidth = 1; ctx.strokeRect(wbx + 0.5, wby + 0.5, wbw, wbh);
+  if (wf >= 0.78 && !(s.won || s.over) && Math.floor(performance.now() / 200) % 2)
+    txt(apMode ? "▲ EXCEEDS REGULATORY WINDOW" : "▲ IN THE WEEDS", wbx + wbw / 2, wby + wbh + 13, 12, COL.bad, "center", 800);
+  // BILLY — your expo "mate". The bar now MARKS the serve threshold (above it he serves, below it
+  // he slacks — the number that used to be invisible), and the word says his actual state, so you
+  // can read "about to slack, holler now" instead of only seeing the flip after it's too late.
+  const bstate = billyState(s);                       // turn | serve | onit | slack
+  const thr = s.cfg.billy_serve_min;
+  const mbx = 78, mby = 76, mbw = 156, mbh = 14;
+  const barCol = bstate === "slack" ? COL.bad : bstate === "turn" ? COL.amber : COL.good;
+  ctx.fillStyle = "#241c12"; ctx.fillRect(mbx, mby, mbw, mbh);
+  ctx.fillStyle = barCol; ctx.fillRect(mbx, mby, mbw * (s.billy / pm.BILLY_FULL), mbh);
+  ctx.fillStyle = COL.cream;                          // the SERVE-THRESHOLD tick (his slack line)
+  ctx.fillRect(mbx + mbw * (thr / pm.BILLY_FULL) - 1, mby - 3, 2, mbh + 6);
+  txt("BILLY", 28, 88, 16, COL.cream, "left", 700);
+  const ex = FLAVOR[s.theme].excuses;
+  const stWord = bstate === "turn"  ? (s.billy_facing === 0 ? "TURNING ▶" : "◀ TURNING")
+               : bstate === "serve" ? "SERVING ✓"
+               : bstate === "onit"  ? "ON IT"
+               : ex[Math.floor(s.ticks / (pm.TPS * 3)) % ex.length].toUpperCase();   // slacking → his excuse
+  const stCol = bstate === "slack" ? COL.bad : bstate === "turn" ? COL.amber : COL.good;
+  txt(stWord, 244, 88, 15, stCol, "left", 700);
+  // "(slipping)": on it now, but drifting toward the slack line — a holler keeps him there
+  if (bstate === "onit" && s.billy - thr <= s.cfg.billy_drift * 18)
+    txt("(slipping)", 330, 88, 12, COL.amber, "left", 600);
+  if (s.players.length === 2)
+    txt(s.billy_facing === 1 ? "▶ CHRISSY" : "◀ PATTY", 418, 88, 13, COL.amber, "left", 700);
+  // (Billy's CHARACTER art now stands at the PASS — drawBillyPass(), keyed off this same billyState
+  // so the figure and the meter can't disagree. The meter bar + word above stay the precise readout.)
+  // pile-up + metrics
+  txt(`PILE  ${"●".repeat(s.pile)}${"·".repeat(Math.max(0,s.cfg.pile_max - s.pile))}`, W - 28, 88, 16, COL.amber, "right", 600);
+  const mult = pm.combo_mult(s.combo);
+  const wait = pm.live_wait(s);
+  txt(`${th.slung} ${s.served}    COMBO ${s.combo} (x${mult})    WAIT ${wait.toFixed(1)}s    SENT BACK ${s.sent_back}`,
+      28, 114, 16, wait >= 6 ? COL.bad : COL.cream, "left", 600);
+
+  // MELTOMETER — the cheese-melt timing readout (the diner's name for the melt window);
+  // a rotating PERFECT-GRILLING tip rides the right of the row.
+  let meltMax = 0, anyMelt = false;
+  for (const p of s.slots) if (p && p.stage === pm.Stage.MELT) { meltMax = Math.max(meltMax, p.cook / pm.melt_done(s)); anyMelt = true; }
+  const meltPct = Math.round(Math.min(1, meltMax) * 100);
+  txt("MELTOMETER", 28, 136, 14, COL.cheese, "left", 700);
+  ctx.fillStyle = "#241c12"; ctx.fillRect(132, 126, 110, 11);
+  ctx.fillStyle = meltPct >= 90 ? COL.good : COL.cheese; ctx.fillRect(132, 126, 110 * Math.min(1, meltMax), 11);
+  txt(anyMelt ? meltPct + "%" : "—", 250, 136, 13, anyMelt ? COL.cream : COL.dim, "left", 600);
+  if (!isDemo) {                                    // live kitchen chatter — tracks the shift's mood
+    const cmood = shiftMood(s);
+    txt(pick(FLAVOR[s.theme].chatter[cmood], 2600), W - 28, 136, 13, cmood === "rough" ? COL.glow : COL.amber, "right", 600);
+  }
+
+  // the GRILL — the hero element, spanning the screen
+  const gy = 150, gh = 230;
+  const glow = pm.buried_index(s);
+  const grad = ctx.createLinearGradient(0, gy, 0, gy + gh);
+  grad.addColorStop(0, "#3a2410"); grad.addColorStop(1, "#1a1108");
+  ctx.fillStyle = grad; ctx.fillRect(20, gy, W - 40, gh);
+  // baked grill-state art over the gradient backing, swapping with buried_index
+  // (vector gradient stays the fallback when the PNGs aren't present)
+  const bgArt = grillBgFor(glow);
+  if (bgArt) {
+    const availW = W - 40, ar = bgArt.width / bgArt.height;   // fit to width, center in the band
+    let dw = availW, dh = dw / ar; if (dh > gh) { dh = gh; dw = dh * ar; }
+    ctx.drawImage(bgArt, 20 + (availW - dw) / 2, gy + (gh - dh) / 2, dw, dh);
+  }
+  // griddle heat shimmer (brighter when rockin', angrier when buried)
+  ctx.fillStyle = (s.combo >= pm.FLOW_COMBO && glow < pm.BURIED_BARKING)
+    ? "rgba(255,160,40,0.18)" : `rgba(255,80,20,${0.06 + glow*0.14})`;
+  ctx.fillRect(20, gy, W - 40, gh);
+  const zones = grillZones({ x: 20, y: gy + 30, w: W - 40, h: gh - 40 }, s.slots.length);
+  PMSpat.observe(s);                      // the two-spatula layer reads what the engine just did (render-only)
+  for (let i = 0; i < s.slots.length; i++) {
+    const z = zones[i];
+    if (!slotArt(s)) { ctx.strokeStyle = COL.grid; ctx.lineWidth = 2; ctx.strokeRect(z.x, z.y, z.w, z.h); }
+    drawPatty(s, PMSpat.hidden(s, i) ? null : s.slots[i], z.x + z.w/2, z.y + z.h/2, z.w, z.h);   // riding the spatulas → plate shows
+    if (!PMSpat.hidden(s, i) && PMSpat.onionsOn(s.slots[i])) PMSpat.drawOnions(ctx, z.x + z.w/2, z.y + z.h/2 - 6, Math.min(70, z.w * 0.62), s.slots[i], s, "top");   // onions on the melt (raw ▸ soft ▸ golden ▸ burnt)
+    const it = s.slots[i];                  // FULL MENU: tag the dish so you know what you're cooking
+    if (it && it.item !== pm.Item.BURGER) txt(pm.ITEM_TICKET[it.item], z.x + 4, z.y + 11, 10, "#e09a4e", "left", 800);
+  }
+  // cursors (spatulas) — the engine cursor SNAPS between integer slots (parity-locked); the DRAWN
+  // spatula GLIDES to it on the air-cushion spring (render-only, lineage: HIGH TABLE side.html
+  // glideKnocker → SUCK UP saucer / ZEBRA GLIDE). It whips toward the slot, banks into the travel,
+  // and hops up mid-flight, so a move READS as a singing spatula flying over the grill.
+  // TWO SPATULAS PER COOK (Joe 1026): the glide carries a PAIR; every food move is done by the pair (lib/spatulas.js).
+  const spat = springCursors(s, zones);
+  const spatXY = (idx) => { const z = zones[Math.min(idx, zones.length - 1)];
+    return { x: z.x + z.w / 2, y: z.y + z.h / 2, r: Math.min(z.w, z.h) * 0.36 }; };
+  s.players.forEach((pl, pi) => {
+    const g = spat[pi], c = spatXY(pl.cursor);
+    PMSpat.drawPair(ctx, s, pi, { x: g.x, y: c.y, vx: g.v }, { slotXY: spatXY, food: spatFood, h: c.r * 1.15,
+      filter: pi === 1 ? "hue-rotate(150deg) saturate(1.2)" : "", rim: pi === 0 ? "rgba(255,110,80,.9)" : "rgba(120,190,255,.9)" });
+    if (s.players.length === 2) txt(pi === 0 ? "P" : "C", g.x, c.y - c.r * 1.9, 12, pi === 0 ? COL.ketchup : COL.cheese, "center", 800);
+  });
+  asciiGrillFx(s, zones, gy, gh);         // ASCII pass: steam / smoke / singing notes / sparks
+  drawSafetyCard(s, gy, gh);              // shift open: NO HANDS ON THE FOOD — it's all about food safety
+  if (!isDemo) drawServeFx(zones);        // the HANDOFF beat: a patty flips off the spatula on a serve
+
+  // mood line (row 5) — buried barking > BIG GRILL ENERGY > restless
+  const b = pm.buried_index(s);
+  let mood = "", mcol = COL.cream;
+  if (!(s.won || s.over)) {
+    if (b >= pm.BURIED_BARKING) { mood = `“${pm.crowd_bark(s)}”`; mcol = COL.bad; }
+    else if (s.combo >= pm.FLOW_COMBO) { mood = ">>> BIG GRILL ENERGY <<<"; mcol = COL.glow; }
+    else if (b >= pm.BURIED_RESTLESS) { mood = th.restless; mcol = COL.amber; }
+  }
+  if (mood) txt(mood, W/2, gy + gh + 36, 22, mcol, "center", 800);
+
+  // event callout sticker (UH-OH / OOPS / FOCUS BILLY) — pops over the grill on fails / neglect
+  const co = calloutFor(s);
+  if (co) drawCallout(co, W*0.5, gy + 30, s.flash_t > 0 ? 1 + 0.12 * (s.flash_t / pm.TPS) : 1);
+  if (s.flash) txt(s.flash, W/2, gy + gh + 64, 18, COL.cheese, "center", 700);
+  if (!s.over) { drawDinerStrip(s, pattyBustWidth(s) + 6, chrissyBustWidth(s) + 6); drawCookBusts(s); }   // house inset for the cook(s), then the cook(s) in front
+  if (s.won) { txt(`✦ ${th.clear} ✦`, W/2, gy + gh + 36, 24, COL.good, "center", 800);
+    txt("PERFECT GRILLING — NICELY DONE!", W/2, gy + gh + 64, 16, COL.cheese, "center", 600); }
+  if (s.over) {                                            // Billy's on BREAK (not fired) — the arcade CONTINUE
+    const secs = Math.max(0, Math.ceil(continueT));
+    txt(apMode ? "ANDERS & PARTNERS — RECESS CALLED" : `✦ ${th.fired} ✦`,
+        W/2, gy + gh + 30, apMode ? 15 : 22, apMode ? COL.cream : COL.cheese, "center", 800);
+    if (continueT > 0) {
+      txt(s.theme === "school" ? "BACK FROM RECESS?  press any button" : "BRING HIM BACK?  press any button",
+          W/2, gy + gh + 56, 16, COL.cream, "center", 700);
+      txt(String(secs), W/2, gy + gh + 94, 34, secs <= 3 ? COL.bad : COL.amber, "center", 800);
+    }
+  }
+
+  if (!isDemo) {
+    const fm = document.body.classList.contains("fullmenu");
+    hint.textContent = s.players.length === 2
+      ? (fm ? "P1 ←/→ SPACE/C/X/B   ·   P2 J/L I/K/./M   ·   P pause" : "P1 ←/→ SPACE/C/B   ·   P2 J/L I/K/M   ·   P pause")
+      : (fm ? "←/→ move · SPACE flip · C cheese · X toast · B HEY BILLY · P pause"
+            : "←/→ move · SPACE flip · C cheese · B HEY BILLY · P pause");
+  }
+}
+
+function fitSprite(spr, cx, cy, w, h) {                 // draw a sprite centered + fit to a zone
+  const B = spr.pmPad || 0, iw = spr.width - 2 * B, ih = spr.height - 2 * B;   // Joe's topping art ships a clear 16px border
+  const availW = w * 0.98, availH = (h || 120) * 0.78, ar = iw / ih;
+  let dw = availW, dh = dw / ar; if (dh > availH) { dh = availH; dw = dh * ar; }
+  ctx.drawImage(spr, B, B, iw, ih, cx - dw/2, cy - dh/2, dw, dh);
+  return { hw: dw / 2, hh: dh / 2 };
+}
+function drawPatty(s, p, cx, cy, w, h) {
+  if (!p) {                                             // empty slot = the diner plate / school tray
+    const art = slotArt(s);
+    if (art) fitSprite(art, cx, cy, w, h);
+    else { ctx.fillStyle = COL.dim; txt("·", cx, cy, 20, COL.dim, "center", 400); }
+    return;
+  }
+  const r = Math.min(26, w * 0.32);
+  let fill = COL.raw, ring = null, label = "";
+  if (p.stage === pm.Stage.SEAR_A) { fill = "#9c6a3c"; label = "raw"; }
+  else if (p.stage === pm.Stage.SEAR_B) { fill = "#7c4f2c"; label = "flip"; }
+  else if (p.stage === pm.Stage.MELT) { fill = "#caa24a"; label = "melt"; }
+  else if (p.stage === pm.Stage.DONE) { fill = p.understeared ? COL.bad : COL.done; label = p.understeared ? "RAW!" : "DONE"; }
+  // sweet-spot ring: green while in [READY,BURN), red flashing near burn
+  if (p.stage === pm.Stage.SEAR_A || p.stage === pm.Stage.SEAR_B) {
+    const burn = pm.sear_burn_of(s, p);
+    const ready = p.cook >= pm.sear_ready(p);
+    const near = burn < pm.NEVER_BURN && p.cook >= burn - 6;
+    ring = near ? COL.bad : (ready ? COL.good : COL.dim);
+  } else if (p.stage === pm.Stage.MELT) ring = COL.cheese;
+  const spr = pattySprite(p);
+  let halfH = r;
+  if (spr) {                                          // real art per stage, fit to the zone
+    const d = fitSprite(spr, cx, cy, w, h); halfH = d.hh;
+    if (ring) { ctx.lineWidth = 3; ctx.strokeStyle = ring; ctx.beginPath();   // timing halo
+      ctx.ellipse(cx, cy, d.hw + 3, d.hh + 3, 0, 0, Math.PI*2); ctx.stroke(); }
+  } else {                                            // vector fallback (sprite not loaded)
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fillStyle = fill; ctx.fill();
+    if (p.stage === pm.Stage.MELT || p.stage === pm.Stage.DONE) {   // cheese square
+      ctx.fillStyle = COL.cheese; ctx.save(); ctx.translate(cx, cy); ctx.rotate(0.2);
+      ctx.fillRect(-r*0.8, -r*0.8, r*1.6, r*1.6); ctx.restore();
+      ctx.beginPath(); ctx.arc(cx, cy, r*0.7, 0, Math.PI*2); ctx.fillStyle = fill; ctx.fill();
+    }
+    if (ring) { ctx.lineWidth = 3; ctx.strokeStyle = ring; ctx.beginPath(); ctx.arc(cx, cy, r+5, 0, Math.PI*2); ctx.stroke(); }
+  }
+  // the WINDOW-ALIGNED timing read (replaces the old 0..burn pips, which read ~40% full at the
+  // exact moment you should flip — so "ready" looked like "not yet" and you burned it). Now the
+  // gauge's GO band == the action window, and a prompt over the patty says WHICH button + WHEN.
+  const ov = pattyOverlay(p);                          // FULL MENU: cheese on a melt, a bread lid on a patty-melt
+  if (ov && ov.img) fitSprite(ov.img, cx, cy + h * ov.dy, w * ov.scale, h * ov.scale);
+  drawSlotCue(s, p, cx, cy, halfH, w);
+  if (!spr) txt(label, cx, cy + 4, 12, COL.steel, "center", 800);   // sprite is self-explanatory
+}
+
+// The per-slot captain read: a timing gauge (cook position vs the GO window) UNDER the patty +
+// an action prompt ABOVE it. Pure render off engine values (SEAR_READY..sear_burn / MELT_DONE).
+function drawSlotCue(s, p, cx, cy, halfH, w) {
+  const sear = p.stage === pm.Stage.SEAR_A || p.stage === pm.Stage.SEAR_B || p.stage === pm.Stage.TOAST;
+  const melt = p.stage === pm.Stage.MELT;
+  const t = performance.now(), blink = Math.floor(t / 130) % 2 === 0;
+  const bw = Math.min(76, w * 0.74), bx = cx - bw / 2, by = cy + halfH + 8, bh = 7;
+  // ---- timing gauge: warming (pre-READY) fill + the bright GO band [READY, burn) ----
+  if (sear || melt) {
+    ctx.fillStyle = "#241c12"; ctx.fillRect(bx, by, bw, bh);
+    if (melt) {                                                  // hands-off: just the melt fill
+      ctx.fillStyle = COL.cheese; ctx.fillRect(bx, by, bw * Math.min(1, p.cook / pm.melt_done(s)), bh);
+    } else {
+      const ready = pm.sear_ready(p), burn = pm.sear_burn_of(s, p);
+      const denom = burn < pm.NEVER_BURN ? burn : ready + 14;    // KIDS never burns → show a soft window
+      const fr = Math.min(1, p.cook / denom), rx = bx + bw * (ready / denom);
+      ctx.fillStyle = "#5a4a2c";                                 // warming-up (don't act yet)
+      ctx.fillRect(bx, by, bw * Math.min(fr, ready / denom), bh);
+      if (p.cook >= ready) {                                     // in the GO band: green→amber→red
+        const into = (p.cook - ready) / Math.max(1, denom - ready);
+        ctx.fillStyle = burn >= pm.NEVER_BURN ? COL.good : (into > 0.7 ? COL.bad : into > 0.45 ? COL.glow : COL.good);
+        ctx.fillRect(rx, by, (bx + bw * fr) - rx, bh);
+      }
+      ctx.fillStyle = COL.cream; ctx.fillRect(rx - 1, by - 2, 2, bh + 4);            // GO line (act from here)
+      if (burn < pm.NEVER_BURN) { ctx.fillStyle = COL.bad; ctx.fillRect(bx + bw - 1, by - 2, 2, bh + 4); } // burn cap
+    }
+  }
+  // ---- action prompt ABOVE the patty: the button to press, the instant to press it ----
+  const py = cy - halfH - 9;
+  if (sear) {
+    const isToast = p.stage === pm.Stage.TOAST;
+    if (p.cook < pm.sear_ready(p)) { txt(isToast ? "toasting…" : "searing…", cx, py, 11, COL.dim, "center", 600); }  // WAIT (early = raw)
+    else {
+      const danger = pm.sear_burn_of(s, p) < pm.NEVER_BURN && p.cook >= pm.sear_burn_of(s, p) - 6;
+      // the button (and key) the patty wants NOW — the stage IS the next action (SEAR_A→FLIP, SEAR_B→CHEESE, TOAST→TOAST)
+      const cue = p.stage === pm.Stage.SEAR_A ? ["▲ FLIP", COL.mustard]
+                : p.stage === pm.Stage.SEAR_B ? (pm.RECIPES[p.item][p.step] === pm.Action.ONION ? ["■ ONIONS", "#d9a04a"] : ["■ CHEESE", COL.cheese])
+                : ["▣ TOAST", "#e09a4e"];
+      const col = danger ? COL.bad : cue[1];
+      if (!danger || blink) txt(cue[0], cx, py, danger ? 16 : 14, col, "center", 800);
+    }
+  } else if (melt) {
+    txt("melting…", cx, py, 11, COL.cheese, "center", 600);
+  } else if (p.stage === pm.Stage.DONE) {
+    if (p.understeared) { if (blink) txt("RAW ✗", cx, py, 14, COL.bad, "center", 800); }   // will bounce
+    else if (s.billy < s.cfg.billy_serve_min) {                 // jammed: expo slacking → YOU must holler
+      if (blink) txt("HEY BILLY! ▶", cx, py, 14, COL.bad, "center", 800);
+      else txt("HEY BILLY! ▶", cx, py, 14, COL.amber, "center", 800);
+    } else txt("SERVE ▶", cx, py, 13, COL.good, "center", 800);  // Billy's on it — handoff incoming
+  }
+}
+
+// THE HANDOFF BEAT — on a serve, the finished patty FLIPS off the spatula in a spinning arc (the
+// "between the spatulas onto the plate" move) with an ORDER UP! + points pop; a sent-back patty
+// bounces the other way in red. Spawned by fxTick's per-tick diff; render-only, parity untouched.
+function drawServeFx(zones) {
+  if (!fx.length) return;
+  const now = performance.now(), LIFE = 900;
+  for (const f of fx) {
+    const age = now - f.born, k = age / LIFE; if (k < 0 || k >= 1) continue;
+    const z = zones[f.slot]; if (!z) continue;
+    const cx = z.x + z.w / 2, cy = z.y + z.h / 2;
+    const arc = Math.sin(Math.min(1, k) * Math.PI);          // 0→1→0 toss parabola
+    const px = cx + (f.kind === "serve" ? 30 : -20) * k;     // drift toward the pass / back on a reject
+    const py = cy - (f.kind === "serve" ? 70 : 26) * arc - 6 * k;
+    const spin = age / 90 * (f.kind === "serve" ? 1 : -1);   // the flip between the spatulas
+    const r = Math.min(16, z.w * 0.22) * (1 - 0.25 * k);
+    ctx.save(); ctx.globalAlpha = Math.max(0, 1 - k * k);
+    const melt = f.kind === "serve" && pm.TOAST_ITEMS.has(f.item) && PMSpat.topping(game && game.theme === "school" ? "plated-heroes" : "plated-diner");
+    ctx.translate(px, py); if (!melt) ctx.rotate(spin);
+    const spr = GRILL_SPR.done;
+    if (melt) PMSpat.drawPlated(ctx, game.theme === "school", 0, 0, r * 3.6);   // a melt goes up plated (Joe 1027), no spin
+    else if (spr) { const dw = r * 2.4, dh = dw * spr.height / spr.width; ctx.drawImage(spr, -dw/2, -dh/2, dw, dh); }
+    else { ctx.fillStyle = COL.done; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = COL.cheese; ctx.save(); ctx.rotate(0.2); ctx.fillRect(-r*0.8, -r*0.8, r*1.6, r*1.6); ctx.restore(); }
+    ctx.restore();
+    ctx.save(); ctx.globalAlpha = Math.max(0, 1 - k);         // the call-out rides above the toss
+    if (f.kind === "serve") {
+      txt("ORDER UP!", cx, py - r - 8, 15, COL.good, "center", 800);
+      txt("+" + f.pts, cx, py - r + 8, 13, COL.cheese, "center", 700);
+      if (f.combo >= pm.FLOW_COMBO) txt("x" + pm.combo_mult(f.combo), cx + 46, py - r - 6, 14, COL.glow, "center", 800);
+    } else txt("SENT BACK ✗", cx, py - r - 6, 14, COL.bad, "center", 800);
+    ctx.restore();
+  }
+  fx = fx.filter((f) => now - f.born < LIFE);
+}
+
+// BACK OF HOUSE — the FREEZER (catch falling boxes, no-fail bonus) / BASEMENT (grab the rising
+// backlog, quota-or-forfeit, x2 on a clean clear). Pure vector/text (no art); the engine is the
+// parity-proven mini-stage in engine.js. Cart is player-driven; the clock + items run on the sim tick.
+function renderMini(s) {
+  if (!s) return;
+  const c = s.cfg, chill = c.mood === "chill";
+  const accent = chill ? "#6fd0e8" : COL.ketchup;             // freezer cool-blue / basement hot-red
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, chill ? "#0c1a22" : "#1f0d0a"); g.addColorStop(1, "#0a0806");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  txt(c.name, W / 2, 78, 44, accent, "center", 800);
+  txt(c.flavor, W / 2, 108, 18, COL.cream, "center", 600);
+  const quota = c.quota ? `/${c.quota}` : "";
+  const secs = Math.max(0, Math.ceil(s.t_left / pm.TPS));
+  txt(`TIME ${secs}s`, 40, 150, 20, secs <= 3 && !s.done ? COL.bad : COL.cream, "left", 700);
+  txt(`CAUGHT ${s.caught}${quota}`, W / 2, 150, 20,
+      c.quota && s.caught >= c.quota ? COL.good : COL.cream, "center", 700);
+  txt(`BONUS ${String(s.score).padStart(5, "0")}`, W - 40, 150, 20, COL.cheese, "right", 700);
+  // grid: MINI_LANES columns x MINI_ROWS rows; cart sits at the resolve row (bottom=freezer / top=basement)
+  const gx0 = 96, gw = W - 192, laneW = gw / pm.MINI_LANES;
+  const gy0 = 196, gh = 312, rowH = gh / pm.MINI_ROWS;
+  const laneX = (l) => gx0 + l * laneW + laneW / 2;
+  const rowY = (r) => gy0 + r * rowH + rowH / 2;
+  ctx.strokeStyle = "rgba(255,255,255,0.06)"; ctx.lineWidth = 1;
+  for (let l = 0; l <= pm.MINI_LANES; l++) { ctx.beginPath(); ctx.moveTo(gx0 + l * laneW, gy0); ctx.lineTo(gx0 + l * laneW, gy0 + gh); ctx.stroke(); }
+  for (const it of s.items) {                                 // boxes in flight
+    const x = laneX(it[0]), y = rowY(it[1]), bw = laneW * 0.56, bh = rowH * 0.56;
+    ctx.fillStyle = accent; ctx.fillRect(x - bw / 2, y - bh / 2, bw, bh);
+    ctx.strokeStyle = "rgba(255,255,255,0.28)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x - bw / 2, y); ctx.lineTo(x + bw / 2, y);
+    ctx.moveTo(x, y - bh / 2); ctx.lineTo(x, y + bh / 2); ctx.stroke();
+  }
+  const catchRow = chill ? pm.MINI_ROWS - 1 : 0;
+  const cx = laneX(s.cart), cy = rowY(catchRow), cw = laneW * 0.82;
+  ctx.fillStyle = COL.cheese; ctx.fillRect(cx - cw / 2, cy - 13, cw, 26);
+  txt(chill ? "▲" : "▼", cx, cy + 7, 18, "#3a2a08", "center", 800);
+  if (s.done) {
+    txt(s.score > 0 ? "STAGE COMPLETE — press SPACE" : "FORFEIT — press SPACE",
+        W / 2, gy0 + gh + 52, 24, s.score > 0 ? COL.good : COL.bad, "center", 800);
+  } else {
+    if (s.flash) txt(s.flash, W / 2, gy0 + gh + 24, 20, COL.cheese, "center", 800);
+    txt(chill ? "◀ ▶  catch what falls — pure bonus, no fail"
+              : "◀ ▶  grab the backlog — clear the quota or forfeit",
+        W / 2, gy0 + gh + 50, 15, COL.dim, "center", 600);
+  }
+}
+
+function renderOver() {
+  renderPlay(game);
+  ctx.fillStyle = "rgba(5,6,10,0.7)"; ctx.fillRect(0, 0, W, H);
+  if (enteringInitials) {
+    txt("NEW HIGH SCORE!", W/2, 130, 30, COL.amber, "center", 800);
+    txt(String(game.score).padStart(6,"0"), W/2, 168, 26, COL.cream, "center", 700);
+    txt("ENTER YOUR INITIALS", W/2, 220, 18, COL.cream, "center", 600);
+    const shown = initials.map((i, idx) => (idx === initPos ? `[${LETTERS[i]}]` : ` ${LETTERS[i]} `)).join("  ");
+    txt(shown, W/2, 264, 34, COL.cheese, "center", 800);
+    txt("↑/↓ letter · → next · B done", W/2, 320, 15, COL.cream, "center", 400);
+    hint.textContent = "↑/↓ letter · → next · B/ENTER done";
+  } else {
+    const ch = cheesiest(), champ = board[0], justCrowned = overRank === 0;
+    // the shift recap (positive framing) — or the A&P VERDICT on THE AUDIT cab
+    const v = verdictFor(game);
+    txt(apMode ? v.grade : `GOOD SHIFT — held to ROUND ${game.rnd} · DAY ${game.cfg.day}`,
+        W/2, 50, 14, apMode ? v.col : COL.good, "center", 700);
+    const rc = shiftReceipt(game);                          // the old-time register receipt (every game)
+    txt(rc.line, W/2, 70, 12, COL.cheese, "center", 700);
+    txt(`“${rc.comment}”${continuesUsed ? `  (Billy took ${continuesUsed} break${continuesUsed > 1 ? "s" : ""})` : ""}`,
+        W/2, 85, 11, COL.cream, "center", 500);
+    txt("HIGH SCORES", W/2, 108, 26, COL.amber, "center", 800);
+    // crown the #1 — THE CHEESIEST OF THEM ALL, SO SAY WE ALL
+    txt(`♛ ${champ[0]} — ${ch.crown} ♛`, W/2, 124, justCrowned ? 19 : 16,
+        justCrowned ? COL.cheese : COL.amber, "center", 800);
+    txt(ch.say, W/2, 146, 13, COL.cream, "center", 500);
+    board.slice(0, pm.HISCORE_N).forEach(([n, sc], i) => {
+      const c = i === overRank ? COL.good : (i === 0 ? COL.cheese : COL.cream);
+      const mark = i === overRank ? "▸" : (i === 0 ? "♛" : " ");
+      txt(`${mark} ${String(i+1).padStart(2)}. ${n}   ${String(sc).padStart(6,"0")}`, W/2, 176 + i*27, 17, c, "center", 600);
+    });
+    txt(justCrowned ? "YOU ARE THE CHEESIEST — press any key" : "press any key",
+        W/2, 470, 15, justCrowned ? COL.cheese : COL.cream, "center", 400);
+    hint.textContent = "any key → menu";
+  }
+}
+
+// ---------- persistence ----------
+function loadScores() {
+  try { const d = JSON.parse(localStorage.getItem("pattymelt.hi")); if (Array.isArray(d) && d.length) return d.slice(0, pm.HISCORE_N); } catch {}
+  return pm.DEFAULT_SCORES.map(e => [...e]);
+}
+function saveScores(b) { try { localStorage.setItem("pattymelt.hi", JSON.stringify(b)); } catch {} }
+
+// ---------- IN-PAGE SELFTEST / PARITY  (open cabinet.html?selftest) ----------
+// Proves the page rides the real engine: runs engine.js's baked selftest AND asserts the
+// live R1-ARCADE parity numbers (244 ticks / 5500 / combo x5) right in the browser — the
+// same proof `node web/engine.js` gives at the CLI (the ZEBRA ?selftest pattern). Logs to
+// the console too, so a headless gate can scrape it.
+function renderSelftest() {
+  const R = pm.selftest();
+  const s = pm.new_game(1, "arcade");                 // explicit in-page parity play (mirrors engine EXPECT)
+  while (!(s.over || s.won) && s.ticks < 6000) { pm.auto_step(s); pm.tick(s); }
+  R.push({ name: "PARITY R1 ARCADE = 244t / 5500 / combo x5",
+           ok: s.ticks === 244 && s.score === 5500 && pm.combo_mult(s.combo_best) === 5,
+           info: `ticks=${s.ticks} score=${s.score} combo x${pm.combo_mult(s.combo_best)}` });
+  const fails = R.filter(r => !r.ok);
+  for (const f of fails) console.error("FAIL:", f.name, f.info);
+  console.log(fails.length ? `PATTY MELT cabinet selftest: ${fails.length}/${R.length} FAILED`
+                           : `PATTY MELT cabinet selftest OK (${R.length} checks, parity vs Python)`);
+  ctx.fillStyle = COL.steel; ctx.fillRect(0, 0, W, H);
+  txt("CABINET SELFTEST", W/2, 52, 30, fails.length ? COL.bad : COL.good, "center", 800);
+  txt(fails.length ? `${fails.length} / ${R.length} FAILED` : `${R.length} / ${R.length} PASS`,
+      W/2, 84, 20, fails.length ? COL.bad : COL.good, "center", 700);
+  R.forEach((r, i) => {
+    const y = 122 + i * 30;
+    txt(r.ok ? "✓" : "✗", 64, y, 18, r.ok ? COL.good : COL.bad, "left", 800);
+    txt(r.name, 94, y, 16, COL.cream, "left", 600);
+    if (r.info) txt(r.info, W - 36, y, 12, COL.dim, "right", 400);
+  });
+  txt("remove ?selftest from the URL to play", W/2, H - 26, 14, COL.cream, "center", 400);
+}
+// debug/QA hooks for tools/shot.mjs: jump the attract reel to a scene (?at=<sec>&skin=<diner|school>)
+const _skin = Q.get("skin");
+if (_skin === "diner" || _skin === "school") attractTheme = _skin;
+const _at = parseFloat(Q.get("at"));
+if (!Number.isNaN(_at)) {
+  attractT = _at;
+  if (_at > IDENT_END) {                          // populate a mid-round demo so the demo card looks alive
+    demo = pm.new_game(1, "arcade", 1, attractTheme, pm.SLOTS, cabItems());
+    for (let i = 0; i < 150 && !(demo.over || demo.won); i++) { pm.auto_step(demo); pm.tick(demo); }
+  }
+}
+// QA hook (tools/shot.mjs): ?mini=freezer|basement boots straight into a back-of-house stage,
+// pre-advanced a few ticks so a screenshot shows boxes mid-flight (mirrors the ?at / ?co hooks).
+const _mini = (Q.get("mini") || "").toLowerCase();
+if (_mini === "freezer" || _mini === "basement") {
+  game = pm.new_game(3, "arcade", 1, attractTheme, activeEdition.grill, cabItems());   // a just-cleared day-3 shift
+  game.score = 4200; game.won = true;
+  mini = pm.mini_new(_mini === "basement" ? pm.BASEMENT : pm.FREEZER);
+  for (let i = 0; i < 26; i++) { pm.mini_auto_step(mini); pm.mini_tick(mini); }
+  scene = "mini";
+}
+// QA hook (tools/shot.mjs): ?play=<edition key>&players=1|2&ticks=N&skin= boots a LIVE shift and
+// auto-plays it a few ticks, so a screenshot shows the real play screen (cook busts, dining room,
+// HUD) — the piece ?at only faked via the attract demo. Render-only; uses the same auto_step+tick.
+const _play = (Q.get("play") || "").toLowerCase();
+var QA_STILL = /^melt2?$/.test(Q.get("fill") || "");
+if (_play) {
+  const ed = EDITIONS.find((e) => e.key === _play) || EDITIONS[2];
+  menu.players = Q.get("players") === "2" ? 2 : 1;
+  startGame(ed);
+  const tk = Math.max(0, parseInt(Q.get("ticks") || "140", 10));
+  for (let i = 0; i < tk && !(game.over || game.won); i++) { pm.auto_step(game); pm.tick(game); }
+  if (Q.get("billy")) window.__billyForce = Q.get("billy");   // QA: force Billy's pass pose (slack|turn|serve)
+  if (QA_STILL) { PMSpat.stageMelts(game, Q.get("fill")); game._paused = true; }   // ?fill=melt|melt2: the topping ladders, frozen
+}
+if (Q.has("selftest")) renderSelftest();
+else requestAnimationFrame(frame);
+</script>
+</body>
+</html>
