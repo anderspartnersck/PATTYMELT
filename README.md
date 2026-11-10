@@ -14,7 +14,7 @@ A Castle Killscreen game by **Anders & Partners**.
 >
 > Playable and reasonably deep — shifts, the grill and toaster as competing scarce stations, a dining room that reports the game back to you. Art, balance and the co-op modes are all still moving.
 >
-> The finished Castle Killscreen titles are **[SUCK UP](https://anderspartnersck.github.io/suck-up/)**
+> The finished Castle Killscreen titles are **[SUCK UP](https://anderspartnersck.github.io/suck-up/3d.html?arcade)**
 > and **[ONE-TIMER: THE HIGH TABLE](https://anderspartnersck.github.io/high-table/)**. This repo
 > exists so the work can happen in the open, not because the work is done.
 
@@ -68,7 +68,8 @@ Anders & Partners.
 
 <sub>Generated from the private Castle Killscreen tree. Edit there, not here.</sub>
 
-## OLD 2D VERSION
+## ⚠︎ OLD 2D VERSION — NOT THE MAIN GAME
 
-The original flat-sprite game, kept playable but no longer the main game:
+Archived for reference only. It is no longer updated, and nothing new goes into it.
+The game at the top of this page is the real one. This is the original flat-sprite build:
 [OLD 2D VERSION](https://anderspartnersck.github.io/PATTYMELT/).
