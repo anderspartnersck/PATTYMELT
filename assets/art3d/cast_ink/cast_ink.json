@@ -1,0 +1,770 @@
+{
+ "tool": "3D PIPELINE/games/patty-melt/tools/ink_cast.py",
+ "light": "upper right-front (the kitchens' heat-lamp key)",
+ "params": {
+  "ss": 2,
+  "light": [
+   0.62,
+   -0.78
+  ],
+  "k": 22,
+  "merge_ab": 17.0,
+  "merge_inside": 0.3,
+  "merge_hue": 13.0,
+  "merge_l": 38.0,
+  "l_weight": 0.55,
+  "flat_pct": [
+   62,
+   96
+  ],
+  "keep_detail": 17.0,
+  "paint_dead": 3.0,
+  "paint_span": 0.36,
+  "light_relief": 0.42,
+  "dark_flat": 46.0,
+  "light_dot": 0.62,
+  "light_tint": [
+   0.6,
+   0.62,
+   0.7
+  ],
+  "tone_smooth": 2.6,
+  "w_paint": 0.72,
+  "w_form": 0.62,
+  "form_r": 26,
+  "t_dot": 0.24,
+  "t_hatch": 0.42,
+  "t_cross": 0.66,
+  "dot_pitch": 11.0,
+  "dot_angle": 45,
+  "dot_max": 0.5,
+  "skin_tint": [
+   0.78,
+   0.6,
+   0.52
+  ],
+  "dot_tint": 0.42,
+  "hatch_pitch": 9.0,
+  "hatch_angle": 58,
+  "cross_angle": -28,
+  "hatch_w": [
+   0.2,
+   0.44
+  ],
+  "hatch_wobble": 1.1,
+  "hatch_break": 0.16,
+  "skin_dots": false,
+  "skin_hatch": true,
+  "skin_ink": [
+   120,
+   62,
+   34
+  ],
+  "skin_hatch_w": 0.72,
+  "face_keep": true,
+  "face_close": 0.0,
+  "face_zone": 0.56,
+  "spot_l": 27.0,
+  "spot_chroma": 8.5,
+  "spot_hi": 2.6,
+  "spot_hi_col": [
+   86,
+   92,
+   112
+  ],
+  "rim": true,
+  "rim_w": 3.6,
+  "rim_all": 1.5,
+  "rim_all_col": [
+   74,
+   84,
+   112
+  ],
+  "rim_col": [
+   142,
+   156,
+   188
+  ],
+  "bounce_w": 2.8,
+  "bounce_col": [
+   176,
+   122,
+   82
+  ],
+  "bounce_zone": 0.8,
+  "line_dark": 12.0,
+  "line_sigma": 3.2,
+  "line_max": 5.0,
+  "edge_de": 20.0,
+  "edge_min": 6.5,
+  "edge_w": 1.8,
+  "edge_smooth": 2.2,
+  "line_w": 1.0,
+  "line_shadow_gain": 1.6,
+  "sil_w": 2.0,
+  "sil_shadow": 4.2,
+  "ink": [
+   18,
+   16,
+   24
+  ],
+  "shadow": true,
+  "shadow_rx": 0.46,
+  "shadow_ry": 0.05,
+  "shadow_alpha": 0.62,
+  "halo": true,
+  "halo_col": [
+   238,
+   222,
+   196
+  ],
+  "halo_alpha": 0.34
+ },
+ "override": {
+  "billy-turn": {
+   "face_close": 0.34
+  },
+  "billy-slack": {
+   "face_close": 0.34
+  },
+  "billy-serve": {
+   "face_close": 0.34
+  },
+  "billyH-turn": {
+   "face_close": 0.34
+  },
+  "billyH-slack": {
+   "face_close": 0.34
+  },
+  "billyH-serve": {
+   "face_close": 0.34
+  }
+ },
+ "sets": {
+  "diner": {
+   "patty-idle": {
+    "size": [
+     97,
+     259
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/patty/idle.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "patty-serve": {
+    "size": [
+     123,
+     259
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/patty/serve.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "chrissy-idle": {
+    "size": [
+     116,
+     259
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/chrissy/idle.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "chrissy-cheer": {
+    "size": [
+     155,
+     259
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/chrissy/cheer.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "chrissy-flip": {
+    "size": [
+     213,
+     259
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/chrissy/flip.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "chrissy-cheese": {
+    "size": [
+     187,
+     259
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/chrissy/cheese.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "chrissy-serve": {
+    "size": [
+     147,
+     259
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/chrissy/serve.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billy-serve": {
+    "size": [
+     208,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/billy/serve.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billy-slack": {
+    "size": [
+     221,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/billy/slack.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billy-turn": {
+    "size": [
+     190,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/billy/turn.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billy-walk-0": {
+    "size": [
+     103,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/billy/walk-0.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billy-walk-1": {
+    "size": [
+     107,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/billy/walk-1.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billy-walk-2": {
+    "size": [
+     106,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/billy/walk-2.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billy-walk-3": {
+    "size": [
+     97,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/billy/walk-3.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billy-walk-4": {
+    "size": [
+     96,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/billy/walk-4.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billy-walk-5": {
+    "size": [
+     110,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/billy/walk-5.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "patty-profile": {
+    "size": [
+     59,
+     259
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/patty/profile.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "patty-back": {
+    "size": [
+     102,
+     259
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/patty/back.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "patty-back34": {
+    "size": [
+     76,
+     259
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/patty/back34.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "patty-cheer": {
+    "size": [
+     94,
+     258
+    ],
+    "src": "PATTY MELT/assets/chars/patty-cheer.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "patty-flip": {
+    "size": [
+     92,
+     258
+    ],
+    "src": "PATTY MELT/assets/chars/patty-flip.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "chrissy-run": {
+    "size": [
+     196,
+     259
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/chrissy/run.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "chrissy-scrape": {
+    "size": [
+     198,
+     259
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/chrissy/scrape.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "chrissy-toss": {
+    "size": [
+     195,
+     259
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/chrissy/toss.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "chrissy-profile": {
+    "size": [
+     90,
+     259
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/chrissy/profile.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "chrissy-back": {
+    "size": [
+     139,
+     259
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/chrissy/back.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "chrissy-back34": {
+    "size": [
+     129,
+     259
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/chrissy/back34.png",
+    "in_game": false,
+    "inbox": false
+   }
+  },
+  "heroes": {
+   "patty-idle": {
+    "size": [
+     84,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroes/patty/idle.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "patty-serve": {
+    "size": [
+     90,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroes/patty/hip.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "pattyA-idle": {
+    "size": [
+     84,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroesA/patty/idle.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "pattyA-serve": {
+    "size": [
+     90,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroesA/patty/hip.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "chrissy-idle": {
+    "size": [
+     102,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroes/chrissy/idle.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "chrissy-cheer": {
+    "size": [
+     119,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroes/chrissy/cheer.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "chrissy-cheese": {
+    "size": [
+     172,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroes/chrissy/cheese.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "chrissy-serve": {
+    "size": [
+     132,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroes/chrissy/serve.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "chrissyB-idle": {
+    "size": [
+     102,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroesB/chrissy/idle.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "chrissyB-cheer": {
+    "size": [
+     119,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroesB/chrissy/cheer.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "chrissyB-cheese": {
+    "size": [
+     172,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroesB/chrissy/cheese.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "chrissyB-serve": {
+    "size": [
+     132,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroesB/chrissy/serve.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billy-serve": {
+    "size": [
+     208,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/billy/serve.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billy-slack": {
+    "size": [
+     221,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/billy/slack.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billy-turn": {
+    "size": [
+     190,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/billy/turn.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billy-walk-0": {
+    "size": [
+     103,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/billy/walk-0.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billy-walk-1": {
+    "size": [
+     107,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/billy/walk-1.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billy-walk-2": {
+    "size": [
+     106,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/billy/walk-2.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billy-walk-3": {
+    "size": [
+     97,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/billy/walk-3.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billy-walk-4": {
+    "size": [
+     96,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/billy/walk-4.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billy-walk-5": {
+    "size": [
+     110,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/classic/billy/walk-5.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billyH-serve": {
+    "size": [
+     208,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroesP/billy/serve.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billyH-slack": {
+    "size": [
+     221,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroesP/billy/slack.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billyH-turn": {
+    "size": [
+     190,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroesP/billy/turn.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billyH-walk-0": {
+    "size": [
+     103,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroesP/billy/walk-0.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billyH-walk-1": {
+    "size": [
+     107,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroesP/billy/walk-1.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billyH-walk-2": {
+    "size": [
+     106,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroesP/billy/walk-2.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billyH-walk-3": {
+    "size": [
+     97,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroesP/billy/walk-3.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billyH-walk-4": {
+    "size": [
+     96,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroesP/billy/walk-4.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "billyH-walk-5": {
+    "size": [
+     110,
+     225
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroesP/billy/walk-5.png",
+    "in_game": true,
+    "inbox": false
+   },
+   "patty-profile": {
+    "size": [
+     58,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroes/patty/profile.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "patty-back": {
+    "size": [
+     86,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroes/patty/back.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "patty-back34": {
+    "size": [
+     86,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroes/patty/back34.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "patty-cheer": {
+    "size": [
+     72,
+     236
+    ],
+    "src": "PATTY MELT/assets/chars/patty-school-cheer.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "patty-flip": {
+    "size": [
+     83,
+     236
+    ],
+    "src": "PATTY MELT/assets/chars/patty-school-flip.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "chrissy-run": {
+    "size": [
+     181,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroes/chrissy/run.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "chrissy-toss": {
+    "size": [
+     165,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroes/chrissy/toss.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "chrissy-profile": {
+    "size": [
+     75,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroes/chrissy/profile.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "chrissy-back": {
+    "size": [
+     112,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroes/chrissy/back.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "chrissy-back34": {
+    "size": [
+     120,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroes/chrissy/back34.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "chrissyG-idle": {
+    "size": [
+     102,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroes/chrissy/idle.png",
+    "in_game": false,
+    "inbox": false
+   },
+   "chrissyG-cheer": {
+    "size": [
+     119,
+     237
+    ],
+    "src": "3D PIPELINE/games/patty-melt/renders/cast3d/heroes/chrissy/cheer.png",
+    "in_game": false,
+    "inbox": false
+   }
+  }
+ }
+}

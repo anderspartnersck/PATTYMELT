@@ -18,6 +18,12 @@
     return new Promise((res) => { const im = new Image(); im.onerror = () => res(null);
       im.onload = () => { (im.decode ? im.decode().catch(() => {}) : Promise.resolve()).then(() => res(im)); }; im.src = BASE + src; });
   }
+  // cast frames route through the ONE cast table (lib/cast.js — ?cast=ink tries the inked set first, falls back per image)
+  function loadCast(f) {
+    const chain = globalThis.PMCast ? PMCast.art3dChain(BASE, f) : [BASE + f];
+    return chain.reduce((p, url) => p.then((im) => im || new Promise((res) => { const i = new Image(); i.onerror = () => res(null);
+      i.onload = () => { (i.decode ? i.decode().catch(() => {}) : Promise.resolve()).then(() => res(i)); }; i.src = url; })), Promise.resolve(null));
+  }
   ART.load = function (base) { const p = _queue.then(() => ART._load(base)); _queue = p.catch(() => {}); return p; };
   ART._load = async function (base) {
     if (base) BASE = base;                          // HEROES: ../assets/art3d/heroes/
@@ -37,8 +43,8 @@
     for (const [who, poses] of Object.entries(m.cast)) {
       ART.cast[who] = {};
       for (const [pose, f] of Object.entries(poses)) {
-        if (Array.isArray(f)) { ART.cast[who][pose] = []; f.forEach((ff, i) => jobs.push(tick(loadImg(ff)).then((im) => { ART.cast[who][pose][i] = im; }))); }
-        else jobs.push(tick(loadImg(f)).then((im) => { ART.cast[who][pose] = im; }));
+        if (Array.isArray(f)) { ART.cast[who][pose] = []; f.forEach((ff, i) => jobs.push(tick(loadCast(ff)).then((im) => { ART.cast[who][pose][i] = im; }))); }
+        else jobs.push(tick(loadCast(f)).then((im) => { ART.cast[who][pose] = im; }));
       }
     }
     await Promise.all(jobs);

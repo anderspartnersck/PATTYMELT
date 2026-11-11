@@ -38,6 +38,15 @@
   body.framed #tag{bottom:0.4em;}
   @keyframes flameflicker{ 0%,100%{opacity:.92} 12%{opacity:1} 20%{opacity:.66} 28%{opacity:.98}
     42%{opacity:.8} 55%{opacity:1} 63%{opacity:.58} 71%{opacity:.95} 85%{opacity:.86} 93%{opacity:1} }
+  /* RECEIPTS RAIL (round 2): narrower (232px, was 280) and tuckable behind a tab; ?rail=open|tucked, remembered locally */
+  body.pm-rail-narrow .pm-service{width:232px!important;padding:10px!important;font-size:13px!important}
+  body.pm-rail-narrow.pm-service-layout #wrap{max-width:calc(100vw - 262px)!important;width:min(calc(100vw - 262px),calc((100dvh - 65px)*var(--pm-screen-aspect,2.13)))!important}
+  body.pm-rail-tucked .pm-service{display:none!important}
+  body.pm-rail-tucked.pm-service-layout #wrap{max-width:96vw!important;width:min(96vw,calc((100dvh - 65px)*var(--pm-screen-aspect,2.13)))!important}
+  #pmRailTab{position:fixed;right:0;top:40%;z-index:50;writing-mode:vertical-rl;padding:10px 5px;border:0;border-radius:6px 0 0 6px;
+    background:#b5352b;color:#fff3d5;font:700 12px/1 "Saira Condensed","Arial Narrow",sans-serif;letter-spacing:.14em;cursor:pointer;opacity:.9}
+  body.pm-rail-narrow:not(.pm-rail-tucked) #pmRailTab{right:232px}
+  @media(max-width:900px){#pmRailTab{display:none}}
 </style>
 </head>
 <body>
@@ -49,12 +58,19 @@
 <script src="service.js"></script>
 <script src="campaign.js"></script>
 <script src="sprites.js"></script>
+<script src="lib/cast.js?v=1"></script>
 <script src="art3d.js"></script>
 <script src="../assets/art3d/rear/rear.manifest.js"></script>
 <script src="billy_run.js"></script>
 <script src="lib/audio.js?v=1"></script>
 <script src="lib/ghost.js?v=1"></script>
 <script src="lib/spatulas.js?v=1"></script>
+<script src="lib/cine.js?v=1"></script>
+<script src="../assets/art3d/stations/stations.manifest.js"></script>
+<script src="lib/stations.js?v=1"></script>
+<script src="lib/playlog.js?v=1"></script>
+<script src="../assets/art3d/stages/stages.manifest.js"></script>
+<script src="lib/stages3d.js?v=3"></script>
 <script>
 "use strict";
 const pm = globalThis.PM, S = pm.Stage;
@@ -68,6 +84,13 @@ const BATTLE = Q.has("battle") || (Q.get("mode") || "").toLowerCase() === "meltd
 const BATTLE_SECS = Math.max(20, parseInt(Q.get("secs") || "90", 10));   // the service clock (?secs=)
 const PLAYERS = BATTLE ? 2 : (Q.get("players") === "2" ? 2 : 1);   // battle is always 2 cooks; 2 = co-op tug-of-war
 const GRILL = parseInt(Q.get("grill") || "6", 10);
+// ?mode=kids|family|arcade — the DEMAND dial over the whole campaign (each shift keeps its quota/menu/clock, only its
+// demand band is replaced). Presentation-side config of new_game's existing lever; no engine change. Absent = as authored.
+const MODE_OVR = ["kids", "family", "arcade"].includes(String(Q.get("mode") || "").toLowerCase()) ? Q.get("mode").toLowerCase() : null;
+// ?shell=1 — launched from the FRONT DOOR (front.html): skip this page's own title, and hand the run's result back to
+// the shell's RESULTS screen at the end (Esc = back to the menu). ?shell=demo = the attract reel's live demo window.
+const SHELL = Q.get("shell") || "";
+if (SHELL === "demo") { const st = document.createElement("style"); st.textContent = "[class*=pm-order],[class*=pm-service]:not(body),aside{display:none!important}#frame,#cab{position:fixed!important;inset:0!important;right:0!important;background:#000!important}#wrap{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:none!important;border:0!important;border-radius:0!important;box-shadow:none!important;aspect-ratio:auto!important}#tag{display:none}"; document.head.appendChild(st); }
 // HEROES (school cafeteria) skin — base wired. ?skin=school, or auto on the 2up HEROES frame.
 const SKIN = (Q.get("skin") || (Q.get("frame") === "2up-heroes" ? "school" : "diner")).toLowerCase();
 const SCHOOL = SKIN === "school";
@@ -124,6 +147,8 @@ const DIN = SCREENS === 2 ? { x:640, y:0, w:640, h:H } : { x:0, y:372, w:W, h:H-
 // web/engine.js + parity never see it. 2-screen diner kitchen, 6-slot grill only — anything else falls back to 2D.
 const ART3D_ON = (Q.get("art") || "").toLowerCase() === "3d";   // diner, HEROES (pass 3), co-op + the MeltDome battle (pass 4)
 if (ART3D_ON && globalThis.ART3D) ART3D.load(SCHOOL ? "../assets/art3d/heroes/" : "../assets/art3d/");
+if (ART3D_ON && globalThis.PMStages) PMStages.load("../assets/art3d/stages/");   // FREEZER / BASEMENT bonus plates (drawMini, 1280 + 720)
+if (ART3D_ON && globalThis.PMStations) PMStations.init(SCHOOL ? "heroes" : "diner", "../assets/art3d/stations/");   // the rendered station loops (lib/stations.js)
 // HEROES costume OPTIONS (Joe picks): ?costume=A Patty's gold captain apron · B Chrissy's red bandana · AB both
 const COSTUME = (Q.get("costume") || "").toUpperCase();
 function art3d() { return ART3D_ON && globalThis.ART3D && ART3D.ready && game && game.slots.length === 6; }
@@ -239,14 +264,8 @@ const COOK_SUFFIX = SCHOOL ? "-school" : "";
 // DINER cast = the 0701 masters, re-cut per-pose into assets/chars/cast/ (Patty turnaround: idle/serve/cheer/
 // profile; Chrissy action set: idle/flip/cheese/serve/cheer/scrape/run). SCHOOL still loads the top-level
 // -school files, falling back to the diner cast when a school pose is missing.
-function loadCook(map, base, poses) {
-  for (const k of poses) {
-    const im = new Image();
-    im.onload = () => { map[k] = im; };
-    im.onerror = () => { const d = new Image(); d.onload = () => { map[k] = d; }; d.src = "../assets/chars/cast/" + base + "-" + k + ".png"; };
-    im.src = SCHOOL ? ("../assets/chars/" + base + "-school-" + k + ".png")   // patty-school-idle.png
-                    : ("../assets/chars/cast/" + base + "-" + k + ".png");    // cast/patty-idle.png
-  }
+function loadCook(map, base, poses) {      // every cast picture comes through the ONE cast table (lib/cast.js; ?cast=ink)
+  for (const k of poses) PMCast.img(PMCast.heroChain(SKIN, base, k).filter((u) => u.indexOf("-" + k + ".") !== -1), (im) => { map[k] = im; });
 }
 // PLATERS both use CLEAN, FULL-BODY, griddle-free poses (consistent framing at the assembly). Patty holds the
 // plate on a serve; Chrissy (co-op) cheers. The griddle-bearing action frames (flip/cheese/scrape) belong to a
@@ -256,10 +275,8 @@ loadCook(CHRISSY_SPR, "chrissy", ["idle", "cheer"]);                    // full-
 // BILLY — the runner. A 6-frame COLOR walk cycle (billy-walk-0..5, run-with-tray) cycles while he crosses
 // the floor; at the pass he PRESENTS the order (billy-serve). Absent art → the vector kid (drawBillyVec).
 const BILLY_WALK = [], BILLY_SPR = {};
-for (let i = 0; i < 6; i++) { const im = new Image(); const j = i; im.onload = () => { BILLY_WALK[j] = im; }; im.src = "../assets/chars/billy-walk-" + i + ".png"; }
-for (const [k, f] of [["serve", "billy-serve"], ["turn", "billy-turn"], ["slack", "billy-slack"]]) {
-  const im = new Image(); im.onload = () => { BILLY_SPR[k] = im; }; im.src = "../assets/chars/" + f + ".png";
-}
+for (let i = 0; i < 6; i++) { const j = i; PMCast.img(PMCast.heroChain(SKIN, "billy", "walk-" + i), (im) => { BILLY_WALK[j] = im; }); }
+for (const k of ["serve", "turn", "slack"]) PMCast.img(PMCast.heroChain(SKIN, "billy", k).filter((u) => u.indexOf("-" + k + ".") !== -1), (im) => { BILLY_SPR[k] = im; });
 let _billyPhase = 0, _billyPrev = 0, _billyFace = 1;     // walk-cycle phase · last pos (for velocity) · facing (1=right)
 const PATTY_H = 0.50, PATTY_X = -0.05;                   // fraction of KIT height / x nudge off the left edge
 function pickPattyPose() {
@@ -431,6 +448,26 @@ let game, billyPos, lastServed, lastFails, fx, fxId, paused, continueT, continue
 const SERVICE_PRACTICE = ["demo", "bot", "auto", "ticks", "warm", "fill", "at", "selftest", "bonus", "mini", "ready", "board", "hs"].some(k => Q.has(k));
 const serviceUI = PMService.mount({ pm, view:"kitchen", pause:value=>{ if (phase === "play") paused = value == null ? !paused : value; } });
 addEventListener("pagehide", event => { if (!event.persisted) serviceUI.finish(game, {excluded:SERVICE_PRACTICE || BATTLE}); });
+// ---------- THE PLAYTEST LOG (lib/playlog.js) — LOCAL ONLY: this browser's storage + a download you press for ----------
+// Human input only: QA rigs / the demo / the attract bot never log. Pause menu → SAVE PLAYTEST LOG. ?playlog=off.
+const PLOG = (globalThis.PMPlaylog && !SERVICE_PRACTICE && SHELL !== "demo")
+  ? PMPlaylog.create(pm, { skin: SKIN, players: PLAYERS, battle: BATTLE, art: (Q.get("art") || "2d"), mode: MODE_OVR || "", label: Q.get("label") || "" }) : null;
+function plogStart(kind) { if (PLOG && game) PLOG.shiftStart({ n: BATTLE ? 0 : shift().n, name: BATTLE ? "MELTDOME" : shift().name, kind, tick: game.ticks }); }
+function plogEnd(outcome, extra) { if (PLOG && game) PLOG.shiftEnd(game, outcome, extra); }
+function act(verb, pi, fn) {      // every HUMAN cook input goes through here: the engine call, observed by the log
+  if (PLOG && phase === "play" && !Q.has("demo")) PLOG.press(game, pi, verb, fn); else fn();
+  tipPressed(verb, pi);
+}
+// ---------- RECEIPTS RAIL: narrow, and tucked behind a tab (default tucked under the front door) ----------
+const RAIL_KEY = "pmRail.v1";
+function railTucked() { const q = Q.get("rail"); if (q === "open" || q === "tucked") return q === "tucked";
+  try { const v = localStorage.getItem(RAIL_KEY); if (v) return v === "tucked"; } catch (e) {} return SHELL === "1"; }
+function setRail(tucked, remember = true) {
+  document.body.classList.add("pm-rail-narrow"); document.body.classList.toggle("pm-rail-tucked", tucked);
+  const t = document.getElementById("pmRailTab"); if (t) t.textContent = tucked ? "RECEIPTS ◂" : "RECEIPTS ▸";
+  if (remember) try { localStorage.setItem(RAIL_KEY, tucked ? "tucked" : "open"); } catch (e) {} }
+if (SHELL !== "demo") { const t = document.createElement("button"); t.id = "pmRailTab"; t.type = "button"; t.title = "Show / hide the order receipts";
+  t.addEventListener("click", () => setRail(!document.body.classList.contains("pm-rail-tucked"))); document.body.appendChild(t); setRail(railTucked(), false); }
 
 let _asmPlate = null;                        // where the assembled plate sits (set each frame by drawAssembly)
 // ---------- THE CAMPAIGN (campaign.js) — authored deterministic SHIFTS on the proven engine ----------
@@ -449,14 +486,18 @@ let cook = [{ serves: 0, score: 0 }, { serves: 0, score: 0 }];   // per-cook cle
 const HS_KEY = "pmHiscore_" + (SCHOOL ? "school" : "diner");
 const ENTRY_CH = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.- ";
 let runScore = 0;                                    // banked score from cleared shifts this run
+let runServed = 0;                                   // (presentation) plates served across the run — the results screen
 let scores, entryScore = 0, entryRank = -1, entryName = [0, 0, 0], entryPos = 0, _entryPrev = { x: 0, y: 0 };
 function loadScores() { try { const j = JSON.parse(localStorage.getItem(HS_KEY)); if (Array.isArray(j) && j.length) return j; } catch (e) {} return pm.DEFAULT_SCORES.map((r) => r.slice()); }
 function saveScores() { try { localStorage.setItem(HS_KEY, JSON.stringify(scores)); } catch (e) {} }
 scores = loadScores();
 const totalScore = () => runScore + (game ? game.score : 0);   // the run total (banked + current shift)
 function submitRun() {           // end of a campaign run → initials if it qualifies, else back to the title
+  plogEnd(phase === "won_campaign" ? "closing" : "fired");
   serviceUI.finish(game, {excluded:SERVICE_PRACTICE || BATTLE});
   entryScore = totalScore();
+  _shellRes = { mode: "campaign", score: entryScore, served: runServed + (game ? game.served : 0), shift: shift().n, shiftName: shift().name,
+                outcome: phase === "won_campaign" ? "closing" : "break", skin: SKIN };
   if (pm.qualifies(scores, entryScore)) { entryName = [0, 0, 0]; entryPos = 0; entryRank = -1; phase = "initials"; }
   else toAttract();
 }
@@ -468,6 +509,7 @@ function finalizeEntry() {        // commit the 3 letters to the board + persist
 function buildBattle() {        // the shared-grill grill-off: one grill, one Billy, one diner, individual scoring
   const g = pm.new_game(1, "family", 2, SKIN, 6, ITEMS && ITEMS.length ? ITEMS : pm.ITEMS_FULL_MENU);
   g.cfg.orders = 99999; g.orders_left = 99999;   // the CLOCK ends the service, never a quota
+  if (Q.get("deal") === "alt") g.cfg.alt_deal = true;   // opt-in FAIR DEAL (engine cfg.alt_deal): new orders alternate halves
   return g;
 }
 let BR = null;                                    // ?art=3d: Billy's run + the pass (billy_run.js)
@@ -475,29 +517,39 @@ function seatedCount(g) { return Math.max(1, Math.round(2 + pm.buried_index(g) *
 function newBillyRun() { BR = (ART3D_ON && globalThis.ART3D && ART3D.ready && ART3D.m.billy) ? BillyRun.create(ART3D.m.billy, { toastItems: pm.TOAST_ITEMS, seated: seatedCount }) : null; }
 function reset(profile = SERVICE_PRACTICE ? "legacy" : "service") {
   serviceUI.finish(game, {excluded:SERVICE_PRACTICE || BATTLE});
-  game = BATTLE ? buildBattle() : CAMP.build(pm, shift(), PLAYERS, SKIN, ITEMS, profile);   // ITEMS override wins for jailbreak
+  game = BATTLE ? buildBattle() : CAMP.build(pm, MODE_OVR ? Object.assign({}, shift(), { mode: MODE_OVR }) : shift(), PLAYERS, SKIN, ITEMS, profile);   // ITEMS override wins for jailbreak
   billyPos = 0;                 // 0 = out in the dining room (bussing), 1 = at the kitchen pass (expo)
   lastServed = 0; lastFails = 0; fx = []; fxId = 0; paused = false; continueT = -1; continuesUsed = 0;
   cook = [{ serves: 0, score: 0 }, { serves: 0, score: 0 }]; battleWinner = -1;
+  _cw = { won: false, over: false, combo: 0, buried: 0, slackT: 0, lead: -1, last10: false };
   newBillyRun();
 }
 function startShift(i) {         // load shift i → fresh game + the SHIFT card / GET READY countdown
+  if (phase === "play") plogEnd("restart");
   shiftIdx = Math.max(0, Math.min(CAMP.SHIFTS.length - 1, i));
-  reset(); readyNext = "play"; phase = "ready"; readyT = READY_SECS; wakeAudio();
+  reset(); readyNext = "play"; phase = "ready"; readyT = READY_SECS; wakeAudio(); plogStart("shift");
+  const sh = shift();
+  if (CINE && !_opened.has(shiftIdx)) _opened.add(shiftIdx), PMCine.shiftOpen({ n: sh.n, of: CAMP.SHIFTS.length, name: sh.name, time: sh.time, wrinkle: sh.wrinkle, coop: PLAYERS === 2, onEnd: () => { readyT = Math.min(readyT, 2.2); } });
 }
-function startBattle() { reset(); battleT = BATTLE_SECS; readyNext = "play"; phase = "ready"; readyT = READY_SECS; wakeAudio(); }
+function startBattle() { if (phase === "play") plogEnd("restart"); reset(); plogStart("battle"); battleT = BATTLE_SECS; readyNext = "play"; phase = "ready"; readyT = READY_SECS; wakeAudio();
+  if (CINE && !_opened.has("vs")) _opened.add("vs"), PMCine.versus({ secs: BATTLE_SECS, onEnd: () => { readyT = Math.min(readyT, 2.2); } }); }
 function endBattle() {           // bell (or the diner got buried): compare CLEAN serves, tiebreak on points, else draw
   const a = cook[0].serves, b = cook[1].serves;
   battleWinner = (a === b)
     ? (cook[0].score === cook[1].score ? -1 : (cook[0].score > cook[1].score ? 0 : 1))
     : (a > b ? 0 : 1);
+  plogEnd("bell", { p1: a, p2: b, winner: battleWinner });
   phase = "battle_over";
+  _shellRes = { mode: "battle", winner: battleWinner, a: cook[0].serves, b: cook[1].serves, pa: cook[0].score, pb: cook[1].score };
+  audio.servicebell && audio.servicebell();
+  if (CINE) PMCine.battleEnd({ winner: battleWinner, a: cook[0].serves, b: cook[1].serves });
 }
 function startGame() { if (ART3D_ON && !globalThis.ART3D.ready && !globalThis.ART3D.failed) return;   // ?art=3d: still preloading
-  runScore = 0; if (BATTLE) startBattle(); else startShift(START_IDX); }   // START on the attract screen
+  runScore = 0; runServed = 0; _opened.clear(); if (BATTLE) startBattle(); else startShift(START_IDX); }   // START on the attract screen
 function nextShift() {           // ROUND CLEAR advance: bank the cleared shift, then bonus interlude / next shift / complete
   if (shiftIdx + 1 >= CAMP.SHIFTS.length) { phase = "won_campaign"; return; }   // (last shift stays in game.score for the total)
   runScore += game.score;        // bank BEFORE startShift zeroes game.score in the fresh build
+  runServed += game.served;
   const b = shift().bonus;       // the cleared shift's back-of-house BONUS (FREEZER breather / BASEMENT risk)
   if (b && pm.MINI_STAGES[b]) startBonus(b, shiftIdx + 1);
   else startShift(shiftIdx + 1);
@@ -509,9 +561,48 @@ function startBonus(kind, nextIdx) {   // FREEZER (no-fail) / BASEMENT (quota-or
   readyNext = "bonus"; phase = "ready"; readyT = READY_SECS; wakeAudio();
 }
 function endBonus() { runScore += mini.score; startShift(bonusNext); }   // bank the bonus, on to the next shift
-function toAttract() { shiftIdx = DEMO_IDX; reset("legacy"); phase = "attract"; continueT = -1; }   // back to title / demo loop
+function toAttract() { if (SHELL === "1") return toShell(_shellRes);
+  shiftIdx = DEMO_IDX; reset("legacy"); phase = "attract"; continueT = -1; }   // back to title / demo loop
 function billyBack() {          // a button during the break: Billy returns, breathe, cook on (same shift)
+  if (PLOG) PLOG.note("continue");
   game.over = false; game.wait = pm.WAIT_FULL * 0.45; game.billy = pm.BILLY_FULL; continueT = -1; continuesUsed++;
+}
+// ---------- THE CINEMATIC LAYER (lib/cine.js) — render-only cut-ins + cutscenes + the walk-through camera ----------
+const CINE = !!globalThis.PMCine && !PMCine.off && (!SERVICE_PRACTICE || Q.has("demo"));   // QA rigs stay clean (the demo keeps its cut-ins); ?nocine = off
+const cineBusy = () => !!globalThis.PMCine && PMCine.busy();
+if (globalThis.PMCine) PMCine.init({ W, H, skin: SKIN, screens: SCREENS, kit: KIT, din: DIN,
+  billyAt: () => (SCREENS === 2 && BR && art3d()) ? { x: DIN.x + BR.billy.x, y: DIN.y + BR.billy.y - 60 } : null });   // the walk-through follows the real Billy
+let _cw = { won: false, over: false, combo: 0, buried: 0, slackT: 0, lead: -1, last10: false };
+function cineWatch() {           // engine state → the cutscene / cut-in it deserves (reads only)
+  if (!globalThis.PMCine || !game || phase !== "play") return;
+  const live = !game.over && !game.won && !paused;
+  if (!BATTLE && game.won && !_cw.won) { _cw.won = true; const sh = shift(); plogEnd("clear");
+    if (CINE) PMCine.shiftClear({ n: sh.n, name: sh.name, served: game.served, combo: game.combo_best, score: totalScore(), last: shiftIdx + 1 >= CAMP.SHIFTS.length }); }
+  if (!BATTLE && game.over && !game.won && !_cw.over) { _cw.over = true; if (PLOG) PLOG.note("break", { t: game.ticks }); if (CINE) PMCine.shiftBreak({ line: pm.THEMES[game.theme].fired }); }
+  if (!game.over) _cw.over = false;
+  if (!live || PMCine.off) return;
+  const cut = (who, line, o) => PMCine.cutIn(who, line, o);
+  if (game.combo >= pm.FLOW_COMBO && _cw.combo < pm.FLOW_COMBO) cut("patty", SCHOOL ? "LUNCH HERO MODE!" : "BIG GRILL ENERGY!", { pose: "cheer" });
+  _cw.combo = game.combo;
+  const bi = pm.buried_index(game);
+  if (bi >= 0.78 && _cw.buried < 0.78) cut("patty", SCHOOL ? "THE LINE'S BACKING UP!" : "WE'RE IN THE WEEDS!", { pose: "flip", tone: "bad" });
+  _cw.buried = bi;
+  if (game.billy < game.cfg.billy_serve_min) _cw.slackT++;
+  else { if (_cw.slackT > 90) cut("billy", "COMING, COMING!", { pose: "turn" }); _cw.slackT = 0; }
+  if (BATTLE) {
+    const lead = cook[0].serves === cook[1].serves ? -1 : (cook[0].serves > cook[1].serves ? 0 : 1);
+    if (lead !== -1 && lead !== _cw.lead && cook[lead].serves >= 3) cut(lead === 0 ? "patty" : "chrissy", lead === 0 ? "MY TICKET!" : "TAKE THAT, PATTY!", { pose: "cheer", tone: lead === 0 ? "p1" : "p2" });
+    if (lead !== -1) _cw.lead = lead;
+    if (battleT <= 10 && !_cw.last10) { _cw.last10 = true; cut("billy", "LAST CALL — 10 SECONDS!", { pose: "serve", tone: "bad", force: true }); }
+  }
+}
+// ---------- THE FRONT DOOR hand-off (front.html) ----------
+let _shellRes = null;
+const _opened = new Set();       // a shift's opening cutscene plays once per run (R = retry goes straight to GET READY)
+function toShell(res) {
+  plogEnd("quit"); if (PLOG) PLOG.save();
+  const r = Object.assign({ label: Q.get("label") || "", skin: SKIN }, res || { mode: BATTLE ? "battle" : "campaign", outcome: "quit", score: totalScore(), served: runServed + (game ? game.served : 0), shift: shift().n, shiftName: shift().name });
+  location.href = "front.html?results=" + encodeURIComponent(JSON.stringify(r)) + "&sel=" + encodeURIComponent(Q.get("sel") || "") + (Q.get("cast") ? "&cast=" + Q.get("cast") : "");
 }
 reset("legacy");
 // skip straight to PLAY for the demo + QA rigs (screenshots, ?warm/?ticks/?fill); otherwise open on ATTRACT
@@ -572,13 +663,15 @@ const SIM_DT = 1000 / pm.TPS;
 let last = performance.now(), acc = 0;
 function loop(now) { let e = now - last; last = now; if (e > 250) e = 250; acc += e; blink += e / 1000;
   while (acc >= SIM_DT) { step(); acc -= SIM_DT; }
-  if (phase === "ready") { readyT -= e / 1000; if (readyT <= 0) phase = readyNext; }   // 3·2·1·GO! → play or bonus
+  if (phase === "ready" && !cineBusy()) { readyT -= e / 1000; if (readyT <= 0) phase = readyNext; }   // a cutscene holds the countdown
+  if (SHELL === "1" && phase === "attract" && !(ART3D_ON && !ART3D.ready && !ART3D.failed)) startGame();     // the shell already did the title
+  cineWatch();   // 3·2·1·GO! → play or bonus
   if (phase === "play" && BATTLE && !paused) {                    // MELTDOME: the service clock ends it (or a buried diner)
     battleT = Math.max(0, battleT - e / 1000);
     if (battleT <= 0 || game.over) endBattle();
   } else if (phase === "play" && game.over && !game.won && !paused) {   // campaign continue (Billy's break countdown)
     if (continueT === -1) continueT = CONTINUE_SECS;
-    else if (continueT > 0) continueT = Math.max(0, continueT - e / 1000);
+    else if (continueT > 0 && !cineBusy()) continueT = Math.max(0, continueT - e / 1000);
   }
   pollPads();                             // ARCADE STICK + BUTTONS (2-player) — polled once per frame
   audio.setBed(phase === "play" && !game.over && !game.won && !paused, pm.buried_index(game));   // beds only during the shift
@@ -601,7 +694,7 @@ function perfNote(frameMs, renderMs) {
 // Direction is HELD (throttled to match the keyboard cadence); the four face buttons are
 // EDGE-detected (fire once per press). All wrapped in try/catch — no pad = no-op.
 const PAD_MOVE_IV = 6;                      // frames between held-direction moves (Ghost owns the deadzone)
-const _pad = [{ btn: [], moveCD: 0 }, { btn: [], moveCD: 0 }];   // per-pad: prev button-pressed + move throttle
+const _pad = [{ btn: [], moveCD: 0, menuY: 0 }, { btn: [], moveCD: 0, menuY: 0 }];   // per-pad: prev button-pressed + move throttle
 function padDir(gp) {                       // fold stick / right-stick / d-pad / POV hat → -1, 0, +1
   // THE GHOST: one self-calibrating normalizer handles every HID stick (F300 dead
   // axes 2/3, 8BitDo right-stick, POV hat, d-pad). .x is the dead-axis-filtered
@@ -610,7 +703,7 @@ function padDir(gp) {                       // fold stick / right-stick / d-pad 
 }
 function pressed(gp, i) { return Ghost.btn(gp, i) || (gp.buttons[i] && gp.buttons[i].value > 0.5); }
 function pollPads() {
-  if (paused) return;
+  if (paused && !(phase === "play" && !QA_STILL)) return;
   try {
     const pads = (navigator.getGamepads && navigator.getGamepads()) || [];
     const nP = game.players.length;
@@ -621,7 +714,12 @@ function pollPads() {
       const anyFresh = (i) => pressed(gp, i) && !st.btn[i];
       let anyEdge = false;
       for (let i = 0; i < gp.buttons.length; i++) if (anyFresh(i)) { anyEdge = true; break; }
-      if (phase === "attract") { if (anyEdge) { wakeAudio(); startGame(); } }   // START — any button begins
+      if (paused) {                                                             // the PAUSE MENU: stick ↑↓, A pick, B / Start resume
+        const gy = Ghost.read(gp).y; if (gy !== 0 && st.menuY === 0) pauseKey(gy < 0 ? "arrowup" : "arrowdown"); st.menuY = gy;
+        if (anyFresh(0)) pauseKey("enter"); else if (anyFresh(1) || anyFresh(9)) pauseKey("escape");
+      }
+      else if (anyEdge && cineBusy()) { PMCine.skip(); }                         // any button skips a cutscene
+      else if (phase === "attract") { if (anyEdge) { wakeAudio(); startGame(); } }   // START — any button begins
       else if (phase === "ready") { /* inputs locked during the countdown */ }
       else if (phase === "won_campaign") { if (anyEdge) submitRun(); }
       else if (phase === "battle_over" || phase === "board") { if (anyEdge) toAttract(); }
@@ -651,14 +749,15 @@ function pollPads() {
         // direction (held, throttled)
         const d = padDir(gp);
         if (d === 0) st.moveCD = 0;
-        else if (st.moveCD <= 0) { pm.move(game, d, pi); st.moveCD = PAD_MOVE_IV; }
+        else if (st.moveCD <= 0) { act("move", pi, () => pm.move(game, d, pi)); st.moveCD = PAD_MOVE_IV; }
         else st.moveCD--;
+        if (anyFresh(9)) { pauseKey("escape"); st.menuY = 0; }   // START = the pause menu
         // face buttons (edge-detected): A=FLIP B=CHEESE X=TOAST Y/RT=HEY BILLY
         if (anyEdge) wakeAudio();
-        if (anyFresh(0)) pm.flip(game, pi);
-        if (anyFresh(1)) pm.add_cheese(game, pi);
-        if (anyFresh(2)) pm.toast(game, pi);
-        if (anyFresh(3) || anyFresh(7)) pm.hey_billy(game, pi);
+        if (anyFresh(0)) act("flip", pi, () => pm.flip(game, pi));
+        if (anyFresh(1)) act("top", pi, () => pm.add_cheese(game, pi));
+        if (anyFresh(2)) act("toast", pi, () => pm.toast(game, pi));
+        if (anyFresh(3) || anyFresh(7)) act("billy", pi, () => pm.hey_billy(game, pi));
         if (anyEdge) actionSfx();               // action sound for the gamepad path too
       }
       // latch this frame's pressed state for next-frame edge detection
@@ -669,21 +768,34 @@ function pollPads() {
 }
 
 const DEMO = Q.has("demo");                 // self-playing (attract / QA) — the real auto-player drives it
+// THE ATTRACT COOK (render-side driver, no engine change): the engine's auto-player is a perfect cook — every flip on
+// the tick it goes RDY — which teaches nothing. The title demo + the front door's demo window drive it with a human
+// rhythm instead: she "looks away" in 1 s blocks (deterministic hash of the tick, no RNG), so you see items sit
+// past RDY, the odd one go long, plates wait for a holler. Rubber band: the deeper the weeds, the less she drifts, so
+// the demo never buries itself. Plain ?demo (QA, screenshots, smoke) keeps the perfect auto_step.
+function demoBot(g) {
+  const blk = Math.floor(g.ticks / 10), h = (Math.imul(blk ^ 0x5bd1e995, 2654435761) >>> 0) % 100;
+  const drift = 60 - Math.round(56 * Math.min(1, pm.buried_index(g) / 0.6));   // 60% of 1 s blocks idle when calm → 4% buried
+  // (probe, shifts 4/6/8/10 legacy: same 52 served as the perfect bot, ~11% of moves past the sweet spot, 5 walkouts, never buried)
+  if (h < drift) return;
+  pm.auto_step(g);
+}
 function step() {
   if (phase === "bonus") { if (mini && !mini.done) pm.mini_tick(mini); return; }   // done → wait for a press to bank + advance
   if (phase === "ready" || paused || game.over || game.won) return;
   const pre = snapServable();             // (render-only) what was ready to run, so a serve knows WHICH dish left
   if (phase === "attract") {              // the title-screen demo: the auto-player cooks, loops forever
-    pm.auto_step(game); pm.tick(game); if (BR) BR.onTick(game);
+    demoBot(game); pm.tick(game); if (BR) BR.onTick(game);
     if (game.served > lastServed) { spawnServeFX(goneItem(pre)); lastServed = game.served; }
     if (game.fails > lastFails)  { spawnWalkout();  lastFails = game.fails; }
     if (game.over || game.won) reset("legacy");   // never lets the demo end — restart the shift silently
     return;
   }
-  if (DEMO) pm.auto_step(game);
+  if (DEMO) (SHELL === "demo" ? demoBot(game) : pm.auto_step(game));   // plain ?demo stays the perfect oracle (QA)
   const bServed = game.served, bScore = game.score;
   const _pb = game.billy;
   pm.tick(game); if (BR) BR.onTick(game);
+  if (PLOG && !DEMO) PLOG.observe(game);
   if (game.billy > _pb + 0.5) bellT = performance.now();   // HEY BILLY! → the bell on the pass rings (render-only)
   if (game.players.length === 2 && game.served > bServed) {   // attribute the clean serve to the cook Billy faced
     const pi = game.billy_facing;
@@ -872,15 +984,20 @@ function swissOver3D(p, i, r) {
   ctx.save(); ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.beginPath();     // contact shadow (key light upper-left)
   ctx.ellipse(cx + 2, cy + sp.h * 0.22, sp.w * 0.52, sp.h * 0.2, 0, 0, 7); ctx.fill(); ctx.restore();
   PMSpat.drawSwiss(ctx, cx, cy, sp.w * 1.12, p, "draped");
-  if (p.bunned && SPAT_FOOD_IMG.rye) { const w = sp.w * 0.95, h = w * SPAT_FOOD_IMG.rye.height / SPAT_FOOD_IMG.rye.width;
+  if (p.bunned && !ART3D.draw(ctx, "grill.RYE_LID.slot" + i, r.x, r.y) && SPAT_FOOD_IMG.rye) {   // the rendered rye lid (1110 r3); 2D = fallback
+    const w = sp.w * 0.95, h = w * SPAT_FOOD_IMG.rye.height / SPAT_FOOD_IMG.rye.width;
     ctx.drawImage(SPAT_FOOD_IMG.rye, cx - w / 2, cy - sp.h * 0.35 - h / 2, w, h); }
   return true;
 }
 // a plate on the 3D pass / Billy's tray / a seat: a PATTY MELT is Joe's plated melt (diner plate · HEROES tray),
 // drawn where the rendered burger plate `key` would sit; anything else draws the rendered plate. a = alpha.
 const isMeltPlate = (p) => !!(p && p.item && pm.TOAST_ITEMS.has(p.item) && PMSpat.topping(SCHOOL ? "plated-heroes" : "plated-diner"));
+// THE PLATED GRILLED CHEESE (1110 r4): plating_gc.* / to_pass_gc.* ride the burger plate's exact spots + path; a grilled
+// cheese order swaps to them when the set has them (else the burger plate, as before).
+function gcKey(key, p) { if (!p || p.item !== pm.Item.GRILLED_CHEESE) return key;
+  const k = key.replace(/^(plating|to_pass)\./, "$1_gc."); return ART3D.m.sprites[k] ? k : key; }
 function drawPlate3D(key, ox, oy, a, p) {
-  const sp = ART3D.m.sprites[key];
+  key = gcKey(key, p); const sp = ART3D.m.sprites[key];
   if (!isMeltPlate(p) || !sp) return ART3D.draw(ctx, key, ox, oy, a);
   ctx.save(); if (a != null) ctx.globalAlpha = Math.max(0, Math.min(1, a));
   PMSpat.drawPlated(ctx, SCHOOL, ox + sp.x + sp.w / 2, oy + sp.y + sp.h * 0.58, sp.w * 1.05); ctx.restore(); return true;
@@ -893,6 +1010,10 @@ function grillKey3D(p, i) {           // engine Stage → the rendered patty for
   else if (p.stage === S.DONE) st = pm.RECIPES[p.item].includes(pm.Action.CHEESE) ? "DONE" : "DONE_PLAIN";
   else if (p.stage === S.BURNT) st = "BURNT";
   else return null;                                                // (TOAST on the grill = legacy; vector fallback)
+  // THE SMASH LADDER (art3d r2): SMASH → grill.SMASH_<stage>; SMASH_MELT → SMELT_ once it's melting/done, SMASH_ while
+  // searing/burnt. Falls back to the plain key when this set has no smash sprite.
+  const sm = p.item === pm.Item.SMASH ? "SMASH_" : p.item === pm.Item.SMASH_MELT ? (/^(MELT|DONE)/.test(st) ? "SMELT_" : "SMASH_") : "";
+  if (sm) { const k = "grill." + sm + (st === "DONE_PLAIN" ? "DONE" : st) + ".slot" + i; if (ART3D.m.sprites[k]) return k; }
   return "grill." + st + ".slot" + i;
 }
 function toastKey3D(b, j) {           // toaster[j]: a Bun (no .stage) by its cook, or a grilled cheese by its Stage
@@ -911,11 +1032,21 @@ function castSprite3D(who, pose) {    // the kitchen-lit relief frames, same pos
   for (const k of (chain[pose] || [pose, "idle"])) if (m[k]) return m[k];
   return m.idle;
 }
+// DINER COOK LANES (art3d r2): the Blender export's explicit anchors, art3d.json loc.cook_lanes = {P1, P2, solo}
+// ({x, y = feet, h}; lane-gated clear of signage, the front counter hides below the knees). P1 works bays 0-2, P2 3-5,
+// solo Patty mid-line. HEROES (no cook_lanes) keeps loc.cook — each cook behind her own half. ?cooks=corner = loc.cook.
+function cookLanes3D(Lc, coop) {
+  const L = Lc.cook_lanes;
+  if (!L || Q.get("cooks") === "corner") return Lc.cook;
+  return coop ? { P1: L.P1, P2: L.P2 } : { P1: L.solo || L.P1, P2: L.P2 };
+}
 function drawCook3D(who, st) {        // feet on the station point, height = what 1.6 m measures there on this camera
-  const sp = castSprite3D(who, pickPattyPose()); if (!sp || !sp.width) return;
+  const pose = pickPattyPose(), sp = castSprite3D(who, pose); if (!sp || !sp.width) return;
   const h = st.h * 1.02, w = h * sp.width / sp.height, x = KIT.x + st.x, y = KIT.y + st.y;
   ctx.fillStyle = "rgba(0,0,0,0.28)"; ctx.beginPath(); ctx.ellipse(x, y - 2, w * 0.30, 5, 0, 0, 7); ctx.fill();
-  ctx.drawImage(sp, x - w / 2, y - h, w, h);
+  // THE JUICE (render-only): a pose change lands with a squash-and-spring; idle breathes from the feet
+  const j = globalThis.PMCine ? PMCine.squash("cook." + who, pose, 0.10) : { sx: 1, sy: 1 }, br = globalThis.PMCine ? PMCine.breathe(who) : 1;
+  ctx.save(); ctx.translate(x, y); ctx.scale(j.sx, j.sy * br); ctx.drawImage(sp, -w / 2, -h, w, h); ctx.restore();
 }
 // ---- REAR COOKS (?art=3d&cooks=rear — Joe 1026: "focus on using your 2d hand and arm elements and our sprites to
 // hide and cheat the flip from behind"). Each cook is three lit 2D sprites from the 3D PIPELINE (rear/export_rear.py):
@@ -927,7 +1058,7 @@ const REAR_ON = ART3D_ON && Q.get("cooks") === "rear" && !!globalThis.PM_REAR;
 const REAR_IMG = {};
 if (REAR_ON) for (const [who, rec] of Object.entries(globalThis.PM_REAR))
   for (const [part, f] of Object.entries(rec.parts)) { const im = new Image(); im.src = "../assets/art3d/rear/" + f; REAR_IMG[who + "." + part] = im; }
-const REAR_CLIP_Y = [392, 322];         // the near counter's far edge (diner, HEROES): she's cut off behind it, legs unseen
+const REAR_CLIP_Y = [392, 298];         // the near counter's far edge (diner, HEROES front line 1110): she's cut off behind it, legs unseen
 const REAR_H = 1.0;                     // the cook's drawn height, × the station's 1.6 m (she stands nearer than the back line)
 function rearWho(pi) { return (pi === 0 ? "patty" : "chrissy") + "-" + (SCHOOL ? "heroes" : "classic"); }
 function rearState(pi, g) {             // her feet follow the pair (springy, lagging); her head top sits at the handles
@@ -972,7 +1103,8 @@ function drawKitchen3D() {
   const n = game.slots.length, coop = game.players.length === 2;
   const slotXY = (i) => ({ x: r.x + Lc.slot[i % n].x, y: r.y + Lc.slot[i % n].y });
   // ---- the grill: each slot shows its engine Stage; a FLIP plays the 8-drawing turn the moment the engine flips ----
-  const cooksFg = () => { if (REAR_ON) {} else if (coop) { drawCook3D("chrissy", Lc.cook.P2); drawCook3D("patty", Lc.cook.P1); } else drawCook3D("patty", Lc.cook.P1);
+  const CK = cookLanes3D(Lc, coop);
+  const cooksFg = () => { if (REAR_ON) {} else if (coop) { drawCook3D("chrissy", CK.P2); drawCook3D("patty", CK.P1); } else drawCook3D("patty", CK.P1);
     if (ART3D.img.fg) { const at = ART3D.m.fg_at || [0, 0]; ctx.drawImage(ART3D.img.fg, r.x + at[0], r.y + at[1]); } };   // cropped to its bbox (less overdraw)
   if (ART3D.m.cooks_behind_grill) cooksFg();   // HEROES: the cooks work the far side of the flat-top, facing the line
   pmark('pre');
@@ -990,6 +1122,7 @@ function drawKitchen3D() {
         PMSpat.drawOnions(ctx, ps ? r.x + ps.x + ps.w / 2 : c.x, ps ? r.y + ps.y + ps.h * 0.36 : c.y - 4, ow, p, game, "top"); }   // raw ▸ soft ▸ golden ▸ burnt until the Swiss
     }
   }
+  if (globalThis.PMStations) PMStations.drawSizzle(ctx, game, r.x, r.y);   // the flat-top's rendered sizzle while anything cooks
   pmark('grill');
   if (coop) {   // P1 = slots 0..2, P2 = 3..5 (the engine's index split) — a light underline, not a box
     txt("◂ P1", r.x + Lc.slot[1].x, r.y + Lc.slot[1].y + 34, 11, COL.bad, "center", 800);
@@ -1002,16 +1135,18 @@ function drawKitchen3D() {
   if (!ART3D.m.cooks_behind_grill) cooksFg();
   pmark('cooks');
   // ---- the toaster: toaster[j] by bun cook / grilled-cheese Stage ----
-  const T = game.toaster || [], tcells = [];
+  const T = game.toaster || [], tcells = [], STN = globalThis.PMStations && PMStations.ok();
+  if (STN) PMStations.observe(game, { bays: Lc.toaster, rear: REAR_ON });   // a freshly laid bun → the rendered two-spatula carry
   for (let j = 0; j < T.length && j < Lc.toaster.length; j++) {
     const q = Lc.toaster[j], cx = r.x + q.x, cy = r.y + q.y; tcells.push({ x: cx, y: cy });
-    const b = T[j]; if (!b) continue;
+    const b = T[j]; if (!b || (STN && PMStations.hideBay(j))) continue;   // (the bun is still riding the pair)
     ART3D.draw(ctx, toastKey3D(b, j), r.x, r.y);
     if (b.stage === undefined) {
       const ready = b.cook >= pm.toast_ready(game), near = b.cook >= pm.toast_burn(game) - 6;
       if (ready) txt(near ? "BURNING!" : "READY", cx, cy - 22, 11, near ? COL.bad : COL.cheese, "center", 800);
     } else drawCookPrompt(b, cx, cy, 15, cy - 22);
   }
+  if (STN) PMStations.drawToaster(ctx, game, r.x, r.y, Lc.toaster);   // heat shimmer per busy bay + the bun carry
   pmark('toaster');
   // the TOPPING PANS (Joe 1027): steel hotel pans of raw onions, Swiss, American on the prep counter's back edge, clear of
   // the plating spots + the pass. Placed per room from the 3D layout (ART3D.m.bins = [[x, y, w] onions, swiss, american]).
@@ -1025,7 +1160,7 @@ function drawKitchen3D() {
   if (BR) for (const p of BR.plates) {
     const pk = p.k === 1 ? "P2" : "P1", age = BR.t - p.t0;
     if (p.state === "plating") { if (isMeltPlate(p)) drawPlate3D("to_pass." + p.k + ".0", r.x, r.y, age / 300, p);   // the melt settles in plated
-      else ART3D.draw(ctx, "plating." + Math.min(4, Math.floor(age / 300 * 5)) + "." + pk, r.x, r.y); }
+      else ART3D.draw(ctx, gcKey("plating." + Math.min(4, Math.floor(age / 300 * 5)) + "." + pk, p), r.x, r.y); }
     else if (p.state === "slide") drawPlate3D("to_pass." + p.k + "." + Math.min(5, Math.floor((age - 300) / 300 * 6)), r.x, r.y, null, p);
     else if (p.state === "pass") { lit[p.k] = true; drawPlate3D("to_pass." + p.k + ".5", r.x - p.q * 15, r.y + p.q * 6, null, p); }
     else if (p.state === "returned") {
@@ -1074,6 +1209,7 @@ function drawKitchen3D() {
     const clip = () => { ctx.save(); ctx.beginPath(); ctx.rect(r.x, r.y, r.w, REAR_CLIP_Y[SCHOOL ? 1 : 0]); ctx.clip(); };
     if (RG) { clip(); drawRearArms(pi, rst, RG); ctx.restore(); }   // REAR: the arms first (the back covers them)
     const grips = RG ? [] : null;
+    if (!RG && globalThis.PMStations && PMStations.carrying(pi)) continue;   // her pair is the rendered one, fetching the bun
     PMSpat.drawPair(ctx, game, pi, { x: g.x, y: g.y, vx: g.vx }, { slotXY: spatXY, food: spatFood,
       h: 40, foodW: 30, selfFlip: true, filter: pi === 1 ? "hue-rotate(150deg) saturate(1.2)" : "",
       rim: pi === 0 ? "rgba(255,110,80,.9)" : "rgba(120,190,255,.9)", fromBehind: !!RG, grips });
@@ -1368,10 +1504,10 @@ function drawDining() {
       const mx = f.mx == null ? f.x : f.mx, my = f.my == null ? f.y : f.my, bt = f.bt || 0;
       const pk = (f.pi === 1 ? "P2" : "P1");
       if (f.t < bt && art3d()) {               // ?art=3d PHASE 1 — the rendered build, one layer per step (plate·heel·patty·cheese·crown)
-        ART3D.draw(ctx, "plating." + Math.min(4, Math.floor(f.t / bt * 5)) + "." + pk, KIT.x, KIT.y);
+        ART3D.draw(ctx, gcKey("plating." + Math.min(4, Math.floor(f.t / bt * 5)) + "." + pk, f), KIT.x, KIT.y);
       } else if (art3d() && (f.t - bt) / (f.life - bt) < 0.4) {   // ?art=3d PHASE 2a — the plate slides along the counter onto the pass shelf
         const u = ((f.t - bt) / (f.life - bt)) / 0.4;
-        ART3D.draw(ctx, "to_pass." + (f.pi === 1 ? 1 : 0) + "." + Math.min(5, Math.floor(u * 6)), KIT.x, KIT.y);
+        ART3D.draw(ctx, gcKey("to_pass." + (f.pi === 1 ? 1 : 0) + "." + Math.min(5, Math.floor(u * 6)), f), KIT.x, KIT.y);
       } else if (f.t < bt) {                   // PHASE 1 — the order stacks bun▸patty▸cheese▸top bun at the counter
         const b = f.t / bt, bob = Math.sin(b * Math.PI) * 2;
         drawCarryPlate(f.x, f.y - bob, b, f.item);
@@ -1438,7 +1574,10 @@ function drawBilly3D() {
   else if (b.mode === "handoff") { const s = G.seats[b.dest]; im = A.serve; face = s && s.drop[0] < b.x ? -1 : 1; }
   else if (b.mode === "slack") im = A.slack || A.serve;
   ctx.fillStyle = "rgba(0,0,0,0.30)"; ctx.beginPath(); ctx.ellipse(x, y - 1, h * 0.2, h * 0.05, 0, 0, 7); ctx.fill();
-  if (im && im.width) { const w = h * im.width / im.height; ctx.save(); ctx.translate(x, y); ctx.scale(face, 1); ctx.drawImage(im, -w / 2, -h, w, h); ctx.restore(); }
+  // THE JUICE (render-only): a step bounce while he runs, a squash-and-spring whenever his job changes (pass ▸ run ▸ hand-off)
+  const jb = globalThis.PMCine ? PMCine.squash("billy", b.mode, 0.13) : { sx: 1, sy: 1 };
+  const hop = b.mode === "walk" && globalThis.PMCine ? PMCine.bob(b.phase / (h * 0.55) * Math.PI * 3, h * 0.035) : 0;
+  if (im && im.width) { const w = h * im.width / im.height; ctx.save(); ctx.translate(x, y - hop); ctx.scale(face * jb.sx, jb.sy * (1 + hop / h * 0.6)); ctx.drawImage(im, -w / 2, -h, w, h); ctx.restore(); }
   // the tray: exactly the plates he picked up, in order (a refused plate rides back marked)
   const tp = BR.trayPlates(), sp = ART3D.m.sprites["to_pass.0.5"];
   // Keep dishes readable as Billy recedes. A full tray uses two rows of
@@ -1448,20 +1587,23 @@ function drawBilly3D() {
     const row = Math.floor(i / 3), col = i % 3, rowCount = Math.min(3, tp.length - row * 3);
     const px = x + face * h * 0.22 + face * (col - (rowCount - 1) / 2) * carryW * 0.72;
     const py = y - h * 0.52 - (rows - 1 - row) * carryW * 0.4;
-    let dishH = sp ? carryW * sp.h / sp.w : carryW * 0.5;
+    const sq = ART3D.m.sprites[gcKey("to_pass.0.5", p)] || sp;   // (a grilled cheese rides as its own plate)
+    let dishH = sq ? carryW * sq.h / sq.w : carryW * 0.5;
     if (isMeltPlate(p)) {
       const im = PMSpat.topping(SCHOOL ? "plated-heroes" : "plated-diner");
       dishH = carryW * (im.height - 32) / (im.width - 32);
       PMSpat.drawPlated(ctx, SCHOOL, px, py - dishH / 2, carryW);
-    } else if (sp) ctx.drawImage(ART3D.atl[sp.a], sp.sx, sp.sy, sp.w, sp.h, px - carryW / 2, py - dishH, carryW, dishH);
+    } else if (sq) ctx.drawImage(ART3D.atl[sq.a], sq.sx, sq.sy, sq.w, sq.h, px - carryW / 2, py - dishH, carryW, dishH);
     if (p.state === "rejected") txt("✗", px, py - dishH - 4, 12, COL.bad, "center", 800);
   });
   // plates handed off sit at their seats for a few seconds
   for (const p of BR.plates) if (p.state === "served" && sp && !p.taken) {
     const d = G.seats[p.seat].drop, a = Math.min(1, Math.max(0, 1 - (BR.t - p.tServed - 3000) / 1000));
-    ctx.globalAlpha = a; const sw = 22, sh = sw * sp.h / sp.w;
+    const land = BR.t - p.tServed, pop = land < 420 ? 1 + 0.35 * Math.exp(-land / 110) * Math.cos(land / 40) : 1;   // the plate LANDS (squash-pop)
+    const sq = ART3D.m.sprites[gcKey("to_pass.0.5", p)] || sp;
+    ctx.globalAlpha = a; const sw = 22 * pop, sh = sw * sq.h / sq.w / pop;
     if (isMeltPlate(p)) PMSpat.drawPlated(ctx, SCHOOL, DIN.x + d[0], DIN.y + d[1] - sh * 0.2, sw);   // the melt at its seat
-    else ctx.drawImage(ART3D.atl[sp.a], sp.sx, sp.sy, sp.w, sp.h, DIN.x + d[0] - sw / 2, DIN.y + d[1] - sh * 0.7, sw, sh);
+    else ctx.drawImage(ART3D.atl[sq.a], sq.sx, sq.sy, sq.w, sq.h, DIN.x + d[0] - sw / 2, DIN.y + d[1] - sh * 0.7, sw, sh);
     ctx.globalAlpha = 1;
     if (BR.t - p.tServed < 700) txt("♥", DIN.x + d[0], DIN.y + d[1] - 16, 14, COL.cheese, "center", 800);
   }
@@ -1598,6 +1740,7 @@ function render() {
   prewarm3D();
   const _t1 = PERF.on ? performance.now() : 0;
   ctx.fillStyle = "#0a0806"; ctx.fillRect(0, 0, W, H);
+  ctx.save(); if (globalThis.PMCine) PMCine.applyCamera(ctx);   // the walk-through camera (identity unless a cutscene owns it)
   if (art3d() && SCREENS === 1) render3DOneScreen(); else {
   drawKitchen();
   const _t2 = PERF.on ? performance.now() : 0;
@@ -1611,15 +1754,17 @@ function render() {
       dining: +(_t3 - _t2).toFixed(1), billy: +(_t4 - _t3).toFixed(1), k: Object.assign({}, _pmT) }); }
   }
   drawTimeOfDay();                          // the shift's clock washes the scene (dawn → midday → dusk → night)
+  ctx.restore();
+  const _cb = cineBusy();
   if (BATTLE && phase === "play") drawBattleHUD();
-  if (!BATTLE && phase === "play" && game.won) {   // SHIFT CLEAR — advance the campaign
+  if (!BATTLE && phase === "play" && game.won && !_cb) {   // SHIFT CLEAR — advance the campaign
     const sh = shift(), last = shiftIdx + 1 >= CAMP.SHIFTS.length;
     ctx.fillStyle = "rgba(10,5,4,.74)"; ctx.fillRect(0, H / 2 - 46, W, 92);
     txt("SHIFT " + sh.n + " CLEAR — " + sh.name, W / 2, H / 2 - 8, 26, COL.good, "center", 800);
     txt(last ? "press SPACE — close the diner" : "press SPACE — next shift",
         W / 2, H / 2 + 24, 16, COL.cream, "center", 700);
   }
-  if (!BATTLE && phase === "play" && game.over) {   // Billy's on BREAK (not fired) — the arcade continue
+  if (!BATTLE && phase === "play" && game.over && !_cb) {   // Billy's on BREAK (not fired) — the arcade continue
     const secs = Math.max(0, Math.ceil(continueT));
     ctx.fillStyle = "rgba(10,5,4,.72)"; ctx.fillRect(0, H / 2 - 46, W, 92);
     txt(pm.THEMES[game.theme].fired, W / 2, H / 2 - 8, 30, COL.cheese, "center", 800);
@@ -1627,13 +1772,15 @@ function render() {
         W / 2, H / 2 + 24, 16, continueT > 0 ? (secs <= 3 ? COL.bad : COL.cream) : COL.amber, "center", 700);
   }
   if (phase === "attract") drawAttract();   // title card over the live demo
-  if (phase === "ready")   drawReady();      // the SHIFT / MELTDOME card + 3·2·1·GO! before it goes live
+  if (phase === "ready" && !_cb) drawReady();   // the SHIFT / MELTDOME card + 3·2·1·GO! before it goes live
   if (phase === "won_campaign") drawComplete();
-  if (phase === "battle_over") drawBattleOver();
+  if (phase === "battle_over" && !_cb) drawBattleOver();
   if (phase === "initials") drawInitials();
   if (phase === "board") drawBoard();
   if (phase === "bonus") drawMini(mini);
-  if (paused && !QA_STILL) banner("PAUSED", COL.cream);
+  if (phase === "play" && !paused && !_cb) { tipWatch(); drawTip(); }   // first-time teaching prompts (once a session)
+  if (paused && !QA_STILL) (phase === "play" ? drawPause() : banner("PAUSED", COL.cream));
+  if (globalThis.PMCine) PMCine.draw(ctx);  // cut-ins + cutscenes ride on top of everything
 }
 function banner(s, c) { ctx.fillStyle = "rgba(10,5,4,.66)"; ctx.fillRect(0, H / 2 - 34, W, 68);
   txt(s, W / 2, H / 2 + 8, 30, c, "center", 800); }
@@ -1699,18 +1846,36 @@ function drawReady() {
   else       txt("GO!",     cx, cy + 76, 60, COL.good,  "center", 800);
 }
 // ---------- MELTDOME battle: the live scoreboard (service clock + per-cook clean serves) ----------
-function drawBattleHUD() {
-  const secs = Math.max(0, Math.ceil(battleT)), cx = W / 2;
-  ctx.fillStyle = "rgba(10,6,4,0.55)"; ctx.fillRect(cx - 64, 10, 128, 50);   // clock plate, centered on the divider
-  txt(Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0"), cx, 40, 28, secs <= 10 ? COL.bad : COL.cheese, "center", 800);
-  txt("DINNER SERVICE", cx, 56, 10, COL.dim, "center", 700);
-  txt("PATTY  " + cook[0].serves, KIT.x + 22, KIT.y + 36, 22, "#ff5a4d", "left", 800);          // tallies in the outer corners
-  txt(cook[1].serves + "  CHRISSY", DIN.x + DIN.w - 22, DIN.y + 36, 22, "#6fb0e0", "right", 800);
+function drawBattleHUD() {          // the MeltDome scoreboard: both cooks side by side, the clock, the tug, who Billy faces
+  const secs = Math.max(0, Math.ceil(battleT)), cx = W / 2, a = cook[0].serves, b = cook[1].serves, now = performance.now();
+  const bw = Math.min(520, W * 0.46), x0 = cx - bw / 2, y0 = 8, hh = 66;
+  ctx.fillStyle = "rgba(8,4,12,0.78)"; ctx.fillRect(x0, y0, bw, hh);
+  ctx.fillStyle = "#c8302a"; ctx.fillRect(x0, y0, 6, hh); ctx.fillStyle = "#3b6fb8"; ctx.fillRect(x0 + bw - 6, y0, 6, hh);
+  const lead = a === b ? -1 : (a > b ? 0 : 1);
+  txt((lead === 0 ? "♛ " : "") + "PATTY", x0 + 16, y0 + 22, 16, "#ff5a4d", "left", 800);
+  txt(String(a), x0 + 16, y0 + 56, 34, "#ff8a7d", "left", 800);
+  txt("CHRISSY" + (lead === 1 ? " ♛" : ""), x0 + bw - 16, y0 + 22, 16, "#6fb0e0", "right", 800);
+  txt(String(b), x0 + bw - 16, y0 + 56, 34, "#9fd0f5", "right", 800);
+  const hot = secs <= 10, pulse = hot ? 1 + 0.08 * Math.sin(now / 90) : 1;
+  ctx.save(); ctx.translate(cx, y0 + 34); ctx.scale(pulse, pulse);
+  txt(Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0"), 0, 0, 30, hot ? COL.bad : COL.cheese, "center", 800); ctx.restore();
+  txt("DINNER SERVICE", cx, y0 + 48, 10, COL.dim, "center", 700);
+  const tot = Math.max(1, a + b), split = a / tot, ty = y0 + hh - 9, tw = bw - 140, tx = cx - tw / 2;   // the tug of war
+  ctx.fillStyle = "#3b6fb8"; ctx.fillRect(tx, ty, tw, 5); ctx.fillStyle = "#c8302a"; ctx.fillRect(tx, ty, tw * (a + b ? split : 0.5), 5);
+  const coop = game.players.length === 2, turning = coop && game.billy_turn_t > 0, face = turning ? game.billy_turn_to : game.billy_facing;   // who Billy serves
+  const lbl = (turning ? "BILLY TURNING ▸ " : "BILLY ▸ ") + (face === 0 ? "PATTY" : "CHRISSY");
+  ctx.font = '800 13px "Saira Condensed","Arial Narrow",sans-serif'; const lw = ctx.measureText(lbl).width + 18;
+  ctx.fillStyle = face === 0 ? "rgba(200,48,42,.9)" : "rgba(59,111,184,.9)"; ctx.fillRect(cx - lw / 2, y0 + hh + 4, lw, 20);
+  txt(lbl, cx, y0 + hh + 19, 13, turning ? COL.cheese : COL.cream, "center", 800);
 }
 // ---------- MELTDOME battle: the winner screen (pure merit — most clean serves) ----------
 function drawBattleOver() {
   ctx.fillStyle = "rgba(8,5,4,0.90)"; ctx.fillRect(0, 0, W, H);
   const cx = W / 2, names = ["PATTY", "CHRISSY"], hues = ["#ff5a4d", "#6fb0e0"];
+  if (globalThis.PMCine && globalThis.PMCast) {   // the cooks stand behind the verdict: the winner cheers, the other one just stands there
+    const F = PMCine._fx, who = ["patty", "chrissy"];
+    for (const pi of [0, 1]) { const win = battleWinner === pi, im = PMCast.hero(SKIN, who[pi], win ? "cheer" : "idle");
+      F.drawCast(ctx, im, pi === 0 ? W * 0.13 : W * 0.87, H * 1.0, H * (win ? 0.9 : 0.68), 1, PMCine.breathe(who[pi], 0.015), pi === 1, win ? hues[pi] : null, win || battleWinner < 0 ? 1 : 0.55); } }
   txt("TIME! — THE BELL RINGS", cx, H * 0.24, 28, COL.cheese, "center", 800);
   ctx.save(); ctx.shadowColor = "rgba(0,0,0,.8)"; ctx.shadowBlur = 12;
   if (battleWinner === -1) txt("A DEAD HEAT!", cx, H * 0.40, 54, COL.cream, "center", 800);
@@ -1776,6 +1941,11 @@ function drawMini(s) {
   const g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, chill ? "#0c1a22" : "#1f0d0a"); g.addColorStop(1, "#0a0806");
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // ?art=3d: the rendered walk-in / basement plate; its lane × row anchors = this grid exactly. 2-screen 1280×600 →
+  // freezer / basement (mini.*); 1-screen 720×600 → freezer720 / basement720 (mini720.*, 1110 r3). Other sizes: the 2D grid.
+  const st3 = (chill ? "freezer" : "basement") + (W === 720 ? "720" : ""), S3 = globalThis.PMStages && PMStages.stage(st3);
+  const A3 = ART3D_ON && !!S3 && S3.canvas[0] === W && S3.canvas[1] === H && PMStages.ready(st3), MK = (S3 && S3.sprite_prefix) || "mini.";
+  if (A3) PMStages.plate(ctx, st3);
   txt(c.name, W / 2, 74, 44, accent, "center", 800);
   txt(c.flavor, W / 2, 104, 18, COL.cream, "center", 600);
   const quota = c.quota ? "/" + c.quota : "", secs = Math.max(0, Math.ceil(s.t_left / pm.TPS));
@@ -1786,17 +1956,19 @@ function drawMini(s) {
   const gy0 = 182, gh = H - 300, rowH = gh / pm.MINI_ROWS;
   const laneX = (l) => gx0 + l * laneW + laneW / 2, rowY = (r) => gy0 + r * rowH + rowH / 2;
   ctx.strokeStyle = "rgba(255,255,255,0.06)"; ctx.lineWidth = 1;
-  for (let l = 0; l <= pm.MINI_LANES; l++) { ctx.beginPath(); ctx.moveTo(gx0 + l * laneW, gy0); ctx.lineTo(gx0 + l * laneW, gy0 + gh); ctx.stroke(); }
+  if (!A3) for (let l = 0; l <= pm.MINI_LANES; l++) { ctx.beginPath(); ctx.moveTo(gx0 + l * laneW, gy0); ctx.lineTo(gx0 + l * laneW, gy0 + gh); ctx.stroke(); }
   for (const it of s.items) {
     const x = laneX(it[0]), y = rowY(it[1]), bw = laneW * 0.56, bh = rowH * 0.56;
+    if (A3 && PMStages.mini(ctx, MK + (chill ? "case" : "crate"), x, y)) continue;   // the rendered stock
     ctx.fillStyle = accent; ctx.fillRect(x - bw / 2, y - bh / 2, bw, bh);
     ctx.strokeStyle = "rgba(255,255,255,0.28)"; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(x - bw / 2, y); ctx.lineTo(x + bw / 2, y);
     ctx.moveTo(x, y - bh / 2); ctx.lineTo(x, y + bh / 2); ctx.stroke();
   }
   const catchRow = chill ? pm.MINI_ROWS - 1 : 0, cxp = laneX(s.cart), cyp = rowY(catchRow), cw = laneW * 0.82;
-  ctx.fillStyle = COL.cheese; ctx.fillRect(cxp - cw / 2, cyp - 13, cw, 26);
-  txt(chill ? "▲" : "▼", cxp, cyp + 7, 18, "#3a2a08", "center", 800);
+  if (!(A3 && PMStages.mini(ctx, MK + (chill ? "cart_freezer" : "cart_basement"), cxp, cyp))) {
+    ctx.fillStyle = COL.cheese; ctx.fillRect(cxp - cw / 2, cyp - 13, cw, 26);
+    txt(chill ? "▲" : "▼", cxp, cyp + 7, 18, "#3a2a08", "center", 800); }
   if (s.done) txt(s.score > 0 ? "STOCKED!  +" + s.score + " — press SPACE" : "FORFEIT — press SPACE",
       W / 2, gy0 + gh + 40, 24, s.score > 0 ? COL.good : COL.bad, "center", 800);
   else { if (s.flash) txt(s.flash, W / 2, gy0 + gh + 20, 20, COL.cheese, "center", 800);
@@ -1804,11 +1976,111 @@ function drawMini(s) {
         W / 2, gy0 + gh + 44, 15, COL.dim, "center", 600); }
 }
 
+// ---------- THE PAUSE MENU (P / Esc / pad START) — resume · restart · controls · tips · receipts · save log · quit ----------
+const pmenu = { sel: 0, view: "menu", msg: "", msgT: 0 };
+function pauseItems() {
+  const it = [["resume", "RESUME"], ["restart", BATTLE ? "REMATCH" : "RESTART SHIFT"], ["controls", "CONTROLS"],
+    ["tips", "TIPS: " + (tipsOn() ? "ON" : "OFF")], ["rail", "RECEIPTS: " + (document.body.classList.contains("pm-rail-tucked") ? "HIDDEN" : "SHOWN")]];
+  if (PLOG && !PLOG.off) it.push(["log", "SAVE PLAYTEST LOG"]);
+  it.push(["quit", SHELL === "1" ? "QUIT TO MENU" : "QUIT TO TITLE"]); return it;
+}
+function pauseKey(k) {
+  if (!paused) { paused = true; pmenu.sel = 0; pmenu.view = "menu"; if (PLOG) PLOG.note("pause", { t: game.ticks }); return; }
+  if (pmenu.view === "controls") { pmenu.view = "menu"; return; }
+  const it = pauseItems();
+  if (k === "escape" || k === "p") { paused = false; return; }
+  if (k === "arrowup" || k === "w") { pmenu.sel = (pmenu.sel + it.length - 1) % it.length; return; }
+  if (k === "arrowdown" || k === "s") { pmenu.sel = (pmenu.sel + 1) % it.length; return; }
+  if (!(k === "enter" || k === " " || k === "f")) return;
+  const id = it[Math.min(pmenu.sel, it.length - 1)][0];
+  if (id === "resume") paused = false;
+  else if (id === "restart") { paused = false; BATTLE ? startBattle() : startShift(shiftIdx); }
+  else if (id === "controls") pmenu.view = "controls";
+  else if (id === "tips") setTipsOn(!tipsOn());
+  else if (id === "rail") setRail(!document.body.classList.contains("pm-rail-tucked"));
+  else if (id === "log") { PLOG.download(); pmenu.msg = "SAVED — a .json in your Downloads (nothing is sent anywhere)"; pmenu.msgT = performance.now(); }
+  else if (id === "quit") { paused = false; plogEnd("quit");
+    if (SHELL === "1") toShell({ mode: BATTLE ? "battle" : "campaign", outcome: "quit", score: totalScore(), served: runServed + game.served, shift: shift().n, shiftName: shift().name,
+      winner: BATTLE ? (cook[0].serves === cook[1].serves ? -1 : cook[0].serves > cook[1].serves ? 0 : 1) : undefined, a: cook[0].serves, b: cook[1].serves });
+    else toAttract(); }
+}
+function drawPause() {
+  ctx.fillStyle = "rgba(10,5,4,.78)"; ctx.fillRect(0, 0, W, H);
+  const cx = W / 2;
+  if (pmenu.view === "controls") {
+    txt("CONTROLS", cx, 96, 34, COL.cheese, "center", 800);
+    const rows = [["", "KEYBOARD", "PAD"], ["MOVE (grill + toaster)", "◄ ►  /  A D", "stick / d-pad"], ["FLIP", "F", "A"], ["TOPPING (cheese / onions)", "C", "B"],
+      ["TOAST A BUN · GRILLED CHEESE", "X", "X"], ["HEY BILLY! (serve)", "SPACE", "Y / RT"], ["PAUSE", "P / Esc", "START"]];
+    if (PLAYERS === 2) rows.push(["CHRISSY (P2)", "J L · I K . · M", "pad 2"], ["CO-OP HANDOFF / DROP", "G T  ·  U O", ""]);
+    rows.forEach((r, i) => { const y = 150 + i * 34, c = i ? COL.cream : COL.amber;
+      txt(r[0], cx - 330, y, 18, c, "left", i ? 600 : 800); txt(r[1], cx + 60, y, 18, c, "center", 700); txt(r[2], cx + 260, y, 18, c, "center", 700); });
+    txt("WAIT FOR RDY — act too soon and the order is SENT BACK.", cx, 150 + rows.length * 34 + 26, 17, COL.good, "center", 700);
+    txt("any key — back", cx, H - 40, 15, COL.dim, "center", 600); return;
+  }
+  txt("PAUSED", cx, 120, 44, COL.cheese, "center", 800);
+  txt(BATTLE ? "MELTDOME" : "SHIFT " + shift().n + " — " + shift().name, cx, 152, 16, COL.dim, "center", 700);
+  const it = pauseItems();
+  it.forEach(([id, label], i) => { const y = 206 + i * 40, on = i === pmenu.sel;
+    if (on) { ctx.fillStyle = "rgba(255,210,63,.16)"; ctx.fillRect(cx - 170, y - 27, 340, 36); }
+    txt((on ? "▸ " : "") + label, cx, y, 22, on ? COL.cheese : COL.cream, "center", on ? 800 : 600); });
+  if (pmenu.msg && performance.now() - pmenu.msgT < 4000) txt(pmenu.msg, cx, 206 + it.length * 40 + 14, 14, COL.good, "center", 600);
+  txt("↑↓ choose · ENTER / A pick · P / Esc / START resume", cx, H - 36, 14, COL.dim, "center", 600);
+}
+// ---------- FIRST-TIME TEACHING PROMPTS — each one once a session, never blocking; H dismisses, pause menu → TIPS OFF ----------
+// They read engine state only (the RDY flag, a sent-back, a waiting plate, a melt with no bun …) and fire the FIRST time
+// the situation happens for a human player. Off in the QA rigs, the demo and the attract.
+const TIP_KEY = "pmTipsSeen.v1", TIPS_OFF_KEY = "pmTipsOff.v1";
+let tipNow = null; const _tipSeen = new Set((() => { try { return JSON.parse(sessionStorage.getItem(TIP_KEY)) || []; } catch (e) { return []; } })());
+function tipsOn() { if (SERVICE_PRACTICE || SHELL === "demo" || Q.get("tips") === "off") return false; try { return localStorage.getItem(TIPS_OFF_KEY) !== "1"; } catch (e) { return true; } }
+function setTipsOn(v) { try { localStorage.setItem(TIPS_OFF_KEY, v ? "0" : "1"); } catch (e) {} if (!v) tipNow = null; }
+const TIPS = {
+  rdy:    ["WAIT FOR RDY", "It's ready when it says RDY — then F / Ⓐ to FLIP."],
+  early:  ["TOO SOON — SENT BACK", "Acting before RDY sends the order back. Wait for RDY."],
+  top:    ["TOPPING TIME", "Cheese (or the melt's onions first): C / Ⓑ when it's RDY."],
+  bun:    ["A MELT NEEDS ITS BUN", "► past the grill to the toaster, X / Ⓧ lays a bun. It joins by itself."],
+  billy:  ["ORDER UP — HEY BILLY!", "A plate is done. SPACE / Ⓨ hollers Billy to run it."],
+  coop:   ["BILLY SERVES ONE SIDE", "He faces one cook at a time — holler for YOUR side when your plate is up."],
+  burnt:  ["BURNT — IT'S TOSSED", "Left too long. Watch the clock on each item."],
+};
+function tipShow(id) { if (!tipsOn() || _tipSeen.has(id) || tipNow) return;
+  _tipSeen.add(id); try { sessionStorage.setItem(TIP_KEY, JSON.stringify([..._tipSeen])); } catch (e) {}
+  tipNow = { id, t0: performance.now() }; }
+function tipPressed(verb) { if (!tipNow) return; const id = tipNow.id;   // doing the thing the tip asked = the tip is done
+  if ((id === "rdy" && verb === "flip") || (id === "top" && verb === "top") || (id === "bun" && verb === "toast") || ((id === "billy" || id === "coop") && verb === "billy"))
+    tipNow.done = performance.now(); }
+function tipWatch() {
+  if (!tipsOn() || !game || game.over || game.won) return;
+  if (tipNow && performance.now() - (tipNow.done || tipNow.t0 + 5200) > (tipNow.done ? 500 : 0)) tipNow = null;
+  if (tipNow) return;
+  const A = pm.Action, mine = (i) => PLAYERS < 2 || i < game.slots.length / 2;
+  for (let i = 0; i < game.slots.length; i++) { const p = game.slots[i]; if (!p || !mine(i)) continue;
+    if (p.understeared) return tipShow("early");
+    if (p.stage === S.BURNT) return tipShow("burnt");
+    const nx = pm.RECIPES[p.item][p.step];
+    if (nx !== undefined && p.cook >= pm.sear_ready(p)) return tipShow(nx === A.FLIP ? "rdy" : (nx === A.CHEESE || nx === A.ONION) ? "top" : "rdy");
+    if (pm.TOAST_ITEMS.has(p.item) && !p.bunned && (p.stage === S.MELT || p.stage === S.DONE) && game.toaster.length && !game.toaster.some((b) => b && b.stage === undefined)) return tipShow("bun");
+    if (servable(p)) return tipShow(PLAYERS === 2 ? "coop" : "billy");
+  }
+}
+function drawTip() {
+  if (!tipNow) return;
+  const age = (performance.now() - tipNow.t0) / 1000, a = Math.min(1, age * 5) * (tipNow.done ? Math.max(0, 1 - (performance.now() - tipNow.done) / 500) : 1);
+  const [head, body] = TIPS[tipNow.id], w = Math.min(560, W - 40), x = (W - w) / 2, y = 64;
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.fillStyle = "rgba(10,5,4,.86)"; ctx.fillRect(x, y, w, 62); ctx.fillStyle = "#ff2d9e"; ctx.fillRect(x, y, 5, 62);
+  txt(head, x + 18, y + 25, 19, COL.cheese, "left", 800); txt(body, x + 18, y + 49, 14, COL.cream, "left", 600);
+  txt("H hides · tips off in PAUSE", x + w - 10, y + 16, 10, COL.dim, "right", 600);
+  ctx.restore();
+}
+
 // ---------- input — the 2-way stick + buttons (HEY BILLY is the star) ----------
 addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
   wakeAudio();                                     // first keypress arms WebAudio
   if (k === "s") { audio.setMuted(!audio.muted); return; }   // S = speaker toggle (mute)
+  if (cineBusy()) { PMCine.skip(); e.preventDefault(); return; }   // any key skips a cutscene
+  if (phase === "play" && (paused || (k === "escape" || k === "p") && !game.over && !game.won)) { pauseKey(k); e.preventDefault(); return; }   // the PAUSE MENU
+  if (k === "escape" && SHELL === "1") { toShell(_shellRes); e.preventDefault(); return; }   // back to the front door
   if (phase === "attract") { startGame(); e.preventDefault(); return; }   // START — any key begins the campaign
   if (phase === "ready") { e.preventDefault(); return; }                  // GET READY — inputs locked till GO!
   if (phase === "won_campaign") { submitRun(); e.preventDefault(); return; }   // campaign clear — score entry then title
@@ -1829,24 +2101,23 @@ addEventListener("keydown", (e) => {
     e.preventDefault(); return;
   }
   if (k === "r") { BATTLE ? startBattle() : startShift(shiftIdx); return; }    // rematch / retry THIS shift
-  if (k === "p") { paused = !paused; return; }
-  if (paused) return;
+  if (k === "h" && tipNow) { tipNow = null; return; }                          // H = dismiss the tip on screen
   if (game.over) { if (BATTLE) return; if (continueT > 0) billyBack(); else submitRun(); return; }   // (battle end = the clock)
   if (game.won && (k === " " || k === "enter")) { nextShift(); return; }   // ROUND CLEAR → next shift (or campaign complete)
   // P1 (PATTY): arrows / a,d + f,c,x + space/v HEY BILLY
-  if (k === "arrowleft" || k === "a") pm.move(game, -1, 0);
-  else if (k === "arrowright" || k === "d") pm.move(game, 1, 0);
-  else if (k === "f") pm.flip(game, 0);
-  else if (k === "c") pm.add_cheese(game, 0);
-  else if (k === "x") pm.toast(game, 0);
-  else if (k === " " || k === "v" || k === "b") pm.hey_billy(game, 0);
+  if (k === "arrowleft" || k === "a") act("move", 0, () => pm.move(game, -1, 0));
+  else if (k === "arrowright" || k === "d") act("move", 0, () => pm.move(game, 1, 0));
+  else if (k === "f") act("flip", 0, () => pm.flip(game, 0));
+  else if (k === "c") act("top", 0, () => pm.add_cheese(game, 0));
+  else if (k === "x") act("toast", 0, () => pm.toast(game, 0));
+  else if (k === " " || k === "v" || k === "b") act("billy", 0, () => pm.hey_billy(game, 0));
   // P2 (CHRISSY, co-op): j,l + i,k,. + m HEY BILLY (engine no-ops these in 1P)
-  else if (k === "j") pm.move(game, -1, 1);
-  else if (k === "l") pm.move(game, 1, 1);
-  else if (k === "i") pm.flip(game, 1);
-  else if (k === "k") pm.add_cheese(game, 1);
-  else if (k === ".") pm.toast(game, 1);
-  else if (k === "m") pm.hey_billy(game, 1);
+  else if (k === "j") act("move", 1, () => pm.move(game, -1, 1));
+  else if (k === "l") act("move", 1, () => pm.move(game, 1, 1));
+  else if (k === "i") act("flip", 1, () => pm.flip(game, 1));
+  else if (k === "k") act("top", 1, () => pm.add_cheese(game, 1));
+  else if (k === ".") act("toast", 1, () => pm.toast(game, 1));
+  else if (k === "m") act("billy", 1, () => pm.hey_billy(game, 1));
   // CO-OP teamwork: HANDOFF (pass to partner's half) + DROP (sacrifice a jammed slot)
   else if (k === "g") pm.handoff(game, 0);
   else if (k === "t") pm.drop(game, 0);

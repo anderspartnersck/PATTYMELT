@@ -324,8 +324,12 @@
       if (ti === -1) return false;
       s.toaster[ti] = _mint(s, item, ticket); return true;
     }
-    const gi = s.slots.findIndex((sl) => sl === null);
+    let gi = s.slots.findIndex((sl) => sl === null);
     if (gi === -1) return false;
+    if (s.cfg.alt_deal && s.players.length === 2) {   // MELTDOME FAIR DEAL (opt-in, cfg.alt_deal): this order's half first
+      const want = s.dropped % 2, f = _zone_of(s, want).concat(_zone_of(s, 1 - want)).find((j) => s.slots[j] === null);
+      if (f !== undefined) gi = f;                    // (off = first free slot, byte-identical). Mirrors Python.
+    }
     s.slots[gi] = _mint(s, item, ticket); return true;
   }
   function _place_from_pile_or_drop(s) {               // drain the pile in sequence order (head-of-line)
