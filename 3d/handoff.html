@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<!-- PATTY MELT — HANDOFF (pass-the-spatula hot-seat on a 1-PLAYER cab).  *** for Christine & Phillip Coleman. ***
+     Couch co-op without a 2up cab: two cooks SHARE one grill, trading the single control set. Turns flip
+     each round; mid-shift you can TAG OUT (press H) — a relief valve when you're in the weeds (eases the
+     WAIT meter, fresh hands). One engine.js 1P game (parity-proven), score carries; the board's the team's. -->
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PATTY MELT — HANDOFF</title>
+<style>
+  html,body{margin:0;height:100%;background:#140a08;overflow:hidden;font-family:"Saira Condensed","Arial Narrow",sans-serif;}
+  #frame{position:absolute;inset:0;display:grid;place-items:center;
+    background:repeating-linear-gradient(0deg,rgba(181,53,43,.9) 0 22px,rgba(181,53,43,.5) 22px 44px),
+               repeating-linear-gradient(90deg,rgba(181,53,43,.9) 0 22px,rgba(181,53,43,.5) 22px 44px),#7a1f18;}
+  #wrap{position:relative;width:94vw;max-width:760px;aspect-ratio:760/620;border:14px solid #2a1410;border-radius:10px;
+    box-shadow:0 0 0 6px #0a0504,0 18px 60px #000;}
+  canvas{display:block;width:100%;height:100%;image-rendering:pixelated;background:#0a0806;border-radius:4px;}
+  #tag{position:absolute;bottom:-2.5em;width:100%;text-align:center;color:#f3e6c8;font-weight:600;
+    font-size:13px;letter-spacing:.08em;opacity:.85;}
+</style>
+</head>
+<body>
+<div id="frame"><div id="wrap">
+  <canvas id="screen" width="760" height="620"></canvas>
+  <div id="tag">◄ ► move · F flip · C cheese · X toast · V HEY BILLY · H = TAG OUT (pass the spatula) · R restart</div>
+</div></div>
+<script src="engine.js"></script>
+<script src="sprites.js"></script>
+<script src="service.js"></script>
+<script src="../assets/art3d/stages/stages.manifest.js"></script>
+<script src="lib/stages3d.js"></script>
+<script>
+"use strict";
+const pm = globalThis.PM, S = pm.Stage;
+const Q = new URLSearchParams(location.search);
+const MODE = Q.get("mode") || "family";
+const ITEMS = (Q.get("items") || "").toLowerCase() === "full" ? pm.ITEMS_FULL_MENU : null;
+const SERVICE_PRACTICE = ["demo", "bot", "auto", "ticks", "warm", "fill", "at", "selftest", "bonus", "mini", "ready", "board", "hs"].some(k => Q.has(k));
+const GRILL = parseInt(Q.get("grill") || "6", 10);
+const cv = document.getElementById("screen"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height;
+
+const COOKS = [{ name:"PATTY", color:"#ff5a4d" }, { name:"CHRISSY", color:"#6fb0e0" }];
+const COL = { cream:"#f3e6c8", amber:"#e0a92e", cheese:"#ffd23f", good:"#7ad17a", bad:"#ff5a4d",
+  raw:"#c98a5a", seared:"#7c4f2c", toast:"#d9a441", melt:"#ffd23f", done:"#e9a23b", burnt:"#3a2418",
+  gridln:"#2a2018", dim:"#6b5a3a" };
+const CONTINUE_SECS = 10, HANDOFF_RELIEF = 9, HANDOFF_CD = 45;   // tag-out eases the weeds; cooldown (ticks) stops spam
+
+let game, up, slung, cdT, continueT, continuesUsed, justTagged, paused;
+const serviceUI = PMService.mount({pm, view:"handoff", pause:value=>{ paused = value == null ? !paused : value; }});
+function captureService() { serviceUI.update(game, {scene:"play", excluded:SERVICE_PRACTICE, paused:!!paused}); }
+function finishService() { if (game) serviceUI.finish(game, {excluded:SERVICE_PRACTICE}); }
+function reset() {
+  finishService(); // an explicit restart abandons the old shift; never run this on a tag or Billy break
+  game = pm.new_game(1, MODE, 1, "diner", GRILL, ITEMS, SERVICE_PRACTICE ? "legacy" : "service");
+  up = 0; slung = [0, 0]; cdT = 0; continueT = -1; continuesUsed = 0; justTagged = 0; paused = false;
+}
+reset();
+function tagOut(auto) {                       // pass the spatula to the other cook
+  up = 1 - up; cdT = HANDOFF_CD; justTagged = pm.TPS;
+  if (!auto) { game.wait = Math.max(0, game.wait - HANDOFF_RELIEF); game.billy = pm.BILLY_FULL; }  // a manual tag = a breather
+}
+// ?shell=1 (1110 r4): launched from the FRONT DOOR — ESC = back to the menu; once Billy's break is final (continue spent),
+// any key carries the shift to the front door's RESULTS card. Off by default.
+const SHELL = Q.get("shell") === "1";
+function toFront(r) { finishService(); location.href = "front.html?" + (r ? "results=" + encodeURIComponent(JSON.stringify(r)) + "&" : "menu&") + "sel=" + encodeURIComponent(Q.get("sel") || ""); }
+function billyBack() { game.over = false; game.wait = pm.WAIT_FULL * 0.45; game.billy = pm.BILLY_FULL; continueT = -1; continuesUsed++; }
+
+const SIM_DT = 1000 / pm.TPS;
+let last = performance.now(), acc = 0, prevServed = 0;
+function loop(now) { let e = now - last; last = now; if (e > 250) e = 250; acc += e;
+  while (acc >= SIM_DT) { step(); acc -= SIM_DT; }
+  if (!paused && game.over && !game.won) { if (continueT === -1) continueT = CONTINUE_SECS; else if (continueT > 0) continueT = Math.max(0, continueT - e / 1000); }
+  if (game.over && continueT === 0) finishService();
+  captureService(); render(); requestAnimationFrame(loop); }
+function step() {
+  if (paused || game.over || game.won) return;
+  if (Q.has("demo")) pm.auto_step(game);
+  pm.tick(game);
+  if (game.served > prevServed) { slung[up] += game.served - prevServed; prevServed = game.served; }   // credit the cook on duty
+  if (cdT > 0) cdT--;
+  if (justTagged > 0) justTagged--;
+}
+
+function txt(s, x, y, sz, c, al = "left", w = 700) {
+  ctx.fillStyle = c; ctx.textAlign = al; ctx.textBaseline = "alphabetic";
+  ctx.font = w + " " + sz + 'px "Saira Condensed","Arial Narrow",sans-serif'; ctx.fillText(s, x, y); }
+function stageCol(p) { if (!p) return null;
+  if (p.stage === S.SEAR_A) return COL.raw; if (p.stage === S.SEAR_B) return COL.seared;
+  if (p.stage === S.TOAST) return COL.toast; if (p.stage === S.MELT) return COL.melt;
+  if (p.stage === S.DONE) return p.understeared ? COL.bad : COL.done; return COL.burnt; }
+
+function render() {
+  const drawPM = {...pm, MELT_DONE:pm.melt_done(game)}; // sprite melt animation follows this profile
+  ctx.fillStyle = "#0c0a08"; ctx.fillRect(0, 0, W, H);
+  // ?art=3d — the rendered HANDOFF line (lib/stages3d.js, art3d r2) under the HUD; 6-slot grills only, else the 2D grid
+  const A3 = (/^3d$/i.test(new URLSearchParams(location.search).get("art") || "") && globalThis.PMStages && game.slots.length === 6
+    && (PMStages.load._h || (PMStages.load._h = PMStages.load("../assets/art3d/stages/"))) && PMStages.ready("handoff")) ? PMStages.stage("handoff").slots[0] : null;
+  if (A3) PMStages.plate(ctx, "handoff");
+  const cook = COOKS[up], pad = 26;
+  // WHOSE TURN banner
+  txt("▶ " + cook.name + " IS UP", pad, 40, 30, cook.color, "left", 800);
+  txt("SCORE " + String(game.score).padStart(6, "0"), W - pad, 36, 20, COL.cream, "right", 700);
+  txt(game.cfg.label + " · DAY " + game.cfg.day + " · R" + game.rnd, W - pad, 58, 13, COL.amber, "right", 600);
+  txt("ORDERS " + String(game.orders_left).padStart(2) + "   COMBO x" + pm.combo_mult(game.combo) +
+      (game.combo >= pm.FLOW_COMBO ? "  BIG GRILL ENERGY" : ""), pad, 62, 15, game.combo >= pm.FLOW_COMBO ? COL.cheese : COL.cream, "left", 600);
+  // WEEDS bar
+  const wf = Math.min(1, game.wait / pm.WAIT_FULL), bw = W - pad * 2;
+  ctx.fillStyle = "#241c12"; ctx.fillRect(pad, 76, bw, 11);
+  ctx.fillStyle = wf >= .78 ? COL.bad : wf >= .5 ? COL.amber : COL.good; ctx.fillRect(pad, 76, bw * wf, 11);
+  // TAG-TEAM cards
+  for (let i = 0; i < 2; i++) {
+    const cx = pad + i * (bw / 2), cw = bw / 2 - 8, on = i === up;
+    ctx.strokeStyle = on ? COOKS[i].color : "#3a2018"; ctx.lineWidth = on ? 3 : 1;
+    ctx.strokeRect(cx, 98, cw, 40);
+    txt(COOKS[i].name, cx + 10, 116, 15, COOKS[i].color, "left", 800);
+    txt(slung[i] + " slung", cx + 10, 132, 12, COL.dim, "left", 600);
+    if (on) txt("ON THE GRILL", cx + cw - 10, 116, 11, COL.good, "right", 700);
+  }
+  // grill
+  const n = game.slots.length, cols = Math.ceil(n / 2), rows = n > 1 ? 2 : 1;
+  const gx = pad, gy = 158, gw = bw, gh = 300, cwd = gw / cols, ch = gh / rows;
+  if (!A3) { ctx.fillStyle = "rgba(255,120,40,.06)"; ctx.fillRect(gx, gy, gw, gh); }
+  for (let i = 0; i < n; i++) {
+    const r = Math.floor(i / cols), c = i % cols, rad = Math.min(cwd, ch) * 0.32;
+    let ccx = gx + c * cwd + cwd / 2, ccy = gy + r * ch + ch / 2;
+    if (A3 && A3[i]) { ccx = A3[i].x; ccy = A3[i].y; }                   // the rendered well (anchors match the 2D cells)
+    else { ctx.strokeStyle = COL.gridln; ctx.lineWidth = 2; ctx.strokeRect(gx + c * cwd + 6, gy + r * ch + 6, cwd - 12, ch - 12); }
+    const p = game.slots[i];
+    if (p && !(A3 && PMStages.food(ctx, p, pm, ccx, ccy, pm.melt_done(game))))
+      PMDrawItem(ctx, p, ccx, ccy, rad, drawPM, performance.now() / 1000);   // animated item sprite (sizzle/pop/steam)
+    if (p && ITEMS && p.item !== pm.Item.BURGER && p.stage !== S.DONE && p.stage !== S.BURNT)
+      txt(pm.ITEM_TICKET[p.item], ccx, gy + r * ch + ch - 10, 12, COL.cream, "center", 700);
+    if (i === game.players[0].cursor) { ctx.fillStyle = cook.color; ctx.beginPath();   // the spatula = current cook's color
+      ctx.moveTo(ccx, gy + r * ch + 14); ctx.lineTo(ccx - 9, gy + r * ch + 2); ctx.lineTo(ccx + 9, gy + r * ch + 2); ctx.fill(); }
+  }
+  // TAG-OUT prompt — glows when you're in the weeds and it's off cooldown
+  const ready = cdT === 0, weeds = wf >= 0.5;
+  if (A3) { ctx.fillStyle = "rgba(12,10,8,.78)"; ctx.fillRect(W / 2 - 170, gy + gh + 12, 340, 26 + (cdT ? 8 : 0)); }   // (3D: the light front rail)
+  txt(ready ? (weeds ? "▶ IN THE WEEDS — TAG OUT! press H" : "TAG OUT — press H") : "tag cooling down…",
+      W / 2, gy + gh + 30, weeds && ready ? 18 : 14, !ready ? COL.dim : weeds ? COL.bad : COL.cream, "center", weeds && ready ? 800 : 600);
+  if (!ready) { ctx.fillStyle = "#241c12"; ctx.fillRect(W / 2 - 60, gy + gh + 40, 120, 5);
+    ctx.fillStyle = COL.amber; ctx.fillRect(W / 2 - 60, gy + gh + 40, 120 * (1 - cdT / HANDOFF_CD), 5); }
+  if (justTagged > 0) txt("✋ " + cook.name + " takes the spatula!", W / 2, gy + gh + 58, 15, cook.color, "center", 800);
+  if (game.flash) txt(game.flash, W / 2, gy - 6, 14, COL.cheese, "center", 800);
+
+
+  // The cursor includes the two real toaster slots. Keep buns and grilled cheese visible on full menus.
+  // ?art=3d (1110 r3): the bun / grilled cheese are the rendered sprites ON the plate's two toaster bays, and the read-out
+  // (name · state · timer · bar) moves OUT to the counter beside each bay — nothing drawn over the 3D toasters.
+  const T3 = A3 && PMStages.stage("handoff").toaster;
+  if (game.toaster.length) {
+    const tw=220, gap=12, tx=(W-(tw*game.toaster.length+gap*(game.toaster.length-1)))/2, ty=532;
+    for (let i=0;i<game.toaster.length;i++) {
+      const x=tx+i*(tw+gap), p=game.toaster[i], selected=game.players[0].cursor===game.slots.length+i;
+      const q=T3&&T3[i], side=i===0?-1:1, lx=q?(side<0?x-12:x+tw+12):x+10, al=q?(side<0?"right":"left"):"left";
+      if (q) { ctx.fillStyle="rgba(14,11,8,.82)"; ctx.fillRect(side<0?6:x+tw+4,ty,side<0?x-10:W-x-tw-10,72);   // the read-out's own dark card, off the bay
+        if (selected) { ctx.strokeStyle=cook.color;ctx.lineWidth=3;ctx.strokeRect(x-3,ty-5,tw+6,74+8); } }
+      else { ctx.fillStyle="#21170d";ctx.fillRect(x,ty,tw,74);
+        ctx.strokeStyle=selected?cook.color:COL.gridln;ctx.lineWidth=selected?3:1;ctx.strokeRect(x,ty,tw,74); }
+      txt("TOASTER "+(i+1)+(selected?(q?" ◂":" · SELECTED"):""),lx,ty+17,12,selected?cook.color:COL.amber,al);
+      if (!p) { txt(q?"EMPTY · X":"EMPTY · X to toast bun",lx,ty+(q?34:42),12,COL.dim,al);continue; }
+      const bun=p.stage===undefined, w=bun?null:pm.cook_window(game,p);
+      const target=bun?pm.toast_ready(game):p.stage===S.MELT?pm.melt_done(game):pm.sear_ready(p);
+      const burn=bun?pm.toast_burn(game):w.burn;
+      const burnt=p.stage===S.BURNT||((bun||p.stage!==S.MELT&&p.stage!==S.DONE)&&p.cook>=burn);
+      const ready=!burnt&&(p.stage===S.DONE||p.stage!==S.MELT&&p.cook>=target);
+      const state=burnt?"BURNT":ready?"READY":p.stage===S.MELT?"MELTING":"COOKING";
+      if (q) PMStages.toast(ctx,p,pm,game,q.x,q.y);                        // the rendered bun / grilled cheese on its bay
+      txt(bun?"BUN":(q?pm.ITEM_TICKET[p.item]:pm.ITEM_LABEL[p.item])||p.item,lx,ty+34,13,COL.cream,al);
+      txt(state+" · "+(p.cook/pm.TPS).toFixed(1)+"s / "+(target/pm.TPS).toFixed(1)+"s",lx,ty+50,11,burnt?COL.bad:ready?COL.good:COL.cream,al);
+      const bw=q?130:tw-20, bx=q?(side<0?lx-bw:lx):x+10;
+      ctx.fillStyle=COL.gridln;ctx.fillRect(bx,ty+59,bw,5);
+      ctx.fillStyle=burnt?COL.bad:ready?COL.good:COL.amber;ctx.fillRect(bx,ty+59,bw*Math.min(1,p.cook/Math.max(1,target)),5);
+      if (!bun && !q) PMDrawItem(ctx,p,x+tw-27,ty+34,17,drawPM,performance.now()/1000);
+    }
+  }
+
+  if (game.won) { banner("ROUND CLEAR — press SPACE (" + COOKS[1 - up].name + " is up next)", COL.good); }
+  if (game.over) {
+    const secs = Math.max(0, Math.ceil(continueT));
+    ctx.fillStyle = "rgba(10,5,4,.74)"; ctx.fillRect(0, H / 2 - 50, W, 100);
+    txt(pm.THEMES.diner.fired, W / 2, H / 2 - 10, 28, COL.cheese, "center", 800);
+    txt(continueT > 0 ? "bring him back? press any button — " + secs : (SHELL ? "press any button — results" : "press R for a new shift"),
+        W / 2, H / 2 + 20, 16, continueT > 0 ? (secs <= 3 ? COL.bad : COL.cream) : COL.amber, "center", 700);
+    txt("PATTY " + slung[0] + "   ·   CHRISSY " + slung[1] + " slung", W / 2, H / 2 + 44, 13, COL.dim, "center", 600);
+  }
+  if (paused) banner("PAUSED", COL.cream);
+}
+function banner(s, c) { ctx.fillStyle = "rgba(10,5,4,.66)"; ctx.fillRect(0, H / 2 - 26, W, 52); txt(s, W / 2, H / 2 + 8, 22, c, "center", 800); }
+
+addEventListener("keydown", (e) => {
+  const k = e.key.toLowerCase();
+  if (SHELL && k === "escape") { toFront(null); return; }
+  if (SHELL && game.over && continueT === 0) { toFront({ mode: "tag", outcome: "break", skin: "diner", label: Q.get("label") || "TAG TEAM",
+    score: game.score, served: game.served, shift: game.rnd, shiftName: "PATTY " + slung[0] + " · CHRISSY " + slung[1] + " slung" }); return; }
+  if (k === "r") { reset(); prevServed = 0; return; }
+  if (k === "p") { paused = !paused; return; }
+  if (paused) return;
+  if (game.over) { if (continueT > 0) billyBack(); return; }
+  if (game.won) { if (k === " " || k === "enter") { captureService(); game = pm.advance_round(game, GRILL, null, 0); prevServed = game.served; tagOut(true); } return; }  // turns flip each round
+  if (k === "h" || k === "tab") { if (cdT === 0) tagOut(false); }
+  else if (k === "arrowleft" || k === "a") pm.move(game, -1, 0);
+  else if (k === "arrowright" || k === "d") pm.move(game, 1, 0);
+  else if (k === "f") pm.flip(game, 0);
+  else if (k === "c") pm.add_cheese(game, 0);
+  else if (k === "x") pm.toast(game, 0);
+  else if (k === " " || k === "v" || k === "b") pm.hey_billy(game, 0);
+  else return;
+  e.preventDefault();
+}, { passive: false });
+
+const WARM = parseInt(Q.get("warm") || "0", 10);
+for (let i = 0; i < WARM && !(game.over || game.won); i++) step();
+addEventListener("pagehide", e=>{ if (!e.persisted) finishService(); }); // BFCache return resumes the same open tickets
+captureService();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
