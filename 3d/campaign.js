@@ -81,9 +81,10 @@
   }
 
   // Build a fresh game for a shift. `itemsOverride` (jailbreak FULL MENU) wins if provided.
-  function build(pm, sh, players, theme, itemsOverride, profile = "legacy") {
+  // `bread` = the REAL ORDERS opt-in (service only): bread pans + held bread + a bun of the ticket's bread per patty.
+  function build(pm, sh, players, theme, itemsOverride, profile = "legacy", bread = false) {
     const items = itemsOverride && itemsOverride.length ? itemsOverride : itemSeq(pm, sh.items);
-    const g = pm.new_game(sh.rnd || 1, sh.mode || "family", players || 1, theme || "diner", sh.grill || 6, items, profile);
+    const g = pm.new_game(sh.rnd || 1, sh.mode || "family", players || 1, theme || "diner", sh.grill || 6, items, profile, bread);
     if (sh.quota) { g.cfg.orders = sh.quota; g.orders_left = sh.quota; }   // authored level length
     return g;
   }

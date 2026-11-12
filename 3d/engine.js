@@ -22,6 +22,18 @@
   // toaster, and can't be served until a finished patty JOINS a READY bun (auto at the pass). The toaster
   // only EXISTS in a round with a toast item → all-burger is byte-identical (no toaster, cursor stays on grill).
   const TOASTER_SLOTS = 2, TOAST_READY = 12, TOAST_BURN = 26, BUN_SPIKE = 12.0;
+  // REAL ORDERS (SERVICE profile only; legacy byte-identical). Every service ticket has a SEAT and a BREAD;
+  // every patty item needs a toasted bun OF ITS TICKET'S BREAD. The three bread PANS are cursor stops after
+  // the toaster (grill slots, toaster slots, then pans in BREADS order). Mirrors src/patty_melt.py EXACTLY.
+  // OPT-IN: new_game(..., "service", true) sets cfg.bread (carried by advance_round). Service games WITHOUT it
+  // behave exactly as before (seats + ticket bread are harmless data on every service ticket).
+  const TOASTER_SLOTS_SERVICE = 2;                  // the bread kitchen's toaster (2 bays modelled in 3D)
+  const TOAST_READY_BREAD = 16, TOAST_BURN_BREAD = 60;   // bread game: toast quick (1.6s), HOLD long (6.0s, a warmer)
+  const BREADS = ["SESAME", "RYE", "WHITE"];        // left->right pan order on the line (pan stop k = BREADS[k])
+  const BREAD_LABEL = { SESAME: "SESAME BUN", RYE: "RYE", WHITE: "WHITE" };
+  const BREAD_TAG = { SESAME: "SES", RYE: "RYE", WHITE: "WHT" };
+  const SEAT_CYCLE = [0, 1, 6, 2, 3, 7, 4, 8, 5, 9]; // ticket id % 10 -> seat (0-5 counter stools, 6-9 booths)
+  const COUNTER_SEATS = 6;                          // 0..5 = BAR 1..6 (B1..B6); 6..9 = TABLE 1..4 (T1..T4)
   const BILLY_FULL = 100.0, SERVE_POINTS = 100, PERFECT_BONUS = 25, NEVER_BURN = 1e9;
   const TURN_LATENCY = 4;   // 2P: ticks Billy swings to a new cook (serving no one) — the
                             // cost that makes the co-op tug-of-war bind. No effect in 1P.
@@ -184,19 +196,22 @@
   }
   // A slice of bread toasting on the TOASTER. cook = ticks toasting (< TOAST_READY = not ready,
   // [TOAST_READY, TOAST_BURN) = READY, TOAST_BURN = BURNS). Mirrors Python's Bun.
-  function Bun(born = 0) { return { cook: 0, born }; }
+  function Bun(born = 0, bread = null) { const b = { cook: 0, born }; if (bread !== null) b.bread = bread; return b; }
 
-  function new_game(rnd = 1, mode = "family", players = 1, theme = "diner", grill = SLOTS, items = null, profile = "legacy") {
+  function new_game(rnd = 1, mode = "family", players = 1, theme = "diner", grill = SLOTS, items = null, profile = "legacy", bread = false) {
     // `grill` = the GRILL-SIZE lever (default SLOTS=6). Everything else reads s.slots.length, so a
     // non-6 grill is fully supported (the shift = grill size x headcount). `items` = the ORDER VARIETY
     // item sequence (default = all BURGER = today's coin-op run). Mirrors Python exactly.
     grill = Math.max(1, grill);                  // hardening: a grill is always >=1 slot (no empty-array indexing)
     const cfg = round_config(rnd, mode, players, items);
-    if(profile === "service"){ cfg.drop_interval*=2; if(cfg.sear_burn<NEVER_BURN) cfg.sear_burn*=2; cfg.billy_drift/=2; cfg.billy_interval*=2; }
+    if(profile === "service"){ cfg.drop_interval*=2; if(cfg.sear_burn<NEVER_BURN) cfg.sear_burn*=2; cfg.billy_drift/=2; cfg.billy_interval*=2; if(bread) cfg.bread=true; }
     const roster = [{ name: "PATTY", cursor: 0 }];
     if (players === 2) roster.push({ name: "CHRISSY", cursor: grill - 1 });
+    if (cfg.bread) for (const r of roster) r.held = null;   // BREAD game: the bread in hand
     // The toaster spins up ONLY when this round's menu has a bun-item OR a toaster-item — else [] (identical).
-    const toaster = cfg.item_seq.some((it) => TOAST_ITEMS.has(it) || TOASTER_ITEMS.has(it))
+    // BREAD game: every patty needs a bun, so it ALWAYS has the toaster (and the bread pans).
+    const toaster = cfg.bread ? new Array(TOASTER_SLOTS_SERVICE).fill(null)
+      : cfg.item_seq.some((it) => TOAST_ITEMS.has(it) || TOASTER_ITEMS.has(it))
       ? new Array(TOASTER_SLOTS).fill(null) : [];
     return {
       cfg, mode, theme, rnd, players: roster,
@@ -217,7 +232,7 @@
   // carry SCORE (+ any back-of-house bonus), ease the WAIT meter (WAIT_RELIEF), re-apply the shift's
   // levers (grill size, optional headcount quota). headcount=null leaves the round_config quota.
   function advance_round(s, grill = SLOTS, headcount = null, bonus = 0) {
-    const next = new_game(s.rnd + 1, s.mode, s.players.length, s.theme, grill, s.cfg.item_seq, s.service ? "service" : "legacy");
+    const next = new_game(s.rnd + 1, s.mode, s.players.length, s.theme, grill, s.cfg.item_seq, s.service ? "service" : "legacy", !!s.cfg.bread);
     if (headcount != null) { next.cfg.orders = headcount; next.orders_left = headcount; }
     next.score = s.score + bonus;
     next.wait = Math.max(0, s.wait - WAIT_RELIEF);
@@ -231,8 +246,9 @@
   // Legacy remains the default for archived references and their exact parity locks.
   const service_scale = (s) => s.service ? 2 : 1;
   const melt_done = (s) => MELT_DONE * service_scale(s);
-  const toast_ready = (s) => TOAST_READY * service_scale(s);
-  const toast_burn = (s) => TOAST_BURN * service_scale(s);
+  const _bread_on = (s) => !!s.service && !!s.cfg.bread;
+  const toast_ready = (s) => _bread_on(s) ? TOAST_READY_BREAD : TOAST_READY * service_scale(s);
+  const toast_burn = (s) => _bread_on(s) ? TOAST_BURN_BREAD : TOAST_BURN * service_scale(s);
   function cook_window(s, p) {
     const ready = p ? sear_ready(p) : SEAR_READY * service_scale(s);
     const burn = pyround(SEAR_BURN * (p ? ITEM_COOK[p.item] || 1 : 1) * service_scale(s));
@@ -240,10 +256,31 @@
       idealEnd: ready + Math.floor((burn-ready)*0.55), burn: s.cfg.sear_burn >= NEVER_BURN ? NEVER_BURN : burn,
       meltDone: melt_done(s), toastReady: toast_ready(s), toastBurn: toast_burn(s) };
   }
+  // Seat index -> table-map id/label: 0..5 = B1..B6 / "BAR 1..6", 6..9 = T1..T4 / "TABLE 1..4".
+  const seat_id = (i) => i < COUNTER_SEATS ? "B" + (i + 1) : "T" + (i - COUNTER_SEATS + 1);
+  const seat_label = (i) => i < COUNTER_SEATS ? "BAR " + (i + 1) : "TABLE " + (i - COUNTER_SEATS + 1);
+  // The bread a ticket is ordered on (deterministic): melts RYE; GC WHITE (odd id) / RYE; others SESAME (odd) / WHITE.
+  function bread_for(item, id) {
+    if (item === Item.PATTY_MELT || item === Item.SMASH_MELT) return "RYE";
+    if (item === Item.GRILLED_CHEESE) return id % 2 === 1 ? "WHITE" : "RYE";
+    return id % 2 === 1 ? "SESAME" : "WHITE";
+  }
+  // Legacy: only the melts need a bun. SERVICE: every grill item (it carries its ticket's bread); GC never.
+  const _needs_bun = (p) => TOAST_ITEMS.has(p.item) || (p.bread != null && !TOASTER_ITEMS.has(p.item));
+  const _item_needs_bun = (s, item) => TOAST_ITEMS.has(item) || (_bread_on(s) && !TOASTER_ITEMS.has(item));
+  const needs_bun = (s, p) => !!p && !isBun(p) && _needs_bun(p);   // public: the UI asks the engine
+  // What player pi's cursor is on. [0,G) grill c; [G,G+T) toaster c-G; [G+T,G+T+3) pan c-G-T (service only).
+  function cursor_target(s, pi = 0) {
+    if (pi >= s.players.length) return null;
+    const c = s.players[pi].cursor, g = s.slots.length, t = s.toaster.length;
+    if (c < g) return { kind: "grill", index: c };
+    if (c < g + t) return { kind: "toaster", index: c - g };
+    return { kind: "pan", index: c - g - t };
+  }
   function _new_ticket(s) {
     const id=s.service.nextId++, item=s.cfg.item_seq[(id-1)%s.cfg.item_seq.length];
     const ticket={id,item,arrivedTick:s.ticks,placedTick:null,status:'queued',surface:null,slot:null,
-      actions:[],rating:null,reason:null,servedTick:null};
+      actions:[],rating:null,reason:null,servedTick:null,seat:SEAT_CYCLE[id%10],bread:bread_for(item,id)};
     s.service.tickets.push(ticket); return ticket;
   }
   function _ticket(s,p) { return s.service && p && s.service.tickets.find(t=>t.id===p.orderId); }
@@ -259,7 +296,7 @@
     const w=s.service.waste;
     for(const k of Object.keys(ingredients)) w.totals[k]+=ingredients[k];
     w.events.push({id:w.events.length+1,type:'waste',ticketId:ticket?ticket.id:null,
-      tick:s.ticks,cause,ingredients});
+      tick:s.ticks,cause,ingredients,bread:p.bread??null});
   }
   function _record_action(s,p,action,cook,w) {
     const t=_ticket(s,p); if(!t) return;
@@ -272,17 +309,17 @@
   }
   function _settle(s,p,outcome,ticket=null) {
     const t=ticket||_ticket(s,p); if(!t||t.rating!==null) return;
-    if(outcome==='burnt'||outcome==='dropped'||outcome==='raw') _record_waste(s,p,outcome);
+    if(outcome==='burnt'||outcome==='dropped'||outcome==='raw'||outcome==='wrong_bread') _record_waste(s,p,outcome);
     const ageTicks=s.ticks-t.arrivedTick, actions=t.actions;
     const cookScore=actions.length ? Math.floor(actions.reduce((n,a)=>n+a.quality,0)/actions.length) : 0;
     const ideal=actions.length>0 && actions.every(a=>a.cook>=a.idealStart&&a.cook<=a.idealEnd);
     const w=cook_window(s,p||{item:t.item,serviceScale:2});
-    const target=RECIPES[t.item].length*w.idealEnd+w.meltDone+(TOAST_ITEMS.has(t.item)?w.toastReady:0)+TPS*3;
+    const target=RECIPES[t.item].length*w.idealEnd+w.meltDone+(_item_needs_bun(s,t.item)?w.toastReady:0)+TPS*3;
     const waitPenalty=Math.min(40,Math.floor(Math.max(0,ageTicks-target)/TPS)*2);
     const qualityScore=outcome==='served'?Math.max(0,cookScore-waitPenalty):0;
     const rating=outcome==='served'?Math.max(1,Math.min(ideal?5:4,Math.ceil(qualityScore/20))):1;
     const reasons=outcome==='served'?[ideal?'Ideal cook timing':'Cook timing outside ideal band']:
-      [{raw:'Cooked too early',burnt:'Burnt order',dropped:'Dropped order',lost:'Order not served'}[outcome]||'Order rejected'];
+      [{raw:'Cooked too early',burnt:'Burnt order',dropped:'Dropped order',lost:'Order not served',wrong_bread:'Wrong bread'}[outcome]||'Order rejected'];
     if(waitPenalty) reasons.push('Long ticket wait (-'+waitPenalty+')');
     t.status=outcome==='served'?'served':'rejected';t.rating=rating;t.reason=reasons.join('; ');t.servedTick=s.ticks;
     s.service.events.push({id:t.id,type:'review',item:t.item,outcome,tick:s.ticks,ageTicks,rating,qualityScore,cookScore,waitPenalty,reasons});
@@ -299,9 +336,12 @@
     return s.service.tickets.filter(t=>t.rating===null).map(t=>{
       const p=active.find(p=>p.orderId===t.id), w=cook_window(s,p||{item:t.item,serviceScale:2});
       const at=s.slots.indexOf(p), ti=s.toaster.indexOf(p);
-      const nextAction=!p?'WAIT':p.stage===Stage.DONE?(TOAST_ITEMS.has(p.item)&&!p.bunned?'TOAST BUN':'SERVE'):
+      const nextAction=!p?'WAIT':p.stage===Stage.DONE?(_needs_bun(p)&&!p.bunned?'TOAST BUN':'SERVE'):
         p.stage===Stage.MELT?'MELT':RECIPES[p.item][p.step]||'SERVE';
-      return {...t,recipe:RECIPES[t.item].slice(),status:!p?'queued':p.stage===Stage.DONE?'ready':'cooking',
+      const needs=_item_needs_bun(s,t.item), joined=!!(p&&p.bunned), buns=s.toaster.filter(b=>isBun(b)&&b.bread===t.bread);
+      return {...t,recipe:RECIPES[t.item].slice(),needsBun:needs,bunJoined:joined,
+        bunReady:needs&&!joined&&buns.some(b=>b.cook>=toast_ready(s)&&b.cook<toast_burn(s)),
+        bunToasting:needs&&!joined&&buns.some(b=>b.cook<toast_ready(s)),status:!p?'queued':p.stage===Stage.DONE?'ready':'cooking',
         surface:p?(at>=0?'grill':'toaster'):null,slot:p?(at>=0?at:ti):null,nextAction,ageTicks:s.ticks-t.arrivedTick,
         cookTicks:p?p.cook:0,remainingTicks:p?Math.max(0,(p.stage===Stage.MELT?w.meltDone:w.ready)-p.cook):0,
         ready:!!p&&(p.stage===Stage.DONE||p.cook>=w.ready),window:w};
@@ -311,7 +351,7 @@
   const _ready = (p) => p.cook >= sear_ready(p);
 
   const _peek_item = (s) => s.cfg.item_seq[s.dropped % s.cfg.item_seq.length];   // next order's item (no consume)
-  function _mint(s, item, ticket=null) { s.dropped += 1; const p=Patty(ticket?ticket.arrivedTick:s.ticks, item, _ACTION_STAGE[RECIPES[item][0]]); if(s.service){ const t=ticket||_new_ticket(s);p.orderId=t.id;p.serviceScale=2;t.placedTick=s.ticks;t.status="cooking"; } return p; }
+  function _mint(s, item, ticket=null) { s.dropped += 1; const p=Patty(ticket?ticket.arrivedTick:s.ticks, item, _ACTION_STAGE[RECIPES[item][0]]); if(s.service){ const t=ticket||_new_ticket(s);p.orderId=t.id;p.serviceScale=2;t.placedTick=s.ticks;t.status="cooking"; if(s.cfg.bread&&!TOASTER_ITEMS.has(item)) p.bread=t.bread; } return p; }
   function _new_patty(s) { return _mint(s, _peek_item(s)); }   // grill-slot mint (back-compat)
 
   // Place the NEXT order on its REQUIRED surface if there's room (GRILLED CHEESE -> a toaster slot, else a
@@ -341,7 +381,8 @@
     // With no toaster (all-burger) the range is exactly the grill, so clamping is byte-identical.
     if (pi < s.players.length) {
       const c = s.players[pi].cursor;
-      s.players[pi].cursor = Math.max(0, Math.min(s.slots.length + s.toaster.length - 1, c + d));
+      const pans = _bread_on(s) ? BREADS.length : 0;    // SERVICE: the bread pans are stops past the toaster
+      s.players[pi].cursor = Math.max(0, Math.min(s.slots.length + s.toaster.length + pans - 1, c + d));
     }
   }
   function _target(s, pi) {                            // (container, index) the cursor points at — grill or toaster
@@ -377,6 +418,7 @@
   // a GRILLED CHEESE cooking -> advance its in-toaster toast step; a grill slot -> a harmless no-op (nothing
   // on the grill toasts anymore). Mirrors Python.
   function toast(s, pi = 0) {
+    if (_bread_on(s)) { _toast_service(s, pi); return; }
     const [cont, i] = _target(s, pi);
     if (cont === s.toaster && i >= 0) {
       const entry = cont[i];
@@ -385,6 +427,36 @@
       return;                                                        // a Bun already toasting — no-op
     }
     _act(s, pi, Action.TOAST, "TOAST!");
+  }
+
+  // SERVICE X button: a PAN -> pick up that bread; an EMPTY toaster slot -> lay the held bread toasting (nothing
+  // held = GRAB BREAD!); a grilled cheese whose next step is TOAST -> toast it on the held bread (wrong bread =
+  // sent back at the pass); anything else = no-op. Mirrors Python's _toast_service.
+  function _toast_service(s, pi) {
+    const tgt = cursor_target(s, pi);
+    if (tgt === null) return;
+    const pl = s.players[pi];
+    if (tgt.kind === "pan") {
+      if (tgt.index < BREADS.length) { pl.held = BREADS[tgt.index]; _say(s, pl.held + "!"); }
+      return;
+    }
+    if (tgt.kind === "toaster") {
+      const i = tgt.index, entry = s.toaster[i];
+      if (entry === null) {
+        if (pl.held == null) { _say(s, "GRAB BREAD!"); return; }
+        s.toaster[i] = Bun(s.ticks, pl.held); pl.held = null; _say(s, "TOAST!"); return;
+      }
+      if (!isBun(entry) && entry.step < RECIPES[entry.item].length && RECIPES[entry.item][entry.step] === Action.TOAST) {
+        if (pl.held == null) { _say(s, "GRAB BREAD!"); return; }
+        const bread = pl.held;
+        _act(s, pi, Action.TOAST, "TOAST!");
+        entry.bread = bread; pl.held = null;
+        const t = _ticket(s, entry);
+        if (t && bread !== t.bread) entry.wrongBread = true;
+      }
+      return;
+    }
+    _act(s, pi, Action.TOAST, "TOAST!");                 // a grill slot: nothing toasts there (no-op)
   }
 
   // 2-UP CO-OP actions: DROP (sacrifice a jammed slot) + HANDOFF (pass to your partner). Mirror Python.
@@ -445,7 +517,9 @@
       if (e === null) continue;
       e.cook += 1;
       if (isBun(e)) {                                   // a bun for a melt (fungible)
-        if (e.cook >= toast_burn(s)) { _record_waste(s,e,"burnt");s.toaster[ti] = null; s.fails += 1; s.bun_fails += 1; _break_combo(s); _say(s, "BUN BURNT!"); }
+        if (e.cook >= toast_burn(s) && _bread_on(s) && s.cfg.sear_burn >= NEVER_BURN) {   // SERVICE KIDS: never burns —
+          _record_waste(s,e,"stale"); s.toaster[ti] = null; _say(s, "STALE BUN");      // an unclaimed bun goes stale (no fail)
+        } else if (e.cook >= toast_burn(s)) { _record_waste(s,e,"burnt");s.toaster[ti] = null; s.fails += 1; s.bun_fails += 1; _break_combo(s); _say(s, "BUN BURNT!"); }
       } else if (_ACTIVE_STAGES.indexOf(e.stage) !== -1) {   // a grilled cheese mid-cook (TOAST / CHEESE step)
         if (e.cook >= sear_burn_of(s, e)) { _settle(s,e,"burnt");e.stage = Stage.BURNT; s.toaster[ti] = null; s.fails += 1; _break_combo(s); _say(s, "BURNT!"); }
       } else if (e.stage === Stage.MELT) {
@@ -455,19 +529,19 @@
   }
   function _assembly_tick(s) {          // the AUTOMATIC join: a finished melt claims the first READY bun
     for (const p of s.slots) {
-      if (p === null || p.stage !== Stage.DONE || !TOAST_ITEMS.has(p.item) || p.bunned) continue;
+      if (p === null || p.stage !== Stage.DONE || !_needs_bun(p) || p.bunned) continue;
       for (let ti = 0; ti < s.toaster.length; ti++) {
         const b = s.toaster[ti];
-        if (isBun(b) && b.cook >= toast_ready(s) && b.cook < toast_burn(s)) { if(s.service){const r=toast_ready(s),bmax=toast_burn(s);_record_action(s,p,"BUN",b.cook,{ready:r,idealStart:r+Math.floor((bmax-r)*0.35),idealEnd:r+Math.floor((bmax-r)*0.55),burn:bmax});}p.bunned = true; s.toaster[ti] = null; break; }
+        if (isBun(b) && b.cook >= toast_ready(s) && b.cook < toast_burn(s) && (!_bread_on(s) || b.bread === p.bread)) { if(s.service){const r=toast_ready(s),bmax=toast_burn(s);_record_action(s,p,"BUN",b.cook,{ready:r,idealStart:r+Math.floor((bmax-r)*0.35),idealEnd:r+Math.floor((bmax-r)*0.55),burn:bmax});}p.bunned = true; s.toaster[ti] = null; break; }
       }
     }
   }
   // A DONE item Billy can run: a finished Patty EXCEPT a toast-item still waiting on its bun. (A Bun never
   // serves directly — it joins a melt.)
-  const _servable = (p) => p !== null && !isBun(p) && p.stage === Stage.DONE && (!TOAST_ITEMS.has(p.item) || p.bunned);
+  const _servable = (p) => p !== null && !isBun(p) && p.stage === Stage.DONE && (!_needs_bun(p) || p.bunned);
   function _do_serve(s, p) {
-    _settle(s,p,p.understeared?"raw":"served");            // ring up a served item — shared by the grill and the toaster
-    if (p.understeared) { s.fails += 1; s.sent_back += 1; _break_combo(s); _say(s, "SENT BACK!"); }
+    _settle(s,p,p.understeared?"raw":p.wrongBread?"wrong_bread":"served");   // ring up a served item — grill + toaster
+    if (p.understeared || p.wrongBread) { s.fails += 1; s.sent_back += 1; _break_combo(s); _say(s, p.understeared ? "SENT BACK!" : "WRONG BREAD!"); }
     else {
       const wait = s.ticks - p.born;
       s.wait_sum += wait; s.wait_max = Math.max(s.wait_max, wait);
@@ -574,6 +648,7 @@
     return pi === 0 ? range(0, half) : range(half, s.slots.length);
   }
   function auto_step(s) {
+    if (_bread_on(s)) { _auto_step_service(s); return; }   // BREAD games: bread pans + bread-matched buns
     for (let pi = 0; pi < s.players.length; pi++) {
       const zone = _zone_of(s, pi);
       // a SERVABLE done worth a holler — my grill zone, or the shared toaster (grilled cheese). In 2P only
@@ -611,6 +686,58 @@
       const p = bestCont[bestI];
       const act = RECIPES[p.item][p.step];              // do the item's NEXT recipe step
       if (act === Action.FLIP) flip(s, pi); else if (act === Action.CHEESE || act === Action.ONION) add_cheese(s, pi); else toast(s, pi);
+    }
+  }
+  // SERVICE autoplayer — mirrors Python's _auto_step_service EXACTLY (see its docstring).
+  function _auto_step_service(s) {
+    const g = s.slots.length, t = s.toaster.length, pan0 = g + t;
+    for (let pi = 0; pi < s.players.length; pi++) {
+      const pl = s.players[pi], zone = _zone_of(s, pi);
+      const my_done = zone.some((i) => _servable(s.slots[i])) ||
+        ((s.players.length < 2 || pi === 0) && s.toaster.some((e) => _servable(e)));
+      const billy_here = s.players.length < 2 || s.billy_facing === pi;
+      const partner_serving = !billy_here && (s.billy_turn_t > 0 || _zone_of(s, s.billy_facing).some((i) => _servable(s.slots[i])));
+      if (my_done && !partner_serving && (s.billy < s.cfg.billy_serve_min + 12 || !billy_here)) { hey_billy(s, pi); continue; }
+      const others = s.players.filter((q, k) => k !== pi).map((q) => q.held);
+      // 1) a GRILLED CHEESE ready for its TOAST step: bring its ticket's bread, then toast it
+      let gc_i = -1;
+      for (let ti = 0; ti < s.toaster.length; ti++) {
+        const e = s.toaster[ti];
+        if (e !== null && !isBun(e) && e.stage === Stage.TOAST && _ready(e)) {
+          const tk = _ticket(s, e);
+          if (tk && (pl.held === tk.bread || others.indexOf(tk.bread) === -1)) { gc_i = ti; break; }
+        }
+      }
+      if (gc_i >= 0) {
+        const need = _ticket(s, s.toaster[gc_i]).bread;
+        pl.cursor = pl.held === need ? g + gc_i : pan0 + BREADS.indexOf(need);
+        toast(s, pi); continue;
+      }
+      // 2) BUNS: per bread, melting/finished patties still unbunned vs buns of that bread on the toaster
+      const deficit = {}; for (const b of BREADS) deficit[b] = 0;
+      const order = [];
+      for (const p of s.slots) if (p !== null && _needs_bun(p) && !p.bunned && (p.stage === Stage.MELT || p.stage === Stage.DONE)) { deficit[p.bread] += 1; order.push(p.bread); }
+      for (const e of s.toaster) if (isBun(e)) deficit[e.bread] -= 1;
+      const free = s.toaster.findIndex((e) => e === null);
+      if (free !== -1) {
+        if (pl.held != null && deficit[pl.held] > 0) { pl.cursor = g + free; toast(s, pi); continue; }
+        const want = order.find((b) => deficit[b] - others.filter((h) => h === b).length > 0);
+        if (want !== undefined) { pl.cursor = pan0 + BREADS.indexOf(want); toast(s, pi); continue; }
+      }
+      // 3) COOK the most-urgent READY grill patty in my zone (grilled cheese CHEESE steps too)
+      let bestCont = null, bestI = -1, best_cook = -1;
+      for (const i of zone) {
+        const p = s.slots[i];
+        if (p && _ACTIVE_STAGES.indexOf(p.stage) !== -1 && _ready(p) && p.cook > best_cook) { bestCont = s.slots; bestI = i; best_cook = p.cook; }
+      }
+      for (let ti = 0; ti < s.toaster.length; ti++) {
+        const e = s.toaster[ti];
+        if (e !== null && !isBun(e) && (e.stage === Stage.SEAR_A || e.stage === Stage.SEAR_B) && _ready(e) && e.cook > best_cook) { bestCont = s.toaster; bestI = ti; best_cook = e.cook; }
+      }
+      if (bestCont === null) continue;
+      pl.cursor = bestCont === s.slots ? bestI : g + bestI;
+      const p = bestCont[bestI];
+      if (RECIPES[p.item][p.step] === Action.FLIP) flip(s, pi); else add_cheese(s, pi);
     }
   }
 
@@ -854,6 +981,85 @@
     handoff(h2, 0); coOk = coOk && h2.slots[1] === null && h2.slots[5] !== null;
     ok("co-op drop + handoff (2P)", coOk);
 
+    // REAL ORDERS (SERVICE only): seats, breads, bread pans, bread-matched buns. Mirrors Python selftest 8).
+    let ro = true;
+    const sv = new_game(1, "family", 1, "diner", SLOTS, ITEMS_FULL_MENU, "service", true);
+    const tks = []; for (let k = 0; k < 10; k++) tks.push(_new_ticket(sv));
+    ro = ro && tks.every((t) => t.seat === SEAT_CYCLE[t.id % 10]) && tks.map((t) => t.seat).sort((a, b) => a - b).join() === "0,1,2,3,4,5,6,7,8,9";
+    ro = ro && seat_id(0) === "B1" && seat_id(5) === "B6" && seat_id(6) === "T1" && seat_id(9) === "T4" &&
+      seat_label(0) === "BAR 1" && seat_label(9) === "TABLE 4" && BREADS.join() === "SESAME,RYE,WHITE" &&
+      BREAD_TAG.WHITE === "WHT" && BREAD_LABEL.SESAME === "SESAME BUN";
+    ro = ro && [bread_for(Item.PATTY_MELT, 1), bread_for(Item.SMASH_MELT, 2), bread_for(Item.GRILLED_CHEESE, 1),
+      bread_for(Item.GRILLED_CHEESE, 2), bread_for(Item.BURGER, 1), bread_for(Item.SMASH, 2), bread_for("HAMBURGER", 3)].join() ===
+      "RYE,RYE,WHITE,RYE,SESAME,WHITE,SESAME";
+    const sb = new_game(1, "family", 1, "diner", SLOTS, ITEMS_BURGER, "service", true);
+    const G = sb.slots.length, T = sb.toaster.length;
+    ro = ro && T === TOASTER_SLOTS_SERVICE;
+    for (let k = 0; k < 40; k++) move(sb, 1);
+    const ct = cursor_target(sb);
+    ro = ro && cursorOf(sb) === G + T + BREADS.length - 1 && ct.kind === "pan" && ct.index === 2;
+    sb.slots[0] = _new_patty(sb); const sp = sb.slots[0];
+    ro = ro && sp.bread === "SESAME" && sb.service.tickets[0].bread === "SESAME";
+    sb.players[0].cursor = G; toast(sb); ro = ro && sb.toaster[0] === null && sb.flash === "GRAB BREAD!";
+    flip(sb); add_cheese(sb); ro = ro && sp.step === 0;
+    sb.players[0].cursor = G + T + BREADS.indexOf("WHITE"); toast(sb);
+    flip(sb); drop(sb); handoff(sb); ro = ro && sb.players[0].held === "WHITE" && sb.flash === "WHITE!";
+    sb.players[0].cursor = G; toast(sb);
+    ro = ro && isBun(sb.toaster[0]) && sb.toaster[0].bread === "WHITE" && sb.players[0].held === null;
+    sp.stage = Stage.DONE; sp.cook = 0; sb.toaster[0].cook = toast_ready(sb); _assembly_tick(sb);
+    ro = ro && !sp.bunned && sb.toaster[0] !== null && !_servable(sp);        // wrong-bread bun never claimed
+    sb.players[0].cursor = G + T + BREADS.indexOf("SESAME"); toast(sb);
+    sb.players[0].cursor = G + 1; toast(sb); sb.toaster[1].cook = toast_ready(sb);
+    const rc = order_receipts(sb)[0];
+    ro = ro && rc.seat === SEAT_CYCLE[1] && rc.bread === "SESAME" && rc.needsBun && rc.bunReady && !rc.bunJoined;
+    _assembly_tick(sb);
+    ro = ro && sp.bunned && sb.toaster[1] === null && sb.toaster[0] !== null && _servable(sp) && order_receipts(sb)[0].bunJoined;
+    sb.toaster[0].cook = toast_burn(sb) - 1; tick(sb);
+    ro = ro && sb.bun_fails === 1 && sb.service.waste.events[sb.service.waste.events.length - 1].bread === "WHITE";
+    const gw = new_game(1, "family", 1, "diner", SLOTS, ITEMS_GRILLED_CHEESE, "service", true);
+    ro = ro && _place_next(gw) && !isBun(gw.toaster[0]);
+    const gcp = gw.toaster[0];
+    ro = ro && gcp.bread === undefined && gw.service.tickets[0].bread === "WHITE";
+    gw.players[0].cursor = gw.slots.length; gcp.cook = sear_ready(gcp); toast(gw);
+    ro = ro && gcp.step === 0 && gw.flash === "GRAB BREAD!";
+    gw.players[0].cursor = gw.slots.length + gw.toaster.length + BREADS.indexOf("RYE"); toast(gw);
+    gw.players[0].cursor = gw.slots.length; toast(gw);
+    ro = ro && gcp.step === 1 && gcp.bread === "RYE" && gcp.wrongBread === true && gw.players[0].held === null;
+    gcp.cook = sear_ready(gcp); add_cheese(gw); gcp.stage = Stage.DONE; gcp.cook = 0; _do_serve(gw, gcp);
+    const ev = gw.service.events[0];
+    ro = ro && ev.outcome === "wrong_bread" && ev.reasons.join() === "Wrong bread" && ev.rating === 1 &&
+      gw.sent_back === 1 && gw.served === 0 && gw.fails === 1;
+    const gr = new_game(1, "family", 1, "diner", SLOTS, ITEMS_GRILLED_CHEESE, "service", true);
+    _place_next(gr); const gc2 = gr.toaster[0];
+    gr.players[0].cursor = gr.slots.length + gr.toaster.length + BREADS.indexOf("WHITE"); toast(gr);
+    gr.players[0].cursor = gr.slots.length; gc2.cook = sear_ready(gc2); toast(gr);
+    ro = ro && gc2.bread === "WHITE" && !gc2.wrongBread;
+    const kb = new_game(1, "kids", 1, "diner", SLOTS, ITEMS_BURGER, "service", true);
+    kb.toaster[0] = Bun(0, "RYE"); kb.toaster[0].cook = toast_burn(kb) - 1; tick(kb);
+    ro = ro && kb.toaster[0] === null && kb.fails === 0 && kb.bun_fails === 0 && kb.wait === 0;   // kids: stale, not burnt
+    const lg = new_game(1, "arcade", 1, "diner", SLOTS, ITEMS_PATTY_MELT);                     // LEGACY untouched
+    for (let k = 0; k < 40; k++) move(lg, 1);
+    ro = ro && cursorOf(lg) === SLOTS + TOASTER_SLOTS - 1 && !("held" in lg.players[0]);
+    toast(lg); ro = ro && isBun(lg.toaster[lg.toaster.length - 1]) && !("bread" in lg.toaster[lg.toaster.length - 1]);
+    const lb = new_game(1, "arcade"); lb.slots[0] = _new_patty(lb); lb.slots[0].stage = Stage.DONE;
+    ro = ro && lb.toaster.length === 0 && !("bread" in lb.slots[0]) && _servable(lb.slots[0]);
+    const ns = new_game(1, "family", 1, "diner", SLOTS, ITEMS_PATTY_MELT, "service");   // service WITHOUT opt-in: unchanged
+    ro = ro && !ns.cfg.bread && ns.toaster.length === TOASTER_SLOTS && toast_ready(ns) === TOAST_READY * 2 && !("held" in ns.players[0]);
+    for (let k = 0; k < 40; k++) move(ns, 1);
+    ro = ro && cursorOf(ns) === SLOTS + TOASTER_SLOTS - 1;
+    toast(ns); ro = ro && isBun(ns.toaster[ns.toaster.length - 1]) && !("bread" in ns.toaster[ns.toaster.length - 1]);
+    const nb = new_game(1, "family", 1, "diner", SLOTS, ITEMS_BURGER, "service");
+    nb.slots[0] = _new_patty(nb); nb.slots[0].stage = Stage.DONE;
+    ro = ro && nb.toaster.length === 0 && !needs_bun(nb, nb.slots[0]) && _servable(nb.slots[0]) &&
+      nb.service.tickets[0].seat === SEAT_CYCLE[1] && nb.service.tickets[0].bread === "SESAME" &&
+      advance_round(sb).cfg.bread === true && !advance_round(nb).cfg.bread;
+    for (const m of Object.keys(MODES)) for (const pl of [1, 2]) for (const items of [ITEMS_BURGER, ITEMS_FULL_MENU, ITEMS_GRILLED_CHEESE]) {
+      const sa = new_game(1, m, pl, "diner", SLOTS, items, "service", true);
+      while (!(sa.won || sa.over) && sa.ticks < 6000) { auto_step(sa); tick(sa); }
+      if (!(sa.won && sa.bun_fails === 0 && sa.sent_back === 0)) ro = false;
+    }
+    ok("real orders (service): seats, bread_for, pans -> toast -> join by bread, wrong bun unclaimed, GC wrong bread sent back, legacy untouched", ro);
+
     // PARITY: exact Python --selftest numbers
     const EXPECT = { kids: [201, 1750], family: [249, 4250], arcade: [244, 5500] };
     for (const m of Object.keys(MODES)) {
@@ -876,6 +1082,8 @@
     qualifies, add_high_score, auto_step, selftest,
     Action, Item, RECIPES, ITEM_PAY, ITEM_LABEL, ITEM_TICKET, ITEM_COOK, sear_ready, sear_burn_of,
     TOASTER_SLOTS, TOAST_READY, TOAST_BURN, BUN_SPIKE, TOAST_ITEMS, TOASTER_ITEMS, Bun,   // THE BUN TOASTER
+    TOASTER_SLOTS_SERVICE, TOAST_READY_BREAD, TOAST_BURN_BREAD, needs_bun, BREADS, BREAD_LABEL, BREAD_TAG, SEAT_CYCLE, COUNTER_SEATS,      // REAL ORDERS (service)
+    seat_id, seat_label, bread_for, cursor_target,
     ITEMS_BURGER, ITEMS_GRILLED_CHEESE, ITEMS_PATTY_MELT, ITEMS_SMASH, ITEMS_FIFTIES, ITEMS_FULL_MENU,
     MINI_LANES, MINI_ROWS, FREEZER, BASEMENT, MINI_STAGES,
     mini_new, mini_move, mini_tick, mini_auto_step,

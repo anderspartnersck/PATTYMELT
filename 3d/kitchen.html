@@ -52,10 +52,11 @@
 <body>
 <div id="frame"><div id="wrap">
   <div id="cab"><img id="cabart" alt=""><img id="cabflame" alt=""><canvas id="screen"></canvas></div>
-  <div id="tag">◄ ► move (grill + toaster) · F flip · C cheese · X toast bun · SPACE = HEY BILLY! · CO-OP: G/U handoff · T/O drop · R restart · S sound</div>
+  <div id="tag">◄ ► move (grill + toaster) · F flip · C cheese · X bread / toast · SPACE = EXPO (HEY BILLY!) · CO-OP: G/U handoff · T/O drop · R restart · S sound</div>
 </div></div>
 <script src="engine.js"></script>
 <script src="service.js"></script>
+<script src="lib/orders.js?v=1"></script>
 <script src="campaign.js"></script>
 <script src="sprites.js"></script>
 <script src="lib/cast.js?v=1"></script>
@@ -74,6 +75,12 @@
 <script>
 "use strict";
 const pm = globalThis.PM, S = pm.Stage;
+// BREAD (1111): in a SERVICE game with bread pans every patty item waits for a toasted bun of its ticket's bread
+// (engine: BREADS / ticket.bread); without them only the melts wait for rye, as before. One test for the whole page.
+const breadOn = () => typeof game !== "undefined" && !!(game && game.service && game.cfg && game.cfg.bread && pm.BREADS);
+const needsBunItem = (it) => breadOn() ? !pm.TOASTER_ITEMS.has(it) : pm.TOAST_ITEMS.has(it);   // (pm.needs_bun(s,p) is the engine's own test; same rule)
+const BUN_ITEMS = { has: needsBunItem };
+PMOrders.init(pm);
 const Q = new URLSearchParams(location.search);
 const SCREENS = Q.get("screens") === "1" ? 1 : 2;
 const MODE = Q.get("mode") || "family";
@@ -336,7 +343,7 @@ function drawAssembly(x, y, w, h) {
   PMSpat.drawBin(ctx, "swiss", bx + bw * 0.285, cy - 4, Math.min(48, bw * 0.2));
   PMSpat.drawBin(ctx, "american", bx + bw * 0.86, cy - 4, Math.min(48, bw * 0.2));
   // an order plated & ready to run? (done+servable on the grill OR a done grilled cheese)
-  const ready = game.slots.some((p) => p && p.stage === S.DONE && (!pm.TOAST_ITEMS.has(p.item) || p.bunned))
+  const ready = game.slots.some((p) => p && p.stage === S.DONE && (!BUN_ITEMS.has(p.item) || p.bunned))
     || (game.toaster && game.toaster.some((b) => b && b.stage === S.DONE));
   const bob = ready ? Math.sin(now / 180) * 2 : 0;
   _asmPlate = { x: cx, y: cy };                            // remember where the plate sits (the serve FX launches + builds from here)
@@ -514,10 +521,10 @@ function buildBattle() {        // the shared-grill grill-off: one grill, one Bi
 }
 let BR = null;                                    // ?art=3d: Billy's run + the pass (billy_run.js)
 function seatedCount(g) { return Math.max(1, Math.round(2 + pm.buried_index(g) * (SEATS.length - 2))); }
-function newBillyRun() { BR = (ART3D_ON && globalThis.ART3D && ART3D.ready && ART3D.m.billy) ? BillyRun.create(ART3D.m.billy, { toastItems: pm.TOAST_ITEMS, seated: seatedCount }) : null; }
+function newBillyRun() { BR = (ART3D_ON && globalThis.ART3D && ART3D.ready && ART3D.m.billy) ? BillyRun.create(ART3D.m.billy, { toastItems: BUN_ITEMS, seated: seatedCount, seatOf: PMService.seatOf }) : null; }
 function reset(profile = SERVICE_PRACTICE ? "legacy" : "service") {
   serviceUI.finish(game, {excluded:SERVICE_PRACTICE || BATTLE});
-  game = BATTLE ? buildBattle() : CAMP.build(pm, MODE_OVR ? Object.assign({}, shift(), { mode: MODE_OVR }) : shift(), PLAYERS, SKIN, ITEMS, profile);   // ITEMS override wins for jailbreak
+  game = BATTLE ? buildBattle() : CAMP.build(pm, MODE_OVR ? Object.assign({}, shift(), { mode: MODE_OVR }) : shift(), PLAYERS, SKIN, ITEMS, profile, profile === "service" && Q.get("bread") !== "off");   // ITEMS override wins for jailbreak · BREAD (1111) on in real shifts; ?bread=off = the old toaster
   billyPos = 0;                 // 0 = out in the dining room (bussing), 1 = at the kitchen pass (expo)
   lastServed = 0; lastFails = 0; fx = []; fxId = 0; paused = false; continueT = -1; continuesUsed = 0;
   cook = [{ serves: 0, score: 0 }, { serves: 0, score: 0 }]; battleWinner = -1;
@@ -809,9 +816,16 @@ function step() {
 }
 // which dish is plated (render-only): servable items by born, so the plate FX + the pass + Billy's carry show the
 // real order — a PATTY MELT goes out as Joe's plated melt (diner plate / HEROES tray), the rest as the burger plate
-const servable = (p) => p && p.stage === S.DONE && (!pm.TOAST_ITEMS.has(p.item) || p.bunned);
-function snapServable() { const m = new Map(); for (const p of game.slots.concat(game.toaster || [])) if (servable(p)) m.set(p.born, p.item); return m; }
-function goneItem(pre) { const now = snapServable(); for (const [b, it] of pre) if (!now.has(b)) return it; return null; }
+const servable = (p) => p && p.stage === S.DONE && (!BUN_ITEMS.has(p.item) || p.bunned);
+function snapServable() { const m = new Map(); for (const p of game.slots.concat(game.toaster || [])) if (servable(p)) m.set(p.born, { item: p.item, key: p.orderId != null ? p.orderId : p.born }); return m; }
+function goneItem(pre) { const now = snapServable(); for (const [b, it] of pre) if (!now.has(b)) return it; return null; }   // → {item, key}
+// THE TABLE MAP (render-only): which seats hold an open order, and which of those are READY on the pass
+function orderKeys(readyOnly) { const ks = [];
+  if (game.service && !readyOnly) { for (const t of game.service.tickets) if (t.rating === null) ks.push(t.id); return ks; }
+  for (const p of game.slots.concat(game.toaster || [])) if (p && p.stage !== undefined && (!readyOnly || servable(p))) ks.push(p.orderId != null ? p.orderId : p.born);
+  return ks; }
+function openSeats()  { return new Set(orderKeys(false).map(PMService.seatOf)); }
+function readySeats() { return new Set(orderKeys(true).map(PMService.seatOf)); }
 function readyItem() { for (const p of game.slots.concat(game.toaster || [])) if (servable(p)) return p.item; return null; }
 let lastPlateItem = null;
 
@@ -841,10 +855,11 @@ function seatXY(i) { const s = SEATS[i % SEATS.length]; return { x: DIN.x + s[0]
 function doorXY()    { return { x: DIN.x + 0.93 * DIN.w, y: DIN.y + 0.80 * DIN.h }; }   // the entry (walk-ins/outs)
 function takeoutXY() { return { x: DIN.x + 0.855 * DIN.w, y: DIN.y + 0.58 * DIN.h }; }  // TAKE-OUT PICK-UP rack
 function tablePoint(i) { return seatXY(i); }   // FX land on the real seats now
-function spawnServeFX(item) {                 // the order BUILDS at the assembly (bun▸patty▸cheese▸top bun), then rides ASSEMBLY → PASS → a table
-  const a = _asmPlate || passPoint(), p = passPoint(), t = tablePoint(game.served);
+function spawnServeFX(gone) {                 // the order BUILDS at the assembly (bun▸patty▸cheese▸top bun), then rides ASSEMBLY → PASS → ITS table
+  const item = gone && gone.item, seat = gone ? PMService.seatOf(gone.key) : game.served;
+  const a = _asmPlate || passPoint(), p = passPoint(), t = tablePoint(seat);
   if (item) lastPlateItem = item;
-  fx.push({ id: fxId++, k: "plate", item, x: a.x, y: a.y, mx: p.x, my: p.y, tx: t.x, ty: t.y, t: 0, bt: 18, life: 52, pi: passSide() }); }
+  fx.push({ id: fxId++, k: "plate", item, seat, x: a.x, y: a.y, mx: p.x, my: p.y, tx: t.x, ty: t.y, t: 0, bt: 18, life: 52, pi: passSide() }); }
 function plateBuilding() { return fx.some((f) => f.k === "plate" && f.t < (f.bt || 0)); }   // a build is mid-stack at the assembly
 function spawnWalkout() { const t = tablePoint(game.fails + 2);              // an angry diner storms out
   fx.push({ id: fxId++, k: "walk", x: t.x, y: t.y, t: 0, life: 24 }); }
@@ -1094,6 +1109,22 @@ function drawRearBody(G) {
   const im = REAR_IMG[G.who + ".body"]; if (!im || !im.width) return;
   const o = G.at([0, 0]); ctx.drawImage(im, o.x, o.y, G.rec.size[0] * G.sc, G.rec.size[1] * G.sc);
 }
+// THE BREAD PANS (1111) — where the 3D render already put them: DINER = buns · rye · white on the prep counter left of the
+// topping pans; HEROES = the small pans on the front line left of the window sign. Only when the engine has pan stops.
+function breadPans3D(r) {
+  if (!breadOn()) return null;
+  const B = ART3D.m.bins; if (!B || !B[0]) return null;
+  const k = B[0][2] / 35, x0 = B[0][0], y0 = B[0][1];
+  if (SCREENS === 1 && !SCHOOL) {   // the one-screen crop ends above the real pans: a drawn bread tray at the visible counter edge
+    const y = ONE_CROP.kit.y + ONE_CROP.kit.h - 26;
+    return pm.BREADS.map((b, j) => { const c = { x: r.x + 168 + j * 46, y: r.y + y };
+      ctx.fillStyle = "rgba(190,192,198,.95)"; ctx.fillRect(c.x - 19, c.y - 11, 38, 22); ctx.strokeStyle = "rgba(60,60,66,.9)"; ctx.lineWidth = 1.5; ctx.strokeRect(c.x - 19, c.y - 11, 38, 22);
+      ctx.fillStyle = PMOrders.BREAD_COL[b]; ctx.beginPath(); ctx.ellipse(c.x - 6, c.y, 8, 6, 0, 0, 7); ctx.ellipse(c.x + 7, c.y, 8, 6, 0, 0, 7); ctx.fill();
+      return c; });
+  }
+  const off = SCHOOL ? [[-250, -4], [-210, -4], [-176, -4]] : [[-91, 41], [-38, 35], [14, 41]];
+  return pm.BREADS.map((_, j) => ({ x: r.x + x0 + off[j][0] * (SCHOOL ? 1 : k), y: r.y + y0 + off[j][1] * (SCHOOL ? 1 : k) }));
+}
 function drawKitchen3D() {
   pmark(null);
   const r = KIT, pad = 22, Lc = ART3D.m.loc, now = performance.now();
@@ -1137,16 +1168,21 @@ function drawKitchen3D() {
   // ---- the toaster: toaster[j] by bun cook / grilled-cheese Stage ----
   const T = game.toaster || [], tcells = [], STN = globalThis.PMStations && PMStations.ok();
   if (STN) PMStations.observe(game, { bays: Lc.toaster, rear: REAR_ON });   // a freshly laid bun → the rendered two-spatula carry
-  for (let j = 0; j < T.length && j < Lc.toaster.length; j++) {
-    const q = Lc.toaster[j], cx = r.x + q.x, cy = r.y + q.y; tcells.push({ x: cx, y: cy });
+  const BAYS = Lc.toaster.slice();                                    // more engine bays than modelled ones: extend the row
+  while (BAYS.length < T.length && BAYS.length >= 2) { const a = BAYS[BAYS.length - 2], b2 = BAYS[BAYS.length - 1]; BAYS.push({ x: b2.x + (b2.x - a.x), y: b2.y + (b2.y - a.y) }); }
+  for (let j = 0; j < T.length && j < BAYS.length; j++) {
+    const q = BAYS[j], cx = r.x + q.x, cy = r.y + q.y; tcells.push({ x: cx, y: cy });
     const b = T[j]; if (!b || (STN && PMStations.hideBay(j))) continue;   // (the bun is still riding the pair)
-    ART3D.draw(ctx, toastKey3D(b, j), r.x, r.y);
+    if (!ART3D.draw(ctx, toastKey3D(b, j), r.x, r.y)) PMDrawItem(ctx, b.stage === undefined ? { ...b, stage: S.TOAST, item: pm.Item.GRILLED_CHEESE, step: 0 } : b, cx, cy, 15, { ...pm, MELT_DONE: pm.melt_done(game) }, now / 1000);
     if (b.stage === undefined) {
       const ready = b.cook >= pm.toast_ready(game), near = b.cook >= pm.toast_burn(game) - 6;
       if (ready) txt(near ? "BURNING!" : "READY", cx, cy - 22, 11, near ? COL.bad : COL.cheese, "center", 800);
-    } else drawCookPrompt(b, cx, cy, 15, cy - 22);
+      if (b.bread) PMOrders.breadChip(ctx, b.bread, cx, cy + 20);
+    } else { drawCookPrompt(b, cx, cy, 15, cy - 22); if (game.service && b.orderId != null) PMOrders.chip(ctx, b, cx, cy + 22); }
   }
   if (STN) PMStations.drawToaster(ctx, game, r.x, r.y, Lc.toaster);   // heat shimmer per busy bay + the bun carry
+  const panCells = breadPans3D(r);                                     // BREAD (1111): SESAME · RYE · WHITE pans = line stops
+  if (panCells) { for (const c of panCells) tcells.push(c); PMOrders.drawPans(ctx, game, panCells); }
   pmark('toaster');
   // the TOPPING PANS (Joe 1027): steel hotel pans of raw onions, Swiss, American on the prep counter's back edge, clear of
   // the plating spots + the pass. Placed per room from the 3D layout (ART3D.m.bins = [[x, y, w] onions, swiss, american]).
@@ -1193,7 +1229,11 @@ function drawKitchen3D() {
     const p = game.slots[i]; if (!p) continue; const c = slotXY(i), q = Lc.prompt[i];
     drawCookPrompt(p, c.x, c.y, 15, r.y + q.y);
     drawJoinFX(p, c.x, c.y, 15, r.y + q.y);
-    if (p.stage === S.DONE && pm.TOAST_ITEMS.has(p.item) && !p.bunned)
+    if (game.service && p.orderId != null) {         // ORDERS (1111): whose patty, what it goes on — the ticket's seat in its bread's colour
+      PMOrders.chip(ctx, p, c.x, c.y + 27, { noBread: true });
+      if (p.stage === S.DONE && BUN_ITEMS.has(p.item) && !p.bunned && (now / 300 | 0) % 2)
+        txt("◷ NEEDS " + (p.bread ? PMOrders.breadTag(p.bread) : "BUN"), c.x, c.y + 46, 10, COL.bad, "center", 900);
+    } else if (p.stage === S.DONE && BUN_ITEMS.has(p.item) && !p.bunned)
       txt("◷ BUN", c.x, c.y + 26, 10, (now / 300 | 0) % 2 ? COL.amber : COL.bad, "center", 800);
     else if (ITEMS && p.item !== pm.Item.BURGER && p.stage !== S.DONE && p.stage !== S.BURNT)
       txt(pm.ITEM_TICKET[p.item], c.x, c.y + 26, 10, COL.cream, "center", 700);
@@ -1214,6 +1254,7 @@ function drawKitchen3D() {
       h: 40, foodW: 30, selfFlip: true, filter: pi === 1 ? "hue-rotate(150deg) saturate(1.2)" : "",
       rim: pi === 0 ? "rgba(255,110,80,.9)" : "rgba(120,190,255,.9)", fromBehind: !!RG, grips });
     if (RG) { rst.grips = grips; clip(); drawRearBody(RG); ctx.restore(); }   // …then her back, over the hands + handle ends
+    PMOrders.drawHeld(ctx, game, pi, g.x, g.y);                       // the bread riding her blades
   }
   drawSafetyCard(r.x + r.w * 0.2, r.y + r.h * 0.18, r.w * 0.6, r.h * 0.4);   // shift open: NO HANDS ON THE FOOD
   pmark('spatulas');
@@ -1279,10 +1320,11 @@ function drawKitchen() {
       drawCookPrompt(p, c.x, c.y, bayRad, bayY - bayRad - 6);           // ▸ FLIP / ▸ CHEESE above the bay
       drawJoinFX(p, c.x, c.y, bayRad, bayY - bayRad - 6);
     }
-    if (p && ITEMS && p.item !== pm.Item.BURGER && p.stage !== S.DONE && p.stage !== S.BURNT)
+    if (p && game.service && p.orderId != null) PMOrders.chip(ctx, p, c.x, bayY + bayRad + 12);
+    else if (p && ITEMS && p.item !== pm.Item.BURGER && p.stage !== S.DONE && p.stage !== S.BURNT)
       txt(pm.ITEM_TICKET[p.item], c.x, bayY + bayRad + 13, 11, COL.cream, "center", 700);
-    if (p && p.stage === S.DONE && pm.TOAST_ITEMS.has(p.item) && !p.bunned)
-      txt("◷ NEEDS BUN", c.x, bayY + bayRad + 13, 10, (now / 300 | 0) % 2 ? COL.amber : COL.bad, "center", 800);
+    if (p && p.stage === S.DONE && BUN_ITEMS.has(p.item) && !p.bunned)
+      txt("◷ NEEDS " + (p.bread ? PMOrders.breadTag(p.bread) : "BUN"), c.x, bayY + bayRad + (game.service ? 30 : 13), 10, (now / 300 | 0) % 2 ? COL.amber : COL.bad, "center", 800);
   }
   detectFlips(slotXY);
   for (let j = grillPops.length - 1; j >= 0; j--) if (!drawPop(grillPops[j], bayRad)) grillPops.splice(j, 1);
@@ -1291,6 +1333,11 @@ function drawKitchen() {
   const toastBX = GX, toastBW = Math.round(r.w * 0.24), toastBH = Math.min(SLB - SLY, 224);
   const toastBY = SLY;                                      // top-aligned so the station fills the left column
   const tcells = drawToaster(toastBX, toastBY, toastBW, toastBH, n);
+  if (breadOn() && tcells.length) {                   // BREAD (1111): the pans sit under the toaster
+    const pc = pm.BREADS.map((_, j) => ({ x: toastBX + toastBW * (0.2 + 0.3 * j), y: Math.min(SLB - 26, toastBY + toastBH + 22) }));
+    pc.forEach((c) => { ctx.fillStyle = "rgba(200,200,205,.25)"; ctx.fillRect(c.x - 16, c.y - 10, 32, 20); });
+    for (const c of pc) tcells.push(c); PMOrders.drawPans(ctx, game, pc);
+  }
   const asmX0 = toastBX + toastBW + 20;
   const asmX1 = r.x + r.w - (SCREENS === 2 ? 48 : 20);     // leave clearance before the seam/PASS
   drawAssembly(asmX0, SLY, asmX1 - asmX0, SLB - SLY);
@@ -1382,6 +1429,7 @@ function drawToaster(bx, by, bw, bh, gridN) {
       if (ready) { ctx.strokeStyle = COL.cheese; ctx.lineWidth = 2; ctx.strokeRect(mcx - cellW * 0.37, mcy - 11, cellW * 0.74, 22);
         txt("READY", mcx, cy + 12, 10, nearBurn ? COL.bad : COL.cheese, "center", 800); }
       else txt("BUN ···", mcx, cy + 12, 10, COL.dim, "center", 700);
+      if (b.bread) PMOrders.breadChip(ctx, b.bread, mcx, mcy + 14);
       ctx.fillStyle = "#241c12"; ctx.fillRect(cx + 4, cy + cellH - 6, cellW - 8, 4);
       ctx.fillStyle = nearBurn ? COL.bad : ready ? COL.good : COL.amber; ctx.fillRect(cx + 4, cy + cellH - 6, (cellW - 8) * frac, 4);
     } else if (b) {                                        // a GRILLED CHEESE cooking ON the toaster (a Patty)
@@ -1391,6 +1439,7 @@ function drawToaster(bx, by, bw, bh, gridN) {
       if (!cookPrompt(b) || !cookPrompt(b).ready)
         txt(done ? "SERVE ▸" : (ITEMS ? pm.ITEM_TICKET[b.item] : "G.CHZ"), mcx, cy + 12, 10,
             done ? COL.good : COL.cream, "center", 800);
+      if (game.service && b.orderId != null) PMOrders.chip(ctx, b, mcx, mcy + Math.min(cellW, cellH) * 0.34 + 8);
     } else {
       txt("＋", mcx, mcy + 6, 18, COL.dim, "center", 700);   // empty: X-toast drops a bun here
     }
@@ -1434,11 +1483,11 @@ function drawStudents3D() {
 // (sip / look / gesture) → LEAVE (stand → aisle → door) when the house empties. Frames + positions come from the
 // 3D set's door, paths and seats (locations.json), at the dining-monitor camera.
 const patronSt = [];
-function drawPatrons3D(seated, wf) {
+function drawPatrons3D(seated, wf, open) {
   const now = performance.now(), Pm = ART3D.m.patrons, T = now / 1000;
   for (let i = 0; i < Pm.length; i++) {
     const seq = Pm[i]; if (!seq || !seq.frames.length) continue;
-    const want = seq.seat < seated, st = patronSt[i] || (patronSt[i] = { mode: "empty", f: 0, t: now });
+    const want = seq.seat < seated || (open && open.has(seq.seat)), st = patronSt[i] || (patronSt[i] = { mode: "empty", f: 0, t: now });
     if (st.mode === "empty" && want) { st.mode = "enter"; st.f = 0; st.t = now; }
     if ((st.mode === "seated" || st.mode === "enter") && !want) { st.mode = "leave"; st.f = Math.max(st.f, seq.leave0); st.t = now; }
     if (st.mode === "empty") continue;
@@ -1457,6 +1506,23 @@ function drawPatrons3D(seated, wf) {
     }
   }
 }
+// THE TABLE MAP — a number plaque on every seat (B1-B6 counter, T1-T4 booths). Dim = empty, cream = waiting on an
+// order, gold pulse = its order is UP on the pass (that's where Billy's headed). Render-only.
+function seatTagXY(i) {
+  if (art3d() && ART3D.m.patrons) { const q = ART3D.m.patrons.find((s) => s.seat === i); if (q) return { x: DIN.x + q.head.x, y: DIN.y + q.head.y - 30 }; }
+  const p = seatXY(i); return { x: p.x, y: p.y - (p.stool ? 36 : 40) }; }
+function drawSeatTags(open) {
+  const ready = readySeats(), pulse = 0.5 + 0.5 * Math.sin(performance.now() / 160);
+  for (let i = 0; i < SEATS.length; i++) {
+    const q = seatTagXY(i), tag = PMService.seatTag(i), up = ready.has(i), on = open.has(i);
+    const w = 26, h = 16;
+    ctx.save(); ctx.globalAlpha = up ? 1 : on ? 0.95 : 0.45;
+    ctx.fillStyle = up ? "rgba(242,193,78," + (0.75 + 0.25 * pulse).toFixed(2) + ")" : on ? COL.cream : "rgba(30,20,14,.75)";
+    ctx.strokeStyle = up ? "#7a3b10" : "rgba(40,20,12,.8)"; ctx.lineWidth = up ? 2 : 1;
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(q.x - w / 2, q.y - h / 2, w, h, 4) : ctx.rect(q.x - w / 2, q.y - h / 2, w, h); ctx.fill(); ctx.stroke();
+    ctx.restore();
+    txt(tag, q.x, q.y + 5, 13, up || on ? "#2B2B2B" : "rgba(243,230,200,.8)", "center", 800);
+  } }
 // ---------- THE DINING ROOM (front of house — the buried-index made literal) ----------
 function drawDining() {
   const r = DIN;
@@ -1475,10 +1541,10 @@ function drawDining() {
   // the patience of the house = the WAIT meter; seats FILL as the line backs up (buried_index)
   const wf = Math.min(1, game.wait / pm.WAIT_FULL), buried = pm.buried_index(game);
   const seated = Math.max(1, Math.round(2 + buried * (SEATS.length - 2)));
-  const T = performance.now() / 1000;
-  if (art3d() && ART3D.m.students) drawStudents3D(); else if (art3d() && ART3D.m.patrons && ART3D.m.patrons.length) drawPatrons3D(seated, wf); else
+  const T = performance.now() / 1000, open = openSeats();
+  if (art3d() && ART3D.m.students) drawStudents3D(); else if (art3d() && ART3D.m.patrons && ART3D.m.patrons.length) drawPatrons3D(seated, wf, open); else
   for (let i = 0; i < SEATS.length; i++) {
-    if (i >= seated) continue;
+    if (i >= seated && !open.has(i)) continue;
     const p = seatXY(i), sc = p.stool ? 0.82 : 1.0, reg = REGULARS[i % REGULARS.length];
     const ang = Math.min(1, wf * (0.7 + 0.3 * ((i * 7 % 5) / 4)));
     const cc = ang >= .78 ? COL.bad : ang >= .5 ? COL.amber : COL.good;
@@ -1524,6 +1590,7 @@ function drawDining() {
       ctx.beginPath(); ctx.arc(wx, wy - 9, 10, 0, 7); ctx.fill(); ctx.fillRect(wx - 9, wy + 1, 18, 13);
       txt("✗ WALKOUT", wx, wy - 24, 12, COL.bad, "center", 800); ctx.globalAlpha = 1; }
   }
+  if (!(art3d() && ART3D.m.students)) drawSeatTags(open);
   if (game.combo >= pm.FLOW_COMBO) txt(L.happy, r.x + r.w / 2, r.y + r.h - 12, 14, COL.cheese, "center", 800);
   // MOOD LIGHTING — warm glow when rockin', red wash when buried (lighter now; the room is already lit)
   if (game.combo >= pm.FLOW_COMBO) { ctx.fillStyle = "rgba(255,180,90,0.08)"; ctx.fillRect(r.x, r.y, r.w, r.h); }
@@ -1540,9 +1607,9 @@ function billyFrame() {
   const moving = Math.abs(vel) > 0.0009 || game.billy_turn_t > 0;
   if (Math.abs(vel) > 0.0013) _billyFace = vel > 0 ? -1 : 1;
   const atPass = billyPos > 0.78;
-  if (moving && WALK.length === 6 && WALK[0]) {
+  if (moving && WALK.length >= 6 && WALK[0]) {
     _billyPhase += Math.min(0.55, Math.abs(vel) * 22 + 0.13);   // cycle rate tracks how fast he crosses
-    return { im: WALK[Math.floor(_billyPhase) % 6], face: _billyFace, moving };
+    return { im: WALK[Math.floor(_billyPhase) % WALK.length], face: _billyFace, moving };
   }
   if (atPass && SERVE) return { im: SERVE, face: -1, moving:false };  // presenting INTO the kitchen window
   return { im: (WALK[0] || SERVE || null), face: _billyFace, moving:false };
@@ -1569,7 +1636,8 @@ function drawBilly3D() {
   const hk = G.h_pass + (b.y - G.y_pass) * (G.h_slack - G.h_pass) / ((G.y_slack - G.y_pass) || 1);
   const h = Math.max(40, hk) * (ART3D.m.billy_scale || BILLY_3D_SCALE);
   let im = A.serve, face = b.face;
-  if (b.mode === "walk") { const W = A.walk || []; im = W[Math.floor(b.phase / (h * 0.55) * 6) % 6] || W[0]; }
+  const BA = A === ART3D.cast.billy ? ART3D.m.billy_art || null : null;   // (1111) Joe's teen Cougars Billy: 8 painted walk frames = two steps per cycle
+  if (b.mode === "walk") { const W = A.walk || [], N = W.length || 1, cyc = (BA && BA.cycle) || 0.55; im = W[Math.floor(b.phase / (h * cyc) * N) % N] || W[0]; }
   else if (b.mode === "at_pass") { im = game.billy_turn_t > 0 ? (A.turn || A.serve) : A.serve; face = -1; }
   else if (b.mode === "handoff") { const s = G.seats[b.dest]; im = A.serve; face = s && s.drop[0] < b.x ? -1 : 1; }
   else if (b.mode === "slack") im = A.slack || A.serve;
@@ -1585,8 +1653,9 @@ function drawBilly3D() {
   const carryW = Math.max(24, Math.min(32, h * 0.3)), cols = Math.min(3, tp.length), rows = Math.ceil(tp.length / (cols || 1));
   tp.forEach((p, i) => {
     const row = Math.floor(i / 3), col = i % 3, rowCount = Math.min(3, tp.length - row * 3);
-    const px = x + face * h * 0.22 + face * (col - (rowCount - 1) / 2) * carryW * 0.72;
-    const py = y - h * 0.52 - (rows - 1 - row) * carryW * 0.4;
+    const TR = (BA && BA.tray) || [0.22, 0.52];   // where the painted tray sits, × his height from his feet
+    const px = x + face * h * TR[0] + face * (col - (rowCount - 1) / 2) * carryW * 0.72;
+    const py = y - h * TR[1] - (rows - 1 - row) * carryW * 0.4;
     const sq = ART3D.m.sprites[gcKey("to_pass.0.5", p)] || sp;   // (a grilled cheese rides as its own plate)
     let dishH = sq ? carryW * sq.h / sq.w : carryW * 0.5;
     if (isMeltPlate(p)) {
@@ -1694,7 +1763,7 @@ function drawPass() {
   ctx.fillStyle = "rgba(255,120,40,0.5)"; ctx.fillRect(sx - 22, wy.y0 + 2, 44, 3);
   txt("PASS", sx, wy.y0 - 16, 12, COL.cheese, "center", 800);
   // a plate waits on the ledge whenever there's a finished order ready to run
-  const ready = game.slots.some((p) => p && p.stage === S.DONE && (!pm.TOAST_ITEMS.has(p.item) || p.bunned))
+  const ready = game.slots.some((p) => p && p.stage === S.DONE && (!BUN_ITEMS.has(p.item) || p.bunned))
     || (game.toaster && game.toaster.some((b) => b && b.stage === S.DONE));
   if (ready) { drawCarryPlate(sx, ledgeY - 4, 1, readyItem()); txt("ORDER UP", sx, wy.y1 + 26, 11,
       (performance.now() / 300 | 0) % 2 ? COL.cheese : COL.good, "center", 800); }
@@ -1734,6 +1803,18 @@ function render3DOneScreen() {
   ctx.strokeStyle = "#2a1410"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, DIN.y); ctx.lineTo(W, DIN.y); ctx.stroke();
   drawKitchenHUD(KIT, 22);
 }
+// THE ORDERS (1111, lib/orders.js): where the printer + rail sit per room, so they never cover the grill or the cooks
+function railBox() {
+  if (SCREENS === 1) return { x: DIN.x + 8, y: DIN.y + 10, w: DIN.w - 16, tw: 92, th: 66 };
+  if (art3d() && SCHOOL) return { x: KIT.x + 16, y: KIT.y + KIT.h - 120, w: KIT.w - 32, tw: 92, th: 66 };
+  return { x: KIT.x + 14, y: KIT.y + 100, w: KIT.w - 28, tw: 92, th: 66 };
+}
+function drawOrders() {
+  PMOrders.update(game, { voice: !SERVICE_PRACTICE && SHELL !== "demo" && Q.get("voice") !== "off", muted: !!audio.muted });
+  if (!game.service) return;
+  PMOrders.drawRail(ctx, game, railBox());
+  PMOrders.drawCall(ctx, { x: KIT.x, y: KIT.y + Math.round(KIT.h * (SCREENS === 1 ? 0.44 : 0.36)), w: KIT.w });
+}
 function render() {
   easeBilly(); stepFX();
   const _t0 = PERF.on ? performance.now() : 0;
@@ -1755,6 +1836,7 @@ function render() {
   }
   drawTimeOfDay();                          // the shift's clock washes the scene (dawn → midday → dusk → night)
   ctx.restore();
+  if (!BATTLE && (phase === "play" || phase === "ready")) drawOrders();   // ORDERS (1111): printer + ticket rail + the call
   const _cb = cineBusy();
   if (BATTLE && phase === "play") drawBattleHUD();
   if (!BATTLE && phase === "play" && game.won && !_cb) {   // SHIFT CLEAR — advance the campaign
@@ -1806,7 +1888,7 @@ function drawAttract() {
   }
   if (Math.floor(blink * 1.6) % 2 === 0)             // blinking start prompt
     txt("PRESS  SPACE  —  OR  ANY  BUTTON  —  TO  START", cx, H * 0.68, 26, COL.amber, "center", 800);
-  txt("◄ ► move   ·   F flip   ·   C cheese   ·   X toast bun   ·   SPACE = HEY BILLY!",
+  txt("◄ ► move   ·   F flip   ·   C cheese   ·   X bread / toast   ·   SPACE = EXPO",
       cx, H * 0.76, 16, COL.dim, "center", 600);
   // high-score teaser (top 3) — the coin-op come-on
   const top3 = scores.slice(0, 3);
@@ -2010,7 +2092,7 @@ function drawPause() {
   if (pmenu.view === "controls") {
     txt("CONTROLS", cx, 96, 34, COL.cheese, "center", 800);
     const rows = [["", "KEYBOARD", "PAD"], ["MOVE (grill + toaster)", "◄ ►  /  A D", "stick / d-pad"], ["FLIP", "F", "A"], ["TOPPING (cheese / onions)", "C", "B"],
-      ["TOAST A BUN · GRILLED CHEESE", "X", "X"], ["HEY BILLY! (serve)", "SPACE", "Y / RT"], ["PAUSE", "P / Esc", "START"]];
+      ["GRAB BREAD (at the pans) · TOAST IT", "X", "X"], ["EXPO — HEY BILLY! (run it)", "SPACE", "Y / RT"], ["PAUSE", "P / Esc", "START"]];
     if (PLAYERS === 2) rows.push(["CHRISSY (P2)", "J L · I K . · M", "pad 2"], ["CO-OP HANDOFF / DROP", "G T  ·  U O", ""]);
     rows.forEach((r, i) => { const y = 150 + i * 34, c = i ? COL.cream : COL.amber;
       txt(r[0], cx - 330, y, 18, c, "left", i ? 600 : 800); txt(r[1], cx + 60, y, 18, c, "center", 700); txt(r[2], cx + 260, y, 18, c, "center", 700); });
@@ -2037,8 +2119,8 @@ const TIPS = {
   rdy:    ["WAIT FOR RDY", "It's ready when it says RDY — then F / Ⓐ to FLIP."],
   early:  ["TOO SOON — SENT BACK", "Acting before RDY sends the order back. Wait for RDY."],
   top:    ["TOPPING TIME", "Cheese (or the melt's onions first): C / Ⓑ when it's RDY."],
-  bun:    ["A MELT NEEDS ITS BUN", "► past the grill to the toaster, X / Ⓧ lays a bun. It joins by itself."],
-  billy:  ["ORDER UP — HEY BILLY!", "A plate is done. SPACE / Ⓨ hollers Billy to run it."],
+  bun:    ["EVERY ORDER NEEDS ITS BREAD", "Read the ticket: SESAME · RYE · WHITE. ► past the toaster to the pans, X grabs it; X on the toaster lays it. It joins its patty by itself."],
+  billy:  ["ORDER UP — EXPO!", "A plate is up. SPACE / Ⓨ = EXPO: Billy runs it to the table on its ticket."],
   coop:   ["BILLY SERVES ONE SIDE", "He faces one cook at a time — holler for YOUR side when your plate is up."],
   burnt:  ["BURNT — IT'S TOSSED", "Left too long. Watch the clock on each item."],
 };
@@ -2058,7 +2140,7 @@ function tipWatch() {
     if (p.stage === S.BURNT) return tipShow("burnt");
     const nx = pm.RECIPES[p.item][p.step];
     if (nx !== undefined && p.cook >= pm.sear_ready(p)) return tipShow(nx === A.FLIP ? "rdy" : (nx === A.CHEESE || nx === A.ONION) ? "top" : "rdy");
-    if (pm.TOAST_ITEMS.has(p.item) && !p.bunned && (p.stage === S.MELT || p.stage === S.DONE) && game.toaster.length && !game.toaster.some((b) => b && b.stage === undefined)) return tipShow("bun");
+    if (BUN_ITEMS.has(p.item) && !p.bunned && (p.stage === S.MELT || p.stage === S.DONE) && game.toaster.length && !game.toaster.some((b) => b && b.stage === undefined)) return tipShow("bun");
     if (servable(p)) return tipShow(PLAYERS === 2 ? "coop" : "billy");
   }
 }
@@ -2077,7 +2159,7 @@ function drawTip() {
 addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
   wakeAudio();                                     // first keypress arms WebAudio
-  if (k === "s") { audio.setMuted(!audio.muted); return; }   // S = speaker toggle (mute)
+  if (k === "s") { audio.setMuted(!audio.muted); if (audio.muted) PMOrders.hush(); return; }   // S = speaker toggle (mute)
   if (cineBusy()) { PMCine.skip(); e.preventDefault(); return; }   // any key skips a cutscene
   if (phase === "play" && (paused || (k === "escape" || k === "p") && !game.over && !game.won)) { pauseKey(k); e.preventDefault(); return; }   // the PAUSE MENU
   if (k === "escape" && SHELL === "1") { toShell(_shellRes); e.preventDefault(); return; }   // back to the front door

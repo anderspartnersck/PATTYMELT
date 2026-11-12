@@ -275,7 +275,7 @@ function drawHowTo(t) {
   const C = COLS[skin()];
   bgPlate(t, 0.78);
   T("HOW TO COOK", W / 2, 90, 52, C.b, "center", 8);
-  const steps = [["SEAR", "drop it — side A sizzles"], ["FLIP", "wait for RDY · F"], ["CHEESE", "wait for RDY · C"], ["MELT", "the slice slumps"], ["HEY BILLY!", "SPACE — he carries it out"]];
+  const steps = [["SEAR", "drop it — side A sizzles"], ["FLIP", "wait for RDY · F"], ["CHEESE", "wait for RDY · C"], ["MELT", "the slice slumps"], ["EXPO!", "SPACE — Billy runs it to its table"]];
   steps.forEach(([a, b], i) => { const x = 140 + i * 250, y = 270, k = FX.outBack(FX.seg(t, 200 + i * 260, 500 + i * 260));
     ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
     ctx.fillStyle = i === 4 ? C.a : "rgba(20,10,24,.9)"; ctx.beginPath(); ctx.arc(0, 0, 70, 0, 7); ctx.fill(); ctx.strokeStyle = C.b; ctx.lineWidth = 4; ctx.stroke();
@@ -292,7 +292,7 @@ function drawHowTo(t) {
   const k = FX.seg(t, 1800, 2200); ctx.save(); ctx.globalAlpha = k;
   T("THE ONE SKILL: WAIT FOR RDY.", W / 2, 480, 40, C.b, "center", 7);
   T("too early = raw · too late = burnt · a finished burger JAMS its slot till Billy takes it", W / 2, 520, 18, C.cream, "center", 4);
-  T("◄ ► move along the grill  ·  F flip  ·  C cheese / onions  ·  X toast a bun  ·  SPACE  HEY BILLY!", W / 2, 600, 17, "rgba(243,230,200,.85)", "center", 3);
+  T("◄ ► move along the grill  ·  F flip  ·  C cheese / onions  ·  X grab bread / toast  ·  SPACE  EXPO", W / 2, 600, 17, "rgba(243,230,200,.85)", "center", 3);
   ctx.restore();
   FX.drawCast(ctx, heroH("patty", "flip"), W * 0.92, H * 1.02, H * 0.42, 1, PMCine.breathe("h"), true, null, k);
 }

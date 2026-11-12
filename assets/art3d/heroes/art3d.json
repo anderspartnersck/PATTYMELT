@@ -2447,16 +2447,22 @@
    "serve": "cast/chrissyB-serve.webp"
   },
   "billy": {
-   "serve": "cast/billy-serve.webp",
-   "slack": "cast/billy-slack.webp",
-   "turn": "cast/billy-turn.webp",
+   "serve": "cast/billyT-serve.webp",
+   "slack": "cast/billyT-slack.webp",
+   "turn": "cast/billyT-turn.webp",
    "walk": [
-    "cast/billy-walk-0.webp",
-    "cast/billy-walk-1.webp",
-    "cast/billy-walk-2.webp",
-    "cast/billy-walk-3.webp",
-    "cast/billy-walk-4.webp",
-    "cast/billy-walk-5.webp"
+    "cast/billyT-walk-0.webp",
+    "cast/billyT-walk-1.webp",
+    "cast/billyT-walk-2.webp",
+    "cast/billyT-walk-3.webp",
+    "cast/billyT-walk-4.webp",
+    "cast/billyT-walk-5.webp",
+    "cast/billyT-walk-6.webp",
+    "cast/billyT-walk-7.webp"
+   ],
+   "run": [
+    "cast/billyT-run-0.webp",
+    "cast/billyT-run-1.webp"
    ]
   },
   "billyH": {
@@ -2470,6 +2476,19 @@
     "cast/billyH-walk-3.webp",
     "cast/billyH-walk-4.webp",
     "cast/billyH-walk-5.webp"
+   ]
+  },
+  "billyKid": {
+   "serve": "cast/billy-serve.webp",
+   "slack": "cast/billy-slack.webp",
+   "turn": "cast/billy-turn.webp",
+   "walk": [
+    "cast/billy-walk-0.webp",
+    "cast/billy-walk-1.webp",
+    "cast/billy-walk-2.webp",
+    "cast/billy-walk-3.webp",
+    "cast/billy-walk-4.webp",
+    "cast/billy-walk-5.webp"
    ]
   }
  },
@@ -4698,5 +4717,13 @@
    "h": 16.6
   },
   "aisle_y": 432.8
+ },
+ "billy_art": {
+  "cycle": 0.9,
+  "tray": [
+   0.17,
+   0.61
+  ],
+  "src": "Joe 1111 teen Cougars Billy (renders/cast3d/heroesT/billy)"
  }
 }
