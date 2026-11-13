@@ -47,6 +47,13 @@
     if(context.scene==='play')state.human=true;
     let added=0;while(state.cursor<ev.length){const e=ev[state.cursor++];if(state.human&&store.add(state.prefix+':'+e.id,{...e,theme:game.theme}))added++;}return added;
   }};}
+  // THE TABLE MAP (render-only): every ticket is for a seat. Same index as the dining room's SEATS / art3d seats:
+  // 0-5 = the counter stools (BAR 1-6), 6-9 = the booths (TABLE 1-4). Deterministic from the ticket id, so the
+  // receipt, the seat that fills and the seat Billy runs to always agree — and the engine/parity never see it.
+  const SEAT_CYCLE=[0,1,6,2,3,7,4,8,5,9];
+  function seatOf(key){const k=Math.abs(Math.floor(Number(key)||0));return SEAT_CYCLE[k%SEAT_CYCLE.length];}
+  function seatLabel(i){return i<6?'BAR '+(i+1):'TABLE '+(i-5);}
+  function seatTag(i){return i<6?'B'+(i+1):'T'+(i-5);}
   function receiptModel(pm,game){
     if(!game||!game.service||!pm.order_receipts)return [];
     const seconds=n=>(Math.max(0,n||0)/pm.TPS).toFixed(1)+'s';
@@ -54,7 +61,7 @@
       const action=String(r.nextAction||'WAIT').toUpperCase(),w=r.window||{},cook=r.cookTicks||0;
       let next=label(action),timing='';
       if(r.status==='queued'){next='Wait for a free '+(r.surface||'cooking')+' slot';timing='Queued — no promised deadline';}
-      else if(r.status==='ready'){if(/BUN/.test(action)){next='Toast rye on toaster (X); bun joins at the pass';const bun=(game.toaster||[]).find(b=>b&&b.stage===undefined);timing=!bun?'Rye needed — select an empty toaster slot':bun.cook<pm.toast_ready(game)?'Rye toasting · '+seconds(pm.toast_ready(game)-bun.cook)+' to ready':'Rye ready — joins automatically';}else{next='Hey Billy! Send it from the pass';timing='Order up — ready to serve';}}
+      else if(r.status==='ready'){if(/BUN/.test(action)){next='Toast rye on toaster (X); bun joins at the pass';const bun=(game.toaster||[]).find(b=>b&&b.stage===undefined);timing=!bun?'Rye needed — select an empty toaster slot':bun.cook<pm.toast_ready(game)?'Rye toasting · '+seconds(pm.toast_ready(game)-bun.cook)+' to ready':'Rye ready — joins automatically';}else{next='EXPO! Billy runs it to '+seatLabel(Number.isInteger(r.seat)?r.seat:seatOf(r.id));timing='Order up — on the pass';}}
       else if(['FLIP','CHEESE','ONION','TOAST'].includes(action)&&Number.isFinite(w.idealStart)){
         const perfect=cook>=w.idealStart&&cook<=w.idealEnd;
         timing=perfect?'PERFECT '+action+' NOW':cook<w.idealStart?'Sweet spot in '+seconds(w.idealStart-cook):'Sweet spot passed — finish safely';
@@ -63,7 +70,7 @@
       else timing='Follow the next action; keep Billy at the pass';
       const slot=r.slot==null?'queue':(r.surface||'grill')+' '+(r.slot+1);
       const selected=(game.players||[]).some(p=>r.slot!=null&&((r.surface==='toaster'?game.slots.length:0)+r.slot)===p.cursor);
-      return {id:r.id,itemKey:r.item,item:label(r.item),slot,selected,next,timing,age:'Age '+seconds(r.ageTicks),status:label(r.status),recipe:[r.item==='GRILLED_CHEESE'?'Heat bread':'Sear',...(r.recipe||pm.RECIPES[r.item]||[]).map(label),...(pm.TOAST_ITEMS&&pm.TOAST_ITEMS.has(r.item)?['Toast rye separately (X); joins at pass']:[]),'Finish / plate','Billy serves'].join(' → ')};
+      return {id:r.id,itemKey:r.item,item:label(r.item),seat:seatLabel(Number.isInteger(r.seat)?r.seat:seatOf(r.id)),bread:r.bread||null,slot,selected,next,timing,age:'Age '+seconds(r.ageTicks),status:label(r.status),recipe:[r.item==='GRILLED_CHEESE'?'Heat bread':'Sear',...(r.recipe||pm.RECIPES[r.item]||[]).map(label),...(pm.TOAST_ITEMS&&pm.TOAST_ITEMS.has(r.item)?['Toast rye separately (X); joins at pass']:[]),'Finish / plate','Billy runs it to '+seatLabel(seatOf(r.id))].join(' → ')};
     });
   }
   // Authored by the user: burger $8, patty melt $9, grilled cheese $7. Other items remain unpriced.
@@ -132,7 +139,7 @@
     let signature='',currentReceipt=null;const receiptScroll=new WeakMap();
     function card(r,thermal=false){
       const a=make('article',null,(r.selected?'pm-current ':'')+(thermal?'pm-thermal-sheet':'')),body=make('div',null,thermal?'pm-thermal-body':'');a.setAttribute('aria-label','Receipt '+r.id+' '+r.item);
-      body.appendChild(make('strong','#'+r.id+' · '+r.item+' · '+r.slot+(r.selected?' · SELECTED':'')));body.appendChild(make('small',r.recipe));body.appendChild(make('strong','Next: '+r.next));body.appendChild(make('p',r.timing,r.timing.startsWith('PERFECT')?'pm-perfect':''));body.appendChild(make('small',r.status+' · '+r.age));
+      body.appendChild(make('strong','#'+r.id+' · '+r.seat+' · '+r.item+(r.bread?' on '+label(r.bread):'')+' · '+r.slot+(r.selected?' · SELECTED':'')));body.appendChild(make('small',r.recipe));body.appendChild(make('strong','Next: '+r.next));body.appendChild(make('p',r.timing,r.timing.startsWith('PERFECT')?'pm-perfect':''));body.appendChild(make('small',r.status+' · '+r.age));
       const price=itemPrice(r.itemKey);body.appendChild(make('small',price==null?'Menu price unconfirmed':money(price)+' · item price before tax'));
       if(thermal){currentReceipt={game:lastGame,id:r.id,body};const paper=make('img',null,'pm-thermal-paper');paper.src=TO_GO;paper.alt='Patty Melt to-go receipt';a.appendChild(paper);a.appendChild(body);for(const [kind,value]of [['subtotal',money(price)],['tax','—'],['total',price==null?'—':money(price)+'*']]){const v=make('span',value,'pm-thermal-value pm-thermal-'+kind);v.setAttribute('aria-label',kind+(kind==='total'?' before tax':'')+' '+value);a.appendChild(v);}body.appendChild(make('small','* Total before tax'));}
       else a.appendChild(body);return a;
@@ -151,5 +158,5 @@
       if(added)live.textContent=added+' customer rating'+(added===1?'':'s')+' added to BURGERTHREAD.';
     }};
   }
-  const api={KEY,LEGACY_KEY,CAP,createStore,tracker,receiptModel,reviewText,paceModel,wasteModel,wasteSummary,MENU_CENTS,itemPrice,money,cashModel,cashSummary,mount,label};global.PMService=api;if(typeof module!=='undefined'&&module.exports)module.exports=api;
+  const api={seatOf,seatLabel,seatTag,SEAT_CYCLE,KEY,LEGACY_KEY,CAP,createStore,tracker,receiptModel,reviewText,paceModel,wasteModel,wasteSummary,MENU_CENTS,itemPrice,money,cashModel,cashSummary,mount,label};global.PMService=api;if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

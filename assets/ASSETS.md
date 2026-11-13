@@ -18,6 +18,15 @@ All art is **cosmetic** — it never touches the deterministic engine or parity.
   then **SAVE** (persists to localStorage). Tell the dev the four numbers to bake them
   in as the new defaults (`DEFAULT_RECT` in `cabinet.html`).
 
+**1112 — the cabs wear JOE'S PAINTINGS.** `cab-1up-{diner,popup}`, `cab-2up-{diner,popup,heroes}` (+ each `-flame` twin)
+and `panel-2up-heroes.png` were re-dressed by `3D PIPELINE/games/patty-melt/tools/cab_compose.py`: every panel that
+carried the ChatGPT-era cast (marquee waitress, B-cap kid Billy, bandana Chrissy, old school Patty/Chrissy, the kick-plate
+line-ups, the HEY BILLY / "4 MELT" tiles, the control-panel mini-marquees) now shows Joe's cut paintings
+(`assets/art3d/cast_joe/`) + the 3D cafeteria render + the existing logos. Cab body, buttons, signage and the SCREEN
+CUTOUTS are untouched render pixels (the script asserts the screen rects are byte-identical, so `kitchen.html FRAMES` /
+`cabinet.html DEFAULT_RECT` stay registered). The originals are kept beside them as `*_old_1112.png`; the script always
+composes from those, so re-running is idempotent. Contact sheet: `3D PIPELINE/games/patty-melt/renders/cab_1112/`.
+
 ## 2. In-screen grill sprites
 
 **Cutting the sheets:** the source sheets (`GAMES/PATTY MELT/SPRITES/BOARD OF *`) are

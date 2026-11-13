@@ -1,6 +1,6 @@
 # PATTY MELT
 
-**Play it in your browser: <https://anderspartnersck.github.io/PATTYMELT/3d/>**
+**Play it in your browser: <https://anderspartnersck.github.io/PATTYMELT/>**
 
 A grill rush. You're Patty. Billy is expediting, and Billy is not reliable.
 
@@ -18,7 +18,8 @@ no hands on the food.
 
 - **[THE DINER](https://anderspartnersck.github.io/PATTYMELT/3d/)**: the campaign, 12 shifts from dawn to closing.
 - **[HEROES — THE CAFETERIA](https://anderspartnersck.github.io/PATTYMELT/3d/heroes.html)**: the same campaign in the school cafeteria.
-- **[THE FRONT DOOR](https://anderspartnersck.github.io/PATTYMELT/3d/front.html)**: every mode, edition and setting from one menu.
+- **[THE FRONT DOOR](https://anderspartnersck.github.io/PATTYMELT/)**: every mode, edition and setting from one menu (the bare link opens it).
+- **[THE OLD 2D KITCHEN](https://anderspartnersck.github.io/PATTYMELT/old-2d.html)**: the original painted 2D version.
 
 ## How to play
 
@@ -56,8 +57,7 @@ screens rows, and ← → changes them; **ENTER** or **SPACE** cooks.
 - **MELTDOME — SIDE BY SIDE**: two flat-tops on one screen.
 - **TAG TEAM**: two cooks share one grill; **H** tags your partner in.
 
-The bare link (<https://anderspartnersck.github.io/PATTYMELT/>) is the old 2D version, kept for reference and
-no longer updated.
+The old 2D version is kept at <https://anderspartnersck.github.io/PATTYMELT/old-2d.html> for reference.
 
 ## Credits
 

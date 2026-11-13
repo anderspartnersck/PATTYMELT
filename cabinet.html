@@ -180,6 +180,7 @@
 
 <script src="./engine.js"></script>
 <script src="service.js"></script>
+<script src="./art3d.js"></script>
 <script src="./lib/ghost.js?v=1"></script>
 <script src="./lib/spatulas.js?v=1"></script>
 <script>
@@ -562,6 +563,115 @@ PMSpat.load("assets/sprites/grill/");                  // THE TWO-SPATULA MANDAT
 const SPAT_FOOD = { raw:"raw", seared:"seared", done:"done", burnt:"burnt", cheese:"cheese_fresh", bread:"bread", rye:"bread_rye" };
 const spatFood = (n) => GRILL_SPR[SPAT_FOOD[n]] || null;
 const slotArt = (s) => s.theme === "school" ? GRILL_SPR.tray_school : GRILL_SPR.plate_diner;  // diner plate / school tray
+// ---------- ?art=3d — THE 1UP CAB in the 3D look (render-only; the old art stays the default) ----------
+// Three asset sets (art3d.js): CAB = the diner grill band, pre-mapped from the 3D 'kitchen_grill' camera (export_cab.py);
+// K = the classic kitchen set (its cast reliefs → the cook busts, its seated diners → the strip); HER = the HEROES set
+// (its kitchen-monitor grill + cast + students, mapped into the band / busts / strip at draw time). Every map is uniform.
+const CAB3D_ON = (Q.get("art") || "").toLowerCase() === "3d";
+const A3 = CAB3D_ON && globalThis.ART3D ? { cab: ART3D, k: ART3D.make(), her: ART3D.make() } : null;
+if (A3) { A3.cab.load("assets/art3d/cab/"); A3.k.load("assets/art3d/"); A3.her.load("assets/art3d/heroes/"); }
+const DINER_PAINT = new Image(); if (A3) DINER_PAINT.src = "assets/sprites/dining/diner-room.png";
+const cab3d = (s) => !!A3 && s.slots.length === 6 && (s.theme === "school" ? A3.her.ready : (A3.cab.ready && A3.k.ready));
+const CAB_FLIP_MS = 1000 / 12, cabFlip = [], cabSeen = [];
+function cabMood(b) { return b >= pm.BURIED_BARKING ? "disaster" : b >= pm.BURIED_RESTLESS ? "overloaded" : b >= 0.30 ? "steaming" : b >= 0.15 ? "cluttered" : "empty"; }
+function cabKey(s, p, i) {                                   // engine Stage → the rendered patty at slot i
+  const S = pm.Stage; let st;
+  if (p.stage === S.SEAR_A) st = "SEAR_A"; else if (p.stage === S.SEAR_B) st = "SEAR_B";
+  else if (p.stage === S.MELT) st = p.cook < pm.melt_done(s) / 2 ? "MELT_0" : "MELT_1";
+  else if (p.stage === S.DONE) st = pm.RECIPES[p.item].includes(pm.Action.CHEESE) ? "DONE" : "DONE_PLAIN";
+  else if (p.stage === S.BURNT) st = "BURNT"; else return null;
+  return "grill." + st + ".slot" + i;
+}
+// the band map: CAB is pre-mapped (identity); HEROES maps its kitchen-monitor grill (x 30..610, centred on the wells)
+function cabBand(s) {
+  if (s.theme !== "school") return { A: A3.cab, sx: 0, sy: 0, k: 1, bg: (m) => [A3.cab.img["bg_" + m] || A3.cab.img.bg_empty, null], slots: A3.cab.m.slots };
+  const H3 = A3.her, sl = H3.m.loc.slot, k = 680 / 580, cy = sl.reduce((a, q) => a + q.y, 0) / sl.length, sy = cy - 115 / k + 18;
+  return { A: H3, sx: 30, sy, k, bg: (m) => [H3.img["bg_" + m] || H3.img.bg_empty, [30, sy, 580, 230 / k]], slots: sl.map((q) => ({ x: 20 + (q.x - 30) * k, y: 150 + (q.y - sy) * k })) };
+}
+function cabSprite(B, key) {                              // one atlas sprite through the band map
+  const sp = B.A.m.sprites[key]; if (!sp) return false; const im = B.A.atl[sp.a]; if (!im) return false;
+  const sw = sp.sw || sp.w, sh = sp.sh || sp.h;           // (1112) 2× atlas sprites: sw/sh = atlas px, w/h = panel px
+  if (B.k === 1) ctx.drawImage(im, sp.sx, sp.sy, sw, sh, sp.x, sp.y, sp.w, sp.h);
+  else ctx.drawImage(im, sp.sx, sp.sy, sw, sh, 20 + (sp.x - B.sx) * B.k, 150 + (sp.y - B.sy) * B.k, sp.w * B.k, sp.h * B.k);
+  return true;
+}
+function cabRect(B, key) {                                // an atlas sprite's on-screen rect through the band map (null = none)
+  const sp = B.A.m.sprites[key]; if (!sp) return null;
+  return B.k === 1 ? { x: sp.x, y: sp.y, w: sp.w, h: sp.h } : { x: 20 + (sp.x - B.sx) * B.k, y: 150 + (sp.y - B.sy) * B.k, w: sp.w * B.k, h: sp.h * B.k };
+}
+const CAB_BAKED_FLIP = false;   // the baked one-spatula flip frames (kept): retired by the two-spatula mandate (Joe 1026)
+function cabDrawGrill3D(s, zones) {                       // the band background + every slot's patty (+ the flip)
+  const B = cabBand(s), [bg, src] = B.bg(cabMood(pm.buried_index(s)));
+  if (bg) { if (src) ctx.drawImage(bg, src[0], src[1], src[2], src[3], 20, 150, 680, 230); else ctx.drawImage(bg, 20, 150, 680, 230); }
+  const now = performance.now();
+  for (let i = 0; i < s.slots.length; i++) {
+    const p = s.slots[i], q = cabSeen[i];
+    if (p && q && q.born === p.born && q.stage === pm.Stage.SEAR_A && p.stage === pm.Stage.SEAR_B) cabFlip[i] = now;
+    cabSeen[i] = p ? { born: p.born, stage: p.stage } : null;
+    if (!p || PMSpat.hidden(s, i)) continue;              // riding the two spatulas (lib/spatulas.js draws it)
+    const fa = cabFlip[i];
+    if (CAB_BAKED_FLIP && fa != null && now - fa < 8 * CAB_FLIP_MS && p.stage === pm.Stage.SEAR_B) {
+      const f = Math.min(7, Math.floor((now - fa) / CAB_FLIP_MS));
+      cabSprite(B, "flip." + f + ".slot" + i); cabSprite(B, "flip." + f + ".spatula.slot" + i);
+    } else if (swissDraped(p) && cabRect(B, "grill.SEAR_B.slot" + i)) {   // Joe's draped Swiss IS the melt (fresh ▸ melting ▸ browned)
+      const R = cabRect(B, "grill.SEAR_B.slot" + i), cx = R.x + R.w / 2, cy = R.y + R.h * 0.5;
+      ctx.save(); ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.beginPath(); ctx.ellipse(cx + 2, cy + R.h * 0.22, R.w * 0.52, R.h * 0.2, 0, 0, 7); ctx.fill(); ctx.restore();
+      PMSpat.drawSwiss(ctx, cx, cy, R.w * 1.12, p, "draped");
+      if (p.bunned && !cabSprite(B, "grill.RYE_LID.slot" + i) && GRILL_SPR.bread_rye) {   // the rendered rye lid (1110 r3); 2D = fallback
+        const w = R.w * 0.95, h = w * GRILL_SPR.bread_rye.height / GRILL_SPR.bread_rye.width;
+        ctx.drawImage(GRILL_SPR.bread_rye, cx - w / 2, cy - R.h * 0.35 - h / 2, w, h); }
+    } else { const k = cabKey(s, p, i); if (!k || !cabSprite(B, k)) drawPatty(s, p, zones[i].x + zones[i].w / 2, zones[i].y + zones[i].h / 2, zones[i].w, zones[i].h); }
+    if (PMSpat.onionsOn(p)) { const R = cabRect(B, "grill.SEAR_B.slot" + i), w = zones[i].well || { x: zones[i].x + zones[i].w / 2, y: zones[i].y + zones[i].h / 2 };
+      if (R) PMSpat.drawOnions(ctx, R.x + R.w / 2, R.y + R.h * 0.36, R.w * 0.82, p, s, "top"); else PMSpat.drawOnions(ctx, w.x, w.y - 3, 30, p, s, "top"); }
+    const it = s.slots[i]; if (it && it.item !== pm.Item.BURGER) txt(pm.ITEM_TICKET[it.item], zones[i].x + zones[i].w / 2, zones[i].y + zones[i].h - 4, 10, "#e09a4e", "center", 800);
+  }
+}
+function cabZones3D(s, zones) {                           // the same zone boxes, re-centred on the 3D wells
+  const S3 = cabBand(s).slots; return zones.map((z, i) => S3[i] ? Object.assign({}, z, { x: S3[i].x - z.w / 2, y: S3[i].y - z.h / 2, well: S3[i] }) : z);
+}
+// THE STRIP (y 486..592) in 3D: a uniform band of the dining room (diner: the painted room the 3D diners sit in — the
+// counter + stools; HEROES: the 3D cafeteria's first table row) with the seated 3D diners / students at their real seats.
+const STRIP = { x: 8, y: 486, w: 704, h: 106 }, STRIP_K = 704 / 640;
+function cabStrip3D(s, seated, wf) {
+  const school = s.theme === "school", y0 = school ? 300 : 158, now = performance.now(), k = STRIP_K;
+  const T = (x, y) => [STRIP.x + x * k, STRIP.y + (y - y0) * k];
+  ctx.save(); ctx.beginPath(); ctx.rect(STRIP.x, STRIP.y, STRIP.w, STRIP.h); ctx.clip();
+  if (!school) { if (DINER_PAINT.complete && DINER_PAINT.naturalWidth) ctx.drawImage(DINER_PAINT, 0, y0 * 1120 / 600, 1400, (STRIP.h / k) * 1120 / 600, STRIP.x, STRIP.y, STRIP.w, STRIP.h); }
+  else if (A3.her.img.dining) ctx.drawImage(A3.her.img.dining, 0, y0, 640, STRIP.h / k, STRIP.x, STRIP.y, STRIP.w, STRIP.h);
+  const heads = [];
+  if (!school) {                                          // the classic seated diners (stools 0..5 = SEATS[0..5])
+    for (const seq of A3.k.m.patrons || []) {
+      if (seq.seat >= Math.min(6, seated) || !seq.frames.length) continue;
+      const n = seq.seat1 - seq.seat0 + 1, fr = seq.frames[seq.seat0 + Math.floor(now / 160 + seq.seat * 3) % n], im = A3.k.patronAtl[fr.a]; if (!im) continue;
+      const [x, y] = T(fr.x, fr.y); ctx.drawImage(im, fr.sx, fr.sy, fr.w, fr.h, x, y, fr.w * k, fr.h * k); heads.push([x + fr.w * k / 2, y, seq.seat]);
+    }
+  } else {                                                // HEROES: students seated at the cafeteria's front tables
+    const St = A3.her.m.students;
+    St.seats.forEach((se, i) => {
+      if (i >= seated || se.xy[1] < y0 || se.xy[1] > y0 + STRIP.h / k + 20) return;
+      const F = St.list[i % St.list.length].frames, list = F.sit && F.sit.length ? F.sit : F.idle; if (!list || !list.length) return;
+      const fr = list[0], im = A3.her.patronAtl[fr.a]; if (!im) return;
+      const sc = se.h / St.px_per_m * (St.scale || 1) * k, [x, y] = T(se.xy[0], se.xy[1]);
+      ctx.save(); ctx.translate(x, y); ctx.scale(se.yaw ? -sc : sc, sc); ctx.drawImage(im, fr.sx, fr.sy, fr.w, fr.h, fr.ox, fr.oy, fr.w, fr.h); ctx.restore();
+      heads.push([x, y + fr.oy * sc, i]);
+    });
+  }
+  for (const [hx, hy, i] of heads) {                      // the house's patience over each diner (the WAIT meter)
+    const ang = Math.min(1, wf * (0.7 + 0.3 * ((i * 7 % 5) / 4))), cc = ang >= .78 ? COL.bad : ang >= .5 ? COL.amber : COL.good;
+    ctx.fillStyle = cc; ctx.beginPath(); ctx.arc(hx + 9, hy - 2, 3.5, 0, 7); ctx.fill();
+    if (ang >= .85) txt("!", hx, hy - 6, 14, COL.bad, "center", 800);
+  }
+  ctx.restore();
+}
+// the cook busts from the 3D cast reliefs (Joe's paintings, kitchen-lit: they clear the fidelity floor at 196 px)
+function cabBust(s, who, st) {
+  if (!cab3d(s)) return null;
+  const C = s.theme === "school" ? A3.her.cast : A3.k.cast, m = C[who] || {};
+  const want = { idle: ["idle"], flip: ["flip", "cheese", "idle"], serve: ["serve", "idle"], cheer: ["cheer", "serve", "idle"] }[st] || ["idle"];
+  for (const k of want) if (m[k] && m[k].width) return m[k];
+  return null;
+}
+
 
 // ---------- EVENT CALLOUTS: UH-OH! / OOPS! / FOCUS, BILLY! stickers (from PLATES AND TRAYS) ----------
 const CALLOUT = {};
@@ -660,19 +770,19 @@ function pattyState(s) {
   else if (now < _pbHoldUntil) want = _pbPose;                     // hold the last reaction briefly
   return want;
 }
-const pattyPose = (st) => PATTY[st] || PATTY.idle || null;
-const chrissyPose = (st) => CHRISSY[st] || CHRISSY.idle || null;   // 2-UP relief; serve→idle fallback
+const pattyPose = (st, s) => (CAB3D_ON && s && cabBust(s, "patty", st)) || PATTY[st] || PATTY.idle || null;
+const chrissyPose = (st, s) => (CAB3D_ON && s && cabBust(s, "chrissy", st)) || CHRISSY[st] || CHRISSY.idle || null;   // 2-UP relief; serve→idle fallback
 // COOK BUSTS — the cook(s) as a lower-corner foreground bust, reacting to the grill (Joe's call).
 // Patty lower-LEFT (P1); Chrissy lower-RIGHT, mirrored to face inward (P2, 2-UP only). Render-only;
 // absent art = nothing drawn (the spatula cursors already represent them on the grill). The width
 // helpers let drawDinerStrip inset its content so the regulars don't collide with a cook.
 const PATTY_BUST_H = 196;                                          // visible height, bottom-anchored at the floor
 function bustWidth(poseFn, s) {
-  const pose = poseFn(pattyState(s));
+  const pose = poseFn(pattyState(s), s);
   return pose ? PATTY_BUST_H * pose.width / pose.height : 0;
 }
 function drawBust(poseFn, s, side) {
-  const st = pattyState(s), pose = poseFn(st);
+  const st = pattyState(s), pose = poseFn(st, s);
   if (!pose) return 0;
   const ph = PATTY_BUST_H, pw = ph * pose.width / pose.height;
   const bob = (st === "cheer" ? Math.sin(performance.now() / 110) * 2.5 : Math.sin(performance.now() / 520) * 1.2);
@@ -858,7 +968,8 @@ function drawDinerStrip(s, leftInset = 0, rightInset = 0) {
       dinerFx.push({ k:"bark", ri, text: pool[(s.dropped + s.ticks) % pool.length], t:0, life:135 });
   }
   _dinDropped = s.dropped;
-  for (let i = 0; i < REG.length; i++) {
+  if (cab3d(s)) cabStrip3D(s, seated, wf);
+  else for (let i = 0; i < REG.length; i++) {
     if (i >= seated) continue;
     const cx = regCx(i), reg = REG[i];
     const ang = Math.min(1, wf * (0.7 + 0.3 * ((i*7%5)/4)));
@@ -1533,7 +1644,7 @@ function asciiGrillFx(s, zones, gy, gh) {               // steam / smoke / singi
     }
   }
   if (s.flash === "FLIP!" || s.flash === "CHEESE!") {    // singing spatulas
-    const z = zones[Math.min(s.players[0].cursor, zones.length - 1)], cx = z.x + z.w / 2;   // toaster cursor → grill's right end
+    const z = zones[Math.min(s.players[0].cursor, zones.length - 1)], cx = z.x + z.w / 2;   // (toaster cursor → right end)
     gly(s.flash === "FLIP!" ? "♪" : "♫", cx + 14, z.y - 20, 18, COL.cheese, 0.9);
     gly("♫", cx - 12, z.y - 28, 14, COL.cream, 0.7);
   }
@@ -1576,8 +1687,8 @@ function asciiStatusStrip(s, th) {                      // reactive mono "termin
 // untouched. The engine cursor stays integer; only the DRAWN spatula glides between slot centers.
 const GLIDE_ACCEL = 200, GLIDE_DAMP = 26;
 function springCursors(s, zones) {
-  // Toaster positions are legal engine cursors, beyond the grill's zones.
-  // Match the ART3D cabinet: draw them at the rightmost grill anchor.
+  // FIX (found on main 2026-10-25): on a toast round the engine cursor can sit on the BUN TOASTER (index >= slots), and
+  // zones[cursor] was undefined → a render crash. Toaster cursors ride the grill's right end here (render-only).
   const zoneAt = (c) => zones[Math.min(c, zones.length - 1)];
   let now = performance.now();
   let dt = (now - (springCursors._t == null ? now : springCursors._t)) / 1000;
@@ -1687,19 +1798,22 @@ function renderPlay(s, isDemo = false) {
   ctx.fillStyle = grad; ctx.fillRect(20, gy, W - 40, gh);
   // baked grill-state art over the gradient backing, swapping with buried_index
   // (vector gradient stays the fallback when the PNGs aren't present)
-  const bgArt = grillBgFor(glow);
+  const bgArt = cab3d(s) ? null : grillBgFor(glow);
   if (bgArt) {
     const availW = W - 40, ar = bgArt.width / bgArt.height;   // fit to width, center in the band
     let dw = availW, dh = dw / ar; if (dh > gh) { dh = gh; dw = dh * ar; }
     ctx.drawImage(bgArt, 20 + (availW - dw) / 2, gy + (gh - dh) / 2, dw, dh);
   }
   // griddle heat shimmer (brighter when rockin', angrier when buried)
-  ctx.fillStyle = (s.combo >= pm.FLOW_COMBO && glow < pm.BURIED_BARKING)
-    ? "rgba(255,160,40,0.18)" : `rgba(255,80,20,${0.06 + glow*0.14})`;
-  ctx.fillRect(20, gy, W - 40, gh);
-  const zones = grillZones({ x: 20, y: gy + 30, w: W - 40, h: gh - 40 }, s.slots.length);
+  if (!cab3d(s)) {
+    ctx.fillStyle = (s.combo >= pm.FLOW_COMBO && glow < pm.BURIED_BARKING)
+      ? "rgba(255,160,40,0.18)" : `rgba(255,80,20,${0.06 + glow*0.14})`;
+    ctx.fillRect(20, gy, W - 40, gh);
+  }
+  let zones = grillZones({ x: 20, y: gy + 30, w: W - 40, h: gh - 40 }, s.slots.length);
   PMSpat.observe(s);                      // the two-spatula layer reads what the engine just did (render-only)
-  for (let i = 0; i < s.slots.length; i++) {
+  if (cab3d(s)) { zones = cabZones3D(s, zones); cabDrawGrill3D(s, zones); }
+  else for (let i = 0; i < s.slots.length; i++) {
     const z = zones[i];
     if (!slotArt(s)) { ctx.strokeStyle = COL.grid; ctx.lineWidth = 2; ctx.strokeRect(z.x, z.y, z.w, z.h); }
     drawPatty(s, PMSpat.hidden(s, i) ? null : s.slots[i], z.x + z.w/2, z.y + z.h/2, z.w, z.h);   // riding the spatulas → plate shows
@@ -1713,8 +1827,9 @@ function renderPlay(s, isDemo = false) {
   // and hops up mid-flight, so a move READS as a singing spatula flying over the grill.
   // TWO SPATULAS PER COOK (Joe 1026): the glide carries a PAIR; every food move is done by the pair (lib/spatulas.js).
   const spat = springCursors(s, zones);
-  const spatXY = (idx) => { const z = zones[Math.min(idx, zones.length - 1)];
-    return { x: z.x + z.w / 2, y: z.y + z.h / 2, r: Math.min(z.w, z.h) * 0.36 }; };
+  const spatXY = (idx) => { const z = zones[Math.min(idx, zones.length - 1)];   // (toaster cursor → the right end)
+    return z.well ? { x: z.well.x, y: z.well.y, r: Math.min(z.w, z.h) * 0.36 }      // ?art=3d: the pair works over its well
+                  : { x: z.x + z.w / 2, y: z.y + z.h / 2, r: Math.min(z.w, z.h) * 0.36 }; };
   s.players.forEach((pl, pi) => {
     const g = spat[pi], c = spatXY(pl.cursor);
     PMSpat.drawPair(ctx, s, pi, { x: g.x, y: c.y, vx: g.v }, { slotXY: spatXY, food: spatFood, h: c.r * 1.15,

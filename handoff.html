@@ -25,8 +25,11 @@
   <div id="tag">◄ ► move · F flip · C cheese · X toast · V HEY BILLY · H = TAG OUT (pass the spatula) · R restart</div>
 </div></div>
 <script src="engine.js"></script>
+<script src="lib/hidpi.js?v=1"></script>
 <script src="sprites.js"></script>
 <script src="service.js"></script>
+<script src="assets/art3d/stages/stages.manifest.js"></script>
+<script src="lib/stages3d.js"></script>
 <script>
 "use strict";
 const pm = globalThis.PM, S = pm.Stage;
@@ -37,6 +40,7 @@ const SERVICE_PRACTICE = ["demo", "bot", "auto", "ticks", "warm", "fill", "at", 
 const GRILL = parseInt(Q.get("grill") || "6", 10);
 const cv = document.getElementById("screen"), ctx = cv.getContext("2d");
 const W = cv.width, H = cv.height;
+if (globalThis.PMHiDPI) PMHiDPI.setup(cv, W, H);   // (1112 art pass) device-res backing store, W×H stays the layout
 
 const COOKS = [{ name:"PATTY", color:"#ff5a4d" }, { name:"CHRISSY", color:"#6fb0e0" }];
 const COL = { cream:"#f3e6c8", amber:"#e0a92e", cheese:"#ffd23f", good:"#7ad17a", bad:"#ff5a4d",
@@ -58,6 +62,10 @@ function tagOut(auto) {                       // pass the spatula to the other c
   up = 1 - up; cdT = HANDOFF_CD; justTagged = pm.TPS;
   if (!auto) { game.wait = Math.max(0, game.wait - HANDOFF_RELIEF); game.billy = pm.BILLY_FULL; }  // a manual tag = a breather
 }
+// ?shell=1 (1110 r4): launched from the FRONT DOOR — ESC = back to the menu; once Billy's break is final (continue spent),
+// any key carries the shift to the front door's RESULTS card. Off by default.
+const SHELL = Q.get("shell") === "1";
+function toFront(r) { finishService(); location.href = "front.html?" + (r ? "results=" + encodeURIComponent(JSON.stringify(r)) + "&" : "menu&") + "sel=" + encodeURIComponent(Q.get("sel") || ""); }
 function billyBack() { game.over = false; game.wait = pm.WAIT_FULL * 0.45; game.billy = pm.BILLY_FULL; continueT = -1; continuesUsed++; }
 
 const SIM_DT = 1000 / pm.TPS;
@@ -86,7 +94,12 @@ function stageCol(p) { if (!p) return null;
 
 function render() {
   const drawPM = {...pm, MELT_DONE:pm.melt_done(game)}; // sprite melt animation follows this profile
+  if (globalThis.PMHiDPI) PMHiDPI.begin(ctx);
   ctx.fillStyle = "#0c0a08"; ctx.fillRect(0, 0, W, H);
+  // ?art=3d — the rendered HANDOFF line (lib/stages3d.js, art3d r2) under the HUD; 6-slot grills only, else the 2D grid
+  const A3 = (/^3d$/i.test(new URLSearchParams(location.search).get("art") || "") && globalThis.PMStages && game.slots.length === 6
+    && (PMStages.load._h || (PMStages.load._h = PMStages.load("assets/art3d/stages/"))) && PMStages.ready("handoff")) ? PMStages.stage("handoff").slots[0] : null;
+  if (A3) PMStages.plate(ctx, "handoff");
   const cook = COOKS[up], pad = 26;
   // WHOSE TURN banner
   txt("▶ " + cook.name + " IS UP", pad, 40, 30, cook.color, "left", 800);
@@ -110,12 +123,15 @@ function render() {
   // grill
   const n = game.slots.length, cols = Math.ceil(n / 2), rows = n > 1 ? 2 : 1;
   const gx = pad, gy = 158, gw = bw, gh = 300, cwd = gw / cols, ch = gh / rows;
-  ctx.fillStyle = "rgba(255,120,40,.06)"; ctx.fillRect(gx, gy, gw, gh);
+  if (!A3) { ctx.fillStyle = "rgba(255,120,40,.06)"; ctx.fillRect(gx, gy, gw, gh); }
   for (let i = 0; i < n; i++) {
-    const r = Math.floor(i / cols), c = i % cols, ccx = gx + c * cwd + cwd / 2, ccy = gy + r * ch + ch / 2, rad = Math.min(cwd, ch) * 0.32;
-    ctx.strokeStyle = COL.gridln; ctx.lineWidth = 2; ctx.strokeRect(gx + c * cwd + 6, gy + r * ch + 6, cwd - 12, ch - 12);
+    const r = Math.floor(i / cols), c = i % cols, rad = Math.min(cwd, ch) * 0.32;
+    let ccx = gx + c * cwd + cwd / 2, ccy = gy + r * ch + ch / 2;
+    if (A3 && A3[i]) { ccx = A3[i].x; ccy = A3[i].y; }                   // the rendered well (anchors match the 2D cells)
+    else { ctx.strokeStyle = COL.gridln; ctx.lineWidth = 2; ctx.strokeRect(gx + c * cwd + 6, gy + r * ch + 6, cwd - 12, ch - 12); }
     const p = game.slots[i];
-    if (p) PMDrawItem(ctx, p, ccx, ccy, rad, drawPM, performance.now() / 1000);   // animated item sprite (sizzle/pop/steam)
+    if (p && !(A3 && PMStages.food(ctx, p, pm, ccx, ccy, pm.melt_done(game))))
+      PMDrawItem(ctx, p, ccx, ccy, rad, drawPM, performance.now() / 1000);   // animated item sprite (sizzle/pop/steam)
     if (p && ITEMS && p.item !== pm.Item.BURGER && p.stage !== S.DONE && p.stage !== S.BURNT)
       txt(pm.ITEM_TICKET[p.item], ccx, gy + r * ch + ch - 10, 12, COL.cream, "center", 700);
     if (i === game.players[0].cursor) { ctx.fillStyle = cook.color; ctx.beginPath();   // the spatula = current cook's color
@@ -123,6 +139,7 @@ function render() {
   }
   // TAG-OUT prompt — glows when you're in the weeds and it's off cooldown
   const ready = cdT === 0, weeds = wf >= 0.5;
+  if (A3) { ctx.fillStyle = "rgba(12,10,8,.78)"; ctx.fillRect(W / 2 - 170, gy + gh + 12, 340, 26 + (cdT ? 8 : 0)); }   // (3D: the light front rail)
   txt(ready ? (weeds ? "▶ IN THE WEEDS — TAG OUT! press H" : "TAG OUT — press H") : "tag cooling down…",
       W / 2, gy + gh + 30, weeds && ready ? 18 : 14, !ready ? COL.dim : weeds ? COL.bad : COL.cream, "center", weeds && ready ? 800 : 600);
   if (!ready) { ctx.fillStyle = "#241c12"; ctx.fillRect(W / 2 - 60, gy + gh + 40, 120, 5);
@@ -132,25 +149,33 @@ function render() {
 
 
   // The cursor includes the two real toaster slots. Keep buns and grilled cheese visible on full menus.
+  // ?art=3d (1110 r3): the bun / grilled cheese are the rendered sprites ON the plate's two toaster bays, and the read-out
+  // (name · state · timer · bar) moves OUT to the counter beside each bay — nothing drawn over the 3D toasters.
+  const T3 = A3 && PMStages.stage("handoff").toaster;
   if (game.toaster.length) {
     const tw=220, gap=12, tx=(W-(tw*game.toaster.length+gap*(game.toaster.length-1)))/2, ty=532;
     for (let i=0;i<game.toaster.length;i++) {
       const x=tx+i*(tw+gap), p=game.toaster[i], selected=game.players[0].cursor===game.slots.length+i;
-      ctx.fillStyle="#21170d";ctx.fillRect(x,ty,tw,74);
-      ctx.strokeStyle=selected?cook.color:COL.gridln;ctx.lineWidth=selected?3:1;ctx.strokeRect(x,ty,tw,74);
-      txt("TOASTER "+(i+1)+(selected?" · SELECTED":""),x+10,ty+17,12,selected?cook.color:COL.amber);
-      if (!p) { txt("EMPTY · X to toast bun",x+10,ty+42,12,COL.dim);continue; }
+      const q=T3&&T3[i], side=i===0?-1:1, lx=q?(side<0?x-12:x+tw+12):x+10, al=q?(side<0?"right":"left"):"left";
+      if (q) { ctx.fillStyle="rgba(14,11,8,.82)"; ctx.fillRect(side<0?6:x+tw+4,ty,side<0?x-10:W-x-tw-10,72);   // the read-out's own dark card, off the bay
+        if (selected) { ctx.strokeStyle=cook.color;ctx.lineWidth=3;ctx.strokeRect(x-3,ty-5,tw+6,74+8); } }
+      else { ctx.fillStyle="#21170d";ctx.fillRect(x,ty,tw,74);
+        ctx.strokeStyle=selected?cook.color:COL.gridln;ctx.lineWidth=selected?3:1;ctx.strokeRect(x,ty,tw,74); }
+      txt("TOASTER "+(i+1)+(selected?(q?" ◂":" · SELECTED"):""),lx,ty+17,12,selected?cook.color:COL.amber,al);
+      if (!p) { txt(q?"EMPTY · X":"EMPTY · X to toast bun",lx,ty+(q?34:42),12,COL.dim,al);continue; }
       const bun=p.stage===undefined, w=bun?null:pm.cook_window(game,p);
       const target=bun?pm.toast_ready(game):p.stage===S.MELT?pm.melt_done(game):pm.sear_ready(p);
       const burn=bun?pm.toast_burn(game):w.burn;
       const burnt=p.stage===S.BURNT||((bun||p.stage!==S.MELT&&p.stage!==S.DONE)&&p.cook>=burn);
       const ready=!burnt&&(p.stage===S.DONE||p.stage!==S.MELT&&p.cook>=target);
       const state=burnt?"BURNT":ready?"READY":p.stage===S.MELT?"MELTING":"COOKING";
-      txt(bun?"BUN":pm.ITEM_LABEL[p.item]||p.item,x+10,ty+34,13,COL.cream);
-      txt(state+" · "+(p.cook/pm.TPS).toFixed(1)+"s / "+(target/pm.TPS).toFixed(1)+"s",x+10,ty+50,11,burnt?COL.bad:ready?COL.good:COL.cream);
-      ctx.fillStyle=COL.gridln;ctx.fillRect(x+10,ty+59,tw-20,5);
-      ctx.fillStyle=burnt?COL.bad:ready?COL.good:COL.amber;ctx.fillRect(x+10,ty+59,(tw-20)*Math.min(1,p.cook/Math.max(1,target)),5);
-      if (!bun) PMDrawItem(ctx,p,x+tw-27,ty+34,17,drawPM,performance.now()/1000);
+      if (q) PMStages.toast(ctx,p,pm,game,q.x,q.y);                        // the rendered bun / grilled cheese on its bay
+      txt(bun?"BUN":(q?pm.ITEM_TICKET[p.item]:pm.ITEM_LABEL[p.item])||p.item,lx,ty+34,13,COL.cream,al);
+      txt(state+" · "+(p.cook/pm.TPS).toFixed(1)+"s / "+(target/pm.TPS).toFixed(1)+"s",lx,ty+50,11,burnt?COL.bad:ready?COL.good:COL.cream,al);
+      const bw=q?130:tw-20, bx=q?(side<0?lx-bw:lx):x+10;
+      ctx.fillStyle=COL.gridln;ctx.fillRect(bx,ty+59,bw,5);
+      ctx.fillStyle=burnt?COL.bad:ready?COL.good:COL.amber;ctx.fillRect(bx,ty+59,bw*Math.min(1,p.cook/Math.max(1,target)),5);
+      if (!bun && !q) PMDrawItem(ctx,p,x+tw-27,ty+34,17,drawPM,performance.now()/1000);
     }
   }
 
@@ -159,7 +184,7 @@ function render() {
     const secs = Math.max(0, Math.ceil(continueT));
     ctx.fillStyle = "rgba(10,5,4,.74)"; ctx.fillRect(0, H / 2 - 50, W, 100);
     txt(pm.THEMES.diner.fired, W / 2, H / 2 - 10, 28, COL.cheese, "center", 800);
-    txt(continueT > 0 ? "bring him back? press any button — " + secs : "press R for a new shift",
+    txt(continueT > 0 ? "bring him back? press any button — " + secs : (SHELL ? "press any button — results" : "press R for a new shift"),
         W / 2, H / 2 + 20, 16, continueT > 0 ? (secs <= 3 ? COL.bad : COL.cream) : COL.amber, "center", 700);
     txt("PATTY " + slung[0] + "   ·   CHRISSY " + slung[1] + " slung", W / 2, H / 2 + 44, 13, COL.dim, "center", 600);
   }
@@ -169,6 +194,9 @@ function banner(s, c) { ctx.fillStyle = "rgba(10,5,4,.66)"; ctx.fillRect(0, H / 
 
 addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
+  if (SHELL && k === "escape") { toFront(null); return; }
+  if (SHELL && game.over && continueT === 0) { toFront({ mode: "tag", outcome: "break", skin: "diner", label: Q.get("label") || "TAG TEAM",
+    score: game.score, served: game.served, shift: game.rnd, shiftName: "PATTY " + slung[0] + " · CHRISSY " + slung[1] + " slung" }); return; }
   if (k === "r") { reset(); prevServed = 0; return; }
   if (k === "p") { paused = !paused; return; }
   if (paused) return;
