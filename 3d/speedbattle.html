@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<!-- PATTY MELT — SPEED BATTLE (Joe 1112: "a speed sudden death 1 minute flip/serve sorta of battle function versus chrissy
+     and with 2 NPCs to stack finished burger sprites and tally battle wins").  *** for Christine & Phillip Coleman. ***
+     Built alongside MELTDOME (meltdome.html) on its structure: two mirrored grills, each a plain 1P game on the
+     parity-proven engine (engine.js — the SAME deterministic order stream on both sides, so it is fair by construction).
+     Patty (P1) vs Chrissy (P2 human, or CPU Chrissy). A fixed round clock (1 / 2 / 3 min); SCORE = served burgers by the
+     engine's COOK GRADE (PERFECT 3 · GOOD 2 · OK 1), waste −1, 86'd line −3. Tied at the bell = SUDDEN DEATH: the next
+     PERFECT serve wins. Each side has an NPC STACKER who towers that cook's finished burgers beside the station (a live
+     tally you read at a glance; it wobbles when it gets tall) and cheers / slumps at the round's end. Best of 3 or 5,
+     round wins shown as a trophy row. Presentation + match rules only: the engine is untouched (parity-safe).
+     Docs: docs/SHIFTS-AND-BATTLE-1112.md.  Keys: P1 A/D · F flip · C cheese · V Billy   P2 J/L · I · K · M
+     ?secs=60|120|180  ?bo=3|5  ?cpu=easy|med|hard  ?mode=family|arcade|kids  ?items=fifties  ?demo (CPU vs CPU)
+     ?shell=1 (from the front door)  QA: ?warm=<ticks> ?sd (force a tied bell) ?wins=a,b ?over=1 (round-over card) -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PATTY MELT — SPEED BATTLE</title>
+<style>
+  html,body { margin:0; height:100%; background:#140806; overflow:hidden; }
+  #frame { position:absolute; inset:0; display:grid; place-items:center;
+    background: repeating-linear-gradient(0deg, rgba(181,53,43,.9) 0 22px, rgba(181,53,43,.5) 22px 44px),
+                repeating-linear-gradient(90deg, rgba(181,53,43,.9) 0 22px, rgba(181,53,43,.5) 22px 44px), #7a1f18; }
+  #wrap { position:relative; width:min(96vw, calc(94vh * 16 / 9)); aspect-ratio:16/9;
+    border:12px solid #2a1410; border-radius:10px; box-shadow:0 0 0 6px #0a0504, 0 18px 60px #000; }
+  canvas { display:block; width:100%; height:100%; background:#0a0806; border-radius:4px; }
+</style>
+</head>
+<body>
+<div id="frame"><div id="wrap"><canvas id="screen" width="1280" height="720"></canvas></div></div>
+<script src="engine.js"></script>
+<script src="lib/hidpi.js?v=1"></script>
+<script src="sprites.js"></script>
+<script src="lib/audio.js"></script>
+<script src="../assets/art3d/stages/stages.manifest.js"></script>
+<script src="lib/stages3d.js"></script>
+<script>
+"use strict";
+const PM = globalThis.PM, S = PM.Stage;
+const cv = document.getElementById("screen"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, MID = W / 2;
+if (globalThis.PMHiDPI) PMHiDPI.setup(cv, W, H);
+const Q = new URLSearchParams(location.search);
+const audio = new PMAudio.AudioBus(); try { audio.ensure(); } catch (e) {}
+function wakeAudio() { try { audio.ensure(); audio.resume(); } catch (e) {} }
+const STAGES = !!globalThis.PMStages && PMStages.load("../assets/art3d/stages/");   // the burger sprite for the towers
+
+// ---------- MATCH RULES (tuning at the top) ----------
+const PTS = { PERFECT: 3, GOOD: 2, OK: 1, UNDER: 0, OVER: 0 };   // served burgers by cook grade
+const WASTE_PTS = -1, EIGHTY_SIX_PTS = -3;                     // a wasted patty / a buried line (86'd, reset)
+const SD_ANY = 20 * PM.TPS, SD_MAX = 45 * PM.TPS;              // sudden death: next PERFECT; after 20 s any clean serve; 45 s = drawn round
+const LENGTHS = [60, 120, 180], BESTOF = [3, 5];
+const CPU_LV = { easy: { hands: 5, aim: "ready" }, med: { hands: 3, aim: "start" }, hard: { hands: 2, aim: "mid" } };
+const MODE = ["kids", "family", "arcade"].includes(Q.get("mode")) ? Q.get("mode") : "family";
+const ITEMS = (Q.get("items") || "") === "fifties" ? PM.ITEMS_FIFTIES : PM.ITEMS_BURGER;
+const GRILL = Math.max(2, Math.min(8, parseInt(Q.get("grill") || "6", 10)));
+const SHELL = Q.get("shell") === "1", DEMO = Q.has("demo");
+let secs = LENGTHS.includes(+Q.get("secs")) ? +Q.get("secs") : 60;
+let bestOf = BESTOF.includes(+Q.get("bo")) ? +Q.get("bo") : 3;
+let cpuKey = CPU_LV[Q.get("cpu")] ? Q.get("cpu") : "med";
+const need = () => Math.floor(bestOf / 2) + 1;
+const COL = { cream: "#f3e6c8", cheese: "#ffd23f", amber: "#e0a92e", good: "#7ad17a", bad: "#ff5a4d", dim: "#8a7a5a",
+              p1: "#ff5a4d", p2: "#6fb0e0", gold: "#ffcf3a", ink: "#0a0806" };
+
+// ---------- the two sides ----------
+function makeSide(i) {
+  const g = PM.new_game(1, MODE, 1, "diner", GRILL, ITEMS);
+  g.cfg.orders = 99999; g.orders_left = 99999;                 // the CLOCK ends the round, never a quota
+  return { i, name: i ? "CHRISSY" : "PATTY", col: i ? COL.p2 : COL.p1, g, human: false, cpu: i ? cpuKey : (DEMO ? "easy" : null),
+           busy: 0, x86: 0, stack: [], seen: Object.assign({}, g.grades), landT: -9, wins: side0wins(i), mood: "idle", moodT: 0, flash: "", flashT: 0 };
+}
+let wins = [0, 0];
+const side0wins = (i) => wins[i];
+let sides, round = 1, phase = "setup", clockT = 0, sdT = 0, readyT = 0, roundWinner = -1, overT = 0, gtick = 0, setupRow = 0;
+let history = [];                                                // per round: [ptsA, ptsB, winner, sudden]
+function newRound() {
+  sides = [makeSide(0), makeSide(1)];
+  sides[0].human = !DEMO; if (p2Human) sides[1].human = true, sides[1].cpu = null;
+  clockT = secs * PM.TPS; sdT = 0; roundWinner = -1; overT = 0; gtick = 0;
+}
+let p2Human = Q.get("p2") === "1";
+function points(sd) { const g = sd.g; return PTS.PERFECT * g.grades.PERFECT + PTS.GOOD * g.grades.GOOD + PTS.OK * g.grades.OK + WASTE_PTS * g.waste + EIGHTY_SIX_PTS * sd.x86; }
+
+// ---------- CPU CHRISSY (and the demo's CPU Patty): human-ish hands + an aim inside the cook window ----------
+// A press costs `hands` ticks of reaction plus 1 tick per grill slot the spatula travels (tools/day_balance.py's model).
+// EASY acts the moment RDY lights (GOOD), MED at the ideal band's start, HARD mid-band — with a deterministic ±1 so
+// the grades vary. No RNG: the same inputs always play the same match.
+function cpuStep(sd) {
+  const g = sd.g, L = CPU_LV[sd.cpu];
+  if (sd.busy > 0) { sd.busy--; return; }
+  const done = g.slots.some((p) => p && p.stage === S.DONE);
+  if (done && g.billy < g.cfg.billy_serve_min + 12) { PM.hey_billy(g, 0); sd.busy = L.hands; return; }
+  let best = -1, bestKey = -1e9;
+  g.slots.forEach((p, i) => {
+    if (!p || (p.stage !== S.SEAR_A && p.stage !== S.SEAR_B && p.stage !== S.TOAST)) return;
+    const [r, i0, i1, late] = PM.grade_window(g, p), j = ((g.ticks * 7 + i * 3) % 3) - 1;
+    const aim = L.aim === "ready" ? r : L.aim === "start" ? i0 + Math.max(0, j) : ((i0 + i1) >> 1) + j;
+    const cur = p.cook, urgent = cur >= late - 4;
+    if (cur < aim && !urgent) return;
+    const key = (urgent ? 1000 : 0) + cur - aim - Math.abs(i - g.players[0].cursor);
+    if (key > bestKey) { bestKey = key; best = i; }
+  });
+  if (best < 0) return;
+  const travel = Math.abs(best - g.players[0].cursor); g.players[0].cursor = best;
+  const p = g.slots[best], act = PM.RECIPES[p.item][p.step];
+  if (act === PM.Action.FLIP) PM.flip(g, 0); else if (act === PM.Action.TOAST) PM.toast(g, 0); else PM.add_cheese(g, 0);
+  sd.busy = L.hands + travel;
+}
+
+// ---------- the round loop (fixed timestep, the house pattern) ----------
+function step() {
+  if (phase === "ready") { readyT -= 1 / PM.TPS; if (readyT <= 0) phase = "play"; return; }
+  if (phase !== "play" && phase !== "sudden") return;
+  gtick++;
+  const perfect0 = sides.map((s) => s.g.grades.PERFECT), clean0 = sides.map((s) => s.g.grades.PERFECT + s.g.grades.GOOD + s.g.grades.OK);
+  for (const sd of sides) {
+    const g = sd.g;
+    if (sd.cpu && !sd.human) cpuStep(sd);
+    PM.tick(g);
+    if (g.over) { sd.x86++; flash(sd, "86'D — RESET THE LINE"); audio.buzzer(); g.over = false; g.wait = PM.WAIT_FULL * 0.5; g.billy = PM.BILLY_FULL; }
+    for (const k of Object.keys(PTS)) {                         // every served burger lands on the tower, by its grade
+      const d = g.grades[k] - (sd.seen[k] || 0);
+      for (let n = 0; n < d; n++) { sd.stack.push(k); sd.landT = performance.now() / 1000; }
+      sd.seen[k] = g.grades[k];
+    }
+    if (sd.flashT > 0) sd.flashT--;
+  }
+  if (phase === "play") {
+    clockT--;
+    if (clockT > 0 && clockT <= 10 * PM.TPS && clockT % PM.TPS === 0) audio.tick();
+    if (clockT <= 0) {
+      const a = points(sides[0]), b = points(sides[1]);
+      audio.servicebell();
+      if (a === b) { phase = "sudden"; sdT = 0; flashAll("SUDDEN DEATH!"); }
+      else endRound(a > b ? 0 : 1, false);
+    }
+    return;
+  }
+  // SUDDEN DEATH: the next PERFECT serve (by exactly one cook) wins; after SD_ANY any clean serve; after SD_MAX it's a draw
+  sdT++;
+  const gotP = sides.map((s, i) => s.g.grades.PERFECT > perfect0[i]);
+  const gotC = sides.map((s, i) => s.g.grades.PERFECT + s.g.grades.GOOD + s.g.grades.OK > clean0[i]);
+  if (gotP[0] !== gotP[1]) return endRound(gotP[0] ? 0 : 1, true);
+  if (sdT >= SD_ANY && gotC[0] !== gotC[1]) return endRound(gotC[0] ? 0 : 1, true);
+  if (sdT >= SD_MAX) return endRound(-1, true);
+}
+function endRound(w, sudden) {
+  roundWinner = w; phase = "roundover"; overT = 0;
+  history.push([points(sides[0]), points(sides[1]), w, sudden]);
+  if (w >= 0) { wins[w]++; sides[w].mood = "cheer"; sides[1 - w].mood = "slump"; audio.win(); }
+  else sides.forEach((s) => s.mood = "slump");
+  sides.forEach((s) => s.moodT = performance.now() / 1000);
+}
+function nextRound() {
+  if (wins[0] >= need() || wins[1] >= need()) { phase = "matchover"; overT = 0; audio.win(); return; }
+  round++; newRound(); phase = "ready"; readyT = 3.2;
+}
+function flash(sd, m) { sd.flash = m; sd.flashT = 14; }
+function flashAll(m) { sides.forEach((s) => flash(s, m)); }
+function rematch() { wins = [0, 0]; round = 1; history = []; newRound(); phase = "ready"; readyT = 3.2; }
+function matchResult() {
+  const w = wins[0] === wins[1] ? -1 : wins[0] > wins[1] ? 0 : 1;
+  return { mode: "speed", label: Q.get("label") || "SPEED BATTLE", skin: "diner", winner: w, a: wins[0], b: wins[1],
+           pa: history.reduce((n, h) => n + h[0], 0), pb: history.reduce((n, h) => n + h[1], 0) };
+}
+function toFront(r) { location.href = "front.html?" + (r ? "results=" + encodeURIComponent(JSON.stringify(r)) + "&" : "menu&") + "sel=" + encodeURIComponent(Q.get("sel") || ""); }
+
+// ---------- render ----------
+function txt(s, x, y, sz, c, al = "left", w = 800) {
+  ctx.fillStyle = c; ctx.textAlign = al; ctx.textBaseline = "alphabetic";
+  ctx.font = `${w} ${sz}px "Saira Condensed","Arial Narrow",sans-serif`; ctx.fillText(s, x, y);
+}
+function otxt(s, x, y, sz, c, al = "center", w = 900, lw = 6) {
+  ctx.textAlign = al; ctx.textBaseline = "alphabetic"; ctx.font = `${w} ${sz}px "Saira Condensed","Arial Narrow",sans-serif`;
+  ctx.lineJoin = "round"; ctx.lineWidth = lw; ctx.strokeStyle = "#140806"; ctx.strokeText(s, x, y); ctx.fillStyle = c; ctx.fillText(s, x, y);
+}
+// a finished burger for the tower: the rendered 3D grill sprite (art3d stages atlas "grill.DONE") when it has decoded,
+// else the procedural item render (sprites.js) — both are the game's existing burger art.
+const _done = { stage: S.DONE, item: PM.Item.BURGER, cook: 0, step: 2 };
+function burger(x, y, w, grade) {
+  const at = STAGES && PMStages.atlas && PMStages.atlas(), spr = at && PMStages.data && PMStages.data.food.sprites["grill.DONE"];
+  if (spr) { const k = w / spr.w; ctx.drawImage(at, spr.sx, spr.sy, spr.w, spr.h, x - spr.ax * k, y - spr.ay * k, spr.w * k, spr.h * k); }
+  else PMDrawItem(ctx, _done, x, y, w * 0.42, PM, 0);
+  if (grade === "PERFECT") {                                     // a PERFECT burger carries a gold glint on the tower
+    ctx.save(); ctx.globalAlpha = 0.85; ctx.strokeStyle = COL.gold; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.ellipse(x, y - w * 0.04, w * 0.47, w * 0.19, 0, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke(); ctx.restore();
+  } else if (grade === "UNDER" || grade === "OVER") { ctx.save(); ctx.globalAlpha = 0.45; ctx.fillStyle = "#3a1a10";
+    ctx.beginPath(); ctx.ellipse(x, y, w * 0.45, w * 0.2, 0, 0, 7); ctx.fill(); ctx.restore(); }
+}
+// THE TOWER — every served burger, bottom up. Spacing tightens as it grows; past ~8 high it starts to sway, more the
+// taller it gets (the top swings most). The newest burger drops in from above.
+function drawTower(sd, bx, by, now) {
+  const n = sd.stack.length, maxH = 470, bw = 74;
+  const sp = Math.max(6, Math.min(17, maxH / Math.max(1, n)));
+  const sway = n > 8 ? Math.min(0.07, (n - 8) * 0.004) * Math.sin(now * (2.2 + n * 0.02) + sd.i * 1.7) : 0;
+  ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.beginPath(); ctx.ellipse(bx, by + 8, 52, 10, 0, 0, 7); ctx.fill();   // the plate's shadow
+  ctx.fillStyle = "#e9e1cf"; ctx.beginPath(); ctx.ellipse(bx, by + 4, 50, 11, 0, 0, 7); ctx.fill();          // the plate
+  ctx.strokeStyle = "#b9ae94"; ctx.lineWidth = 2; ctx.stroke();
+  for (let k = 0; k < n; k++) {
+    const h = k * sp, f = h / maxH, ox = Math.sin(sway) * h * (0.2 + 0.6 * f), last = k === n - 1;
+    let dy = 0; if (last) { const u = Math.min(1, (now - sd.landT) / 0.22); dy = -(1 - u * u) * 60; }
+    burger(bx + ox, by - h + dy - 6, bw, sd.stack[k]);
+  }
+  otxt(String(n), bx, by + 42, 30, sd.col, "center");           // the tally under the tower, readable at a glance
+  txt("STACKED", bx, by + 58, 12, COL.dim, "center", 800);
+}
+// THE STACKER — an NPC kid beside the tower (placeholder vector; ART WANTED). Poses: idle bob, reach (a burger lands),
+// cheer (round won: jump + arms up), slump (round lost: head down, shoulders in).
+function drawStacker(sd, x, y, face, now) {
+  const reach = now - sd.landT < 0.3, mood = phase === "roundover" || phase === "matchover" ? sd.mood : "idle";
+  const t = now - sd.moodT, cheer = mood === "cheer", slump = mood === "slump";
+  const jump = cheer ? Math.abs(Math.sin(t * 7)) * 22 : 0, bob = Math.sin(now * 3 + sd.i) * 2;
+  const by = y - jump + (slump ? 6 : 0) + bob, lean = slump ? 0.18 * face : 0;
+  ctx.save(); ctx.translate(x, by); ctx.rotate(lean);
+  ctx.fillStyle = "rgba(0,0,0,.3)"; ctx.beginPath(); ctx.ellipse(0, 92 + jump, 26, 6, 0, 0, 7); ctx.fill();
+  ctx.strokeStyle = "#2a1a12"; ctx.lineWidth = 9; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(-8, 52); ctx.lineTo(-10, 90); ctx.moveTo(8, 52); ctx.lineTo(10, 90); ctx.stroke();   // legs
+  ctx.fillStyle = sd.col; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-20, 6, 40, 52, 10) : ctx.rect(-20, 6, 40, 52); ctx.fill();   // shirt
+  ctx.fillStyle = "#f3ead8"; ctx.fillRect(-14, 22, 28, 34);                                         // apron
+  ctx.strokeStyle = "#f2c9a0"; ctx.lineWidth = 8;                                                    // arms
+  const armL = cheer ? [-30, -30] : slump ? [-20, 52] : reach && face < 0 ? [-40, 0] : [-24, 44];
+  const armR = cheer ? [30, -30] : slump ? [20, 52] : reach && face > 0 ? [40, 0] : [24, 44];
+  ctx.beginPath(); ctx.moveTo(-18, 14); ctx.lineTo(armL[0], armL[1]); ctx.moveTo(18, 14); ctx.lineTo(armR[0], armR[1]); ctx.stroke();
+  ctx.fillStyle = "#f2c9a0"; ctx.beginPath(); ctx.arc(0, slump ? -4 : -10, 15, 0, 7); ctx.fill();     // head
+  ctx.fillStyle = "#fff"; ctx.fillRect(-13, slump ? -22 : -28, 26, 8);                                // paper hat
+  ctx.fillStyle = "#1a1008";
+  if (slump) { ctx.fillRect(-7, -2, 4, 2); ctx.fillRect(3, -2, 4, 2); }
+  else { ctx.beginPath(); ctx.arc(-5, -12, 2, 0, 7); ctx.arc(5, -12, 2, 0, 7); ctx.fill(); }
+  ctx.strokeStyle = "#1a1008"; ctx.lineWidth = 2; ctx.beginPath();
+  if (cheer) ctx.arc(0, -6, 6, 0.1, Math.PI - 0.1); else if (slump) ctx.arc(0, 6, 5, Math.PI + 0.3, -0.3); else { ctx.moveTo(-4, -4); ctx.lineTo(4, -4); }
+  ctx.stroke();
+  ctx.restore();
+  if (cheer) otxt(sd.i ? "WOO! CHRISSY!" : "THAT'S OUR PATTY!", x, y - 52, 18, COL.gold, "center", 900, 5);
+  else if (slump) txt("aw…", x, y - 40, 16, COL.dim, "center", 700);
+}
+function trophy(x, y, on, col) {
+  ctx.save(); ctx.translate(x, y);
+  ctx.fillStyle = on ? COL.gold : "rgba(243,230,200,.12)"; ctx.strokeStyle = on ? "#8a6410" : "rgba(243,230,200,.35)"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-11, -14); ctx.lineTo(11, -14); ctx.quadraticCurveTo(11, 4, 0, 6); ctx.quadraticCurveTo(-11, 4, -11, -14); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.arc(-12, -8, 5, Math.PI * 0.5, Math.PI * 1.5); ctx.arc(12, -8, 5, -Math.PI * 0.5, Math.PI * 0.5); ctx.stroke();
+  ctx.fillRect(-2, 6, 4, 6); ctx.fillRect(-8, 12, 16, 4);
+  if (on) { ctx.fillStyle = col; ctx.fillRect(-8, 16, 16, 2); }
+  ctx.restore();
+}
+function drawGrill(sd, gx, gy, gw, gh) {
+  const g = sd.g, n = g.slots.length, cols = Math.ceil(n / 2), rows = n > 1 ? 2 : 1, cw = gw / cols, ch = gh / rows, now = performance.now() / 1000;
+  const grd = ctx.createLinearGradient(0, gy, 0, gy + gh); grd.addColorStop(0, "#3a3430"); grd.addColorStop(1, "#22201e");
+  ctx.fillStyle = grd; ctx.fillRect(gx - 8, gy - 8, gw + 16, gh + 16);
+  ctx.strokeStyle = "#5a5048"; ctx.lineWidth = 3; ctx.strokeRect(gx - 8, gy - 8, gw + 16, gh + 16);
+  for (let i = 0; i < n; i++) {
+    const r = Math.floor(i / cols), c = i % cols, cx = gx + c * cw + cw / 2, cy = gy + r * ch + ch / 2;
+    ctx.strokeStyle = "rgba(255,255,255,.06)"; ctx.lineWidth = 1;
+    for (let k = -2; k <= 2; k++) { ctx.beginPath(); ctx.moveTo(gx + c * cw + 10, cy + k * 14); ctx.lineTo(gx + c * cw + cw - 10, cy + k * 14); ctx.stroke(); }
+    const p = g.slots[i];
+    if (p) {
+      PMDrawItem(ctx, p, cx, cy, Math.min(cw, ch) * 0.3, PM, now);
+      if (p.stage === S.SEAR_A || p.stage === S.SEAR_B) {        // the cook window: a bar that turns green in the ideal band
+        const [rd, i0, i1, late] = PM.grade_window(g, p), u = Math.min(1, p.cook / late), bx = cx - cw * 0.34, bw2 = cw * 0.68, yy = cy + ch * 0.36;
+        ctx.fillStyle = "rgba(0,0,0,.55)"; ctx.fillRect(bx, yy, bw2, 6);
+        ctx.fillStyle = "rgba(122,209,122,.45)"; ctx.fillRect(bx + bw2 * i0 / late, yy, bw2 * (i1 - i0) / late, 6);
+        ctx.fillStyle = p.cook < rd ? COL.dim : p.cook < i0 ? COL.amber : p.cook <= i1 ? COL.good : COL.bad; ctx.fillRect(bx, yy + 1, bw2 * u, 4);
+      }
+    }
+    if (i === g.players[0].cursor) { ctx.strokeStyle = sd.col; ctx.lineWidth = 3; ctx.strokeRect(gx + c * cw + 5, gy + r * ch + 5, cw - 10, ch - 10);
+      ctx.fillStyle = sd.col; ctx.beginPath(); ctx.moveTo(cx, gy + r * ch + 16); ctx.lineTo(cx - 9, gy + r * ch + 4); ctx.lineTo(cx + 9, gy + r * ch + 4); ctx.fill(); }
+  }
+}
+function drawSide(sd, left) {
+  const g = sd.g, now = performance.now() / 1000, x0 = left ? 0 : MID, w = MID;
+  const towerX = left ? 84 : W - 84, stackerX = left ? 150 : W - 150;
+  const gx = left ? 214 : MID + 38, gw = w - 252, gy = 236, gh = 316;
+  // header: name, live points, the grade breakdown
+  txt(sd.name + (sd.cpu && !sd.human ? " · CPU " + sd.cpu.toUpperCase() : ""), left ? gx : gx + gw, 136, 26, sd.col, left ? "left" : "right", 900);
+  const pts = points(sd);
+  otxt(String(pts), left ? gx + gw : gx, 158, 56, COL.cream, left ? "right" : "left", 900, 8);
+  const gr = g.grades;
+  txt(`PERFECT ${gr.PERFECT} · GOOD ${gr.GOOD} · OK ${gr.OK}` + (g.waste ? ` · WASTE ${g.waste}` : "") + (sd.x86 ? ` · 86×${sd.x86}` : ""),
+      left ? gx : gx + gw, 162, 14, COL.amber, left ? "left" : "right", 700);
+  // THE WEEDS bar (fill it and the line gets 86'd: reset, −3)
+  const wf = Math.min(1, g.wait / PM.WAIT_FULL);
+  ctx.fillStyle = "#241c12"; ctx.fillRect(gx, 174, gw, 10);
+  ctx.fillStyle = wf >= 0.78 ? COL.bad : wf >= 0.5 ? COL.amber : COL.good; ctx.fillRect(gx, 174, gw * wf, 10);
+  // Billy's attention (he serves only while it's up — holler!)
+  const bf = g.billy / PM.BILLY_FULL; txt("BILLY", gx, 206, 12, COL.dim, "left", 800);
+  ctx.fillStyle = "#241c12"; ctx.fillRect(gx + 44, 197, 120, 8); ctx.fillStyle = g.billy >= g.cfg.billy_serve_min ? COL.cheese : COL.bad; ctx.fillRect(gx + 44, 197, 120 * bf, 8);
+  if (sd.flashT > 0) txt(sd.flash, gx + gw, 206, 15, COL.cream, "right", 800);
+  drawGrill(sd, gx, gy, gw, gh);
+  drawTower(sd, towerX, 640, now);
+  drawStacker(sd, stackerX, 548, left ? -1 : 1, now);
+  if (wf >= 0.9) { ctx.fillStyle = `rgba(180,20,12,${(0.08 + (wf - 0.9) * 2).toFixed(2)})`; ctx.fillRect(x0, 100, w, H - 100); }
+  const keys = left ? "A/D move · F flip · C cheese · V Billy" : (sd.human ? "J/L move · I flip · K cheese · M Billy" : "P2: press J/L/I/K/M to take over");
+  txt(keys, left ? gx : gx + gw, 578, 13, COL.dim, left ? "left" : "right", 700);
+}
+function drawTop() {
+  ctx.fillStyle = "rgba(10,6,4,.9)"; ctx.fillRect(0, 0, W, 96);
+  ctx.fillStyle = COL.p1; ctx.fillRect(0, 92, MID, 4); ctx.fillStyle = COL.p2; ctx.fillRect(MID, 92, MID, 4);
+  // the round clock (or SUDDEN DEATH)
+  if (phase === "sudden") {
+    const p = 1 + 0.06 * Math.sin(performance.now() / 80);
+    ctx.save(); ctx.translate(MID, 52); ctx.scale(p, p); otxt("SUDDEN DEATH", 0, 0, 40, COL.bad, "center", 900, 8); ctx.restore();
+    txt(sdT >= SD_ANY ? "NEXT CLEAN SERVE WINS" : "NEXT PERFECT WINS", MID, 82, 16, COL.cheese, "center", 800);
+  } else {
+    const sl = Math.max(0, Math.ceil(clockT / PM.TPS)), mm = Math.floor(sl / 60), ss = String(sl % 60).padStart(2, "0");
+    const hot = sl <= 10 && phase === "play";
+    otxt(`${mm}:${ss}`, MID, 62, 50, hot ? ((gtick >> 2) & 1 ? COL.bad : COL.amber) : COL.cheese, "center", 900, 8);
+    txt(`ROUND ${round} · BEST OF ${bestOf}`, MID, 84, 14, COL.amber, "center", 800);
+  }
+  // the trophy rows (round wins toward the match)
+  for (let k = 0; k < need(); k++) { trophy(MID - 200 - k * 40, 46, k < wins[0], COL.p1); trophy(MID + 200 + k * 40, 46, k < wins[1], COL.p2); }
+  txt("PATTY", MID - 200 - need() * 40 - 6, 52, 22, COL.p1, "right", 900);
+  txt("CHRISSY", MID + 200 + need() * 40 + 6, 52, 22, COL.p2, "left", 900);
+  txt("SPEED BATTLE", 18, 30, 16, COL.cheese, "left", 900);
+  txt(`${secs / 60} MIN · ${MODE.toUpperCase()}`, 18, 50, 12, COL.dim, "left", 800);
+}
+function card(y, h) { ctx.fillStyle = "rgba(8,4,4,.86)"; ctx.fillRect(MID - 360, y, 720, h); ctx.strokeStyle = COL.amber; ctx.lineWidth = 2; ctx.strokeRect(MID - 360 + 0.5, y + 0.5, 719, h - 1); }
+function render() {
+  if (globalThis.PMHiDPI) PMHiDPI.begin(ctx);
+  ctx.fillStyle = "#120a08"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#1c100c"; ctx.fillRect(0, 590, W, H - 590);                       // the counter the towers stand on
+  ctx.fillStyle = "#3a2216"; ctx.fillRect(0, 588, W, 4);
+  if (!sides) newRound();
+  drawSide(sides[0], true); drawSide(sides[1], false);
+  ctx.fillStyle = "#1a0c0a"; ctx.fillRect(MID - 3, 100, 6, 490);
+  const a = points(sides[0]), b = points(sides[1]);
+  otxt("VS", MID, 380, 34, "#d24632", "center", 900, 6);
+  txt(a === b ? "TIED" : a > b ? "◀" : "▶", MID, 406, 16, COL.amber, "center", 800);
+  drawTop();
+  if (phase === "setup") drawSetup();
+  if (phase === "ready") { card(250, 150); txt(`ROUND ${round}`, MID, 296, 22, COL.amber, "center", 900);
+    otxt(readyT > 0.6 ? String(Math.ceil(readyT - 0.6)) : "GO!", MID, 372, 72, readyT > 0.6 ? COL.cream : COL.good, "center", 900, 8); }
+  if (phase === "roundover") drawRoundOver();
+  if (phase === "matchover") drawMatchOver();
+}
+function drawSetup() {
+  card(170, 330);
+  otxt("SPEED BATTLE", MID, 228, 54, COL.cheese, "center", 900, 8);
+  txt("PATTY vs CHRISSY · flip, cheese, serve — PERFECT 3 · GOOD 2 · OK 1 · waste −1", MID, 258, 16, COL.cream, "center", 700);
+  const rows = [["ROUND CLOCK", `${secs / 60} MINUTE${secs > 60 ? "S" : ""}`], ["MATCH", `BEST OF ${bestOf}`], ["CHRISSY", p2Human ? "PLAYER 2" : "CPU " + cpuKey.toUpperCase()]];
+  rows.forEach(([k, v], i) => { const y = 312 + i * 44, on = setupRow === i;
+    if (on) { ctx.fillStyle = "rgba(200,48,42,.8)"; ctx.fillRect(MID - 300, y - 28, 600, 38); }
+    txt(k, MID - 280, y, 20, on ? "#fff" : COL.dim, "left", 800); txt("◄  " + v + "  ►", MID + 280, y, 22, on ? COL.cheese : COL.cream, "right", 900); });
+  txt("tied at the bell = SUDDEN DEATH: the next PERFECT serve wins", MID, 456, 15, COL.amber, "center", 700);
+  txt("▲▼ pick · ◄► change · SPACE / F = COOK · P2 keys join as Chrissy", MID, 484, 14, COL.dim, "center", 700);
+}
+function drawRoundOver() {
+  overT++;
+  const w = roundWinner, h = history[history.length - 1];
+  card(214, 170);
+  if (w < 0) otxt("A DRAWN ROUND", MID, 270, 46, COL.cream, "center", 900, 8);
+  else otxt(`${sides[w].name} TAKES ROUND ${round}`, MID, 270, 46, sides[w].col, "center", 900, 8);
+  txt(`${h[0]} — ${h[1]}` + (h[3] ? "   ·   decided in SUDDEN DEATH" : ""), MID, 306, 22, COL.cream, "center", 800);
+  const done = wins[0] >= need() || wins[1] >= need();
+  txt(done ? "SPACE — the match" : "SPACE — next round", MID, 350, 16, (overT >> 4) & 1 ? COL.cheese : COL.cream, "center", 800);
+}
+function drawMatchOver() {
+  overT++;
+  const w = wins[0] === wins[1] ? -1 : wins[0] > wins[1] ? 0 : 1;
+  const conf = [COL.cheese, COL.bad, COL.p2, COL.good, COL.amber];
+  for (let i = 0; i < 60; i++) { const x = (i * 137) % W, sp = 1.2 + (i % 5) * 0.7, y = ((overT * sp + i * 53) % (H + 40)) - 20;
+    ctx.save(); ctx.translate(x, y); ctx.rotate((overT * 0.08 + i) % 6.283); ctx.fillStyle = conf[i % 5]; ctx.fillRect(-4, -4, 8, 8); ctx.restore(); }
+  card(190, 230);
+  txt("THE SPEED BATTLE CHAMPION", MID, 228, 18, COL.amber, "center", 900);
+  otxt(w < 0 ? "A DEAD HEAT" : sides[w].name, MID, 296, 72, w < 0 ? COL.cream : sides[w].col, "center", 900, 10);
+  txt(`${wins[0]} — ${wins[1]} in rounds`, MID, 334, 22, COL.cream, "center", 800);
+  txt(history.map((h, i) => `R${i + 1} ${h[0]}–${h[1]}${h[3] ? "*" : ""}`).join("   "), MID, 362, 14, COL.dim, "center", 700);
+  txt("R = rematch" + (SHELL ? " · SPACE = results · ESC = menu" : " · SPACE = new match"), MID, 396, 16, (overT >> 4) & 1 ? COL.cheese : COL.cream, "center", 800);
+}
+
+// ---------- input ----------
+const P1 = { a: "l", d: "r", f: "flip", c: "cheese", v: "billy" };
+const P2 = { j: "l", l: "r", i: "flip", k: "cheese", m: "billy" };
+function act(sd, a) {
+  const g = sd.g;
+  if (a === "l") return PM.move(g, -1, 0);
+  if (a === "r") return PM.move(g, 1, 0);
+  if (a === "billy") { PM.hey_billy(g, 0); audio.holler(); return; }
+  if (a === "flip") { const f0 = g.flash; PM.flip(g, 0); if (g.flash !== f0 || g.flash_t === PM.TPS) audio.spatula(); }
+  else if (a === "cheese") { PM.add_cheese(g, 0); audio.fwump(); }
+}
+addEventListener("keydown", (e) => {
+  const k = e.key.toLowerCase(); wakeAudio();
+  if (k === "s" && phase !== "setup") { audio.setMuted(!audio.muted); return; }
+  if (k === "escape" && SHELL) return toFront(null);
+  if (phase === "setup") {
+    if (k === "arrowup" || k === "w") setupRow = (setupRow + 2) % 3;
+    else if (k === "arrowdown") setupRow = (setupRow + 1) % 3;
+    else if (k === "arrowleft" || k === "arrowright" || k === "a" || k === "d") { const d = (k === "arrowleft" || k === "a") ? -1 : 1;
+      if (setupRow === 0) secs = LENGTHS[(LENGTHS.indexOf(secs) + 3 + d) % 3];
+      else if (setupRow === 1) bestOf = bestOf === 3 ? 5 : 3;
+      else { const ks = ["easy", "med", "hard", "p2"], cur = p2Human ? 3 : ks.indexOf(cpuKey), nx = (cur + 4 + d) % 4;
+        p2Human = nx === 3; if (!p2Human) cpuKey = ks[nx]; } audio.spatula(); }
+    else if (P2[k]) { p2Human = true; audio.spatula(); }
+    else if (k === " " || k === "enter" || k === "f") rematch();
+    e.preventDefault(); return;
+  }
+  if (phase === "roundover") { if (k === " " || k === "enter" || k === "f") nextRound(); e.preventDefault(); return; }
+  if (phase === "matchover") {
+    if (k === "r") rematch();
+    else if (k === " " || k === "enter") { if (SHELL) toFront(matchResult()); else { phase = "setup"; wins = [0, 0]; round = 1; history = []; newRound(); } }
+    e.preventDefault(); return;
+  }
+  if (phase !== "play" && phase !== "sudden") return;
+  if (P1[k]) { if (!DEMO) act(sides[0], P1[k]); e.preventDefault(); }
+  else if (P2[k]) { const sd = sides[1]; if (!sd.human) { sd.human = true; sd.cpu = null; p2Human = true; } act(sd, P2[k]); e.preventDefault(); }
+});
+
+// ---------- the loop (fixed timestep accumulator) ----------
+const SIM_DT = 1000 / PM.TPS;
+let last = performance.now(), acc = 0;
+function frame(now) {
+  let e = now - last; last = now; if (e > 250) e = 250; acc += e;
+  while (acc >= SIM_DT) { step(); acc -= SIM_DT; if (DEMO) demoTick(); }
+  if (sides) audio.setBed(phase === "play" || phase === "sudden", Math.max(PM.buried_index(sides[0].g), PM.buried_index(sides[1].g)));
+  render();
+  requestAnimationFrame(frame);
+}
+let demoWait = 0;
+function demoTick() {                               // ?demo: CPU vs CPU, advancing itself (attract / QA)
+  if (phase === "setup") return rematch();
+  if (phase === "roundover" || phase === "matchover") { if (++demoWait > 40) { demoWait = 0; phase === "matchover" ? rematch() : nextRound(); } }
+}
+
+// ---------- QA hooks ----------
+newRound();
+if (Q.has("wins")) { const w = Q.get("wins").split(",").map((x) => +x || 0); wins = [w[0] || 0, w[1] || 0]; round = wins[0] + wins[1] + 1; }
+const warm = parseInt(Q.get("warm") || "0", 10);
+if (warm > 0 || Q.has("sd")) {
+  phase = "play"; if (DEMO) sides[0].cpu = sides[0].cpu || "easy";
+  if (!DEMO) { sides[0].human = false; sides[0].cpu = "med"; }                       // QA: both cooks on autopilot
+  if (Q.has("sd")) { sides[1].cpu = sides[0].cpu; clockT = Math.min(clockT, warm || 300); }   // identical cooks → a tied bell
+  for (let i = 0; i < warm + (Q.has("sd") ? 40 : 0); i++) step();
+  if (!DEMO) { sides[0].human = true; }
+}
+if (Q.has("over")) { endRound(Q.get("over") === "2" ? 1 : 0, Q.has("sd")); if (wins[0] >= need() || wins[1] >= need()) { phase = "matchover"; overT = 200; } }
+if (DEMO && phase === "setup") rematch();
+globalThis.SPEED = { get phase() { return phase; }, get sides() { return sides; }, get wins() { return wins; }, points, step, rematch, nextRound };
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

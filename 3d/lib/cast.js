@@ -36,13 +36,26 @@
       billy:   { dir: "chars/", poses: ["serve", "turn", "slack", "walk-0", "walk-1", "walk-2", "walk-3", "walk-4", "walk-5"] },
     },
   };
-  const POSE_FALLBACK = { cheer: ["cheer", "serve", "idle"], flip: ["flip", "cheese", "idle"], cheese: ["cheese", "flip", "idle"],
+  // JOE'S OWN PAINTINGS (1111 HEROES set, 1112 DINER Patty) — cut clean by 3D PIPELINE/games/patty-melt/tools/joe_cast.py
+  // into assets/art3d/cast_joe/<look>/<who>-<pose>.webp. They are THE art: first in every chain (before ?cast=ink's
+  // procedural re-ink, which degrades already-inked paintings), and only the poses listed here are asked for (no 404s).
+  // (1112) Joe: "you are replacing many of them with new look sprites" — Billy = his teen Cougars Billy (run-with-tray =
+  // serve, near-duplicate run = turn, kneeling = slack). DINER Chrissy / DINER Billy = paint-overs of those HEROES
+  // paintings (diner red, COUGARS + paw + eye-black painted out; tools/diner_paintover.py), cut into cast_joe/diner/.
+  const JOE = {
+    heroes: { patty: ["idle", "flip", "cheer", "serve", "cheese"], chrissy: ["idle", "flip", "cheer", "serve", "cheese"], billy: ["slack", "serve", "turn"] },
+    diner:  { patty: ["idle", "flip", "cheer", "serve"], chrissy: ["idle", "flip", "cheer", "serve", "cheese"], billy: ["slack", "serve", "turn"] },
+  };
+  const joeUrl = (sd, who, pose) => ROOT + "art3d/cast_joe/" + sd + "/" + who + "-" + pose + ".webp";
+  const POSE_FALLBACK ={ cheer: ["cheer", "serve", "idle"], flip: ["flip", "cheese", "idle"], cheese: ["cheese", "flip", "idle"],
     serve: ["serve", "cheer", "idle"], run: ["run", "idle"], profile: ["profile", "idle"], idle: ["idle"], slack: ["slack", "turn"], turn: ["turn", "serve"] };
 
   function heroChain(skin, who, pose) {
     const sd = skinDir(skin), rec = HERO[sd][who] || HERO.diner[who]; if (!rec) return [];
     const want = POSE_FALLBACK[pose] || [pose, "idle"], out = [];
+    const joe = (JOE[sd] && JOE[sd][who]) || [];
     for (const p of want) {
+      if (joe.includes(p)) out.push(joeUrl(sd, who, p));
       if (INK) out.push(inkUrl(skin, who, p));
       if (rec.poses.includes(p)) out.push(ROOT + rec.dir + (rec.file ? rec.file(p) : who + "-" + p + ".png"));
     }
@@ -69,5 +82,5 @@
   }
   function preload(skin) { for (const who of ["patty", "chrissy", "billy"]) for (const p of ["idle", "serve", "cheer", "flip", "slack", "turn"]) hero(skin, who, p); }
   const ready = (im) => !!(im && im.complete && im.naturalWidth);
-  globalThis.PMCast = { ink: INK, skinDir, heroChain, art3dChain, img, hero, preload, ready, HERO };
+  globalThis.PMCast = { ink: INK, skinDir, heroChain, art3dChain, img, hero, preload, ready, HERO, JOE };
 })();

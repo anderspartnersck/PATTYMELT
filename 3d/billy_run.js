@@ -55,8 +55,17 @@
       const TI = opts.toastItems || new Set();
       const snap = { slots: g.slots.map((p) => p ? { born: p.born, srv: servable(p, TI), us: !!p.understeared, item: p.item, key: p.orderId != null ? p.orderId : p.born } : null),
                      toaster: (g.toaster || []).map((e) => e ? { born: e.born, srv: e.stage !== undefined && servable(e, TI), us: !!e.understeared, item: e.item, key: e.orderId != null ? e.orderId : e.born } : null),
-                     n: g.served + g.sent_back, holler: g.billy };
+                     n: g.served + g.sent_back, holler: g.billy, dr: g.drinks_run || 0 };
       const pv = S.prev; S.prev = snap; if (!pv) return;
+      // DRINKS (1112): each drink the engine ran this tick lands on the pass as a GLASS for Billy's tray — he
+      // carries it to its ticket's seat exactly like a plate (drink = the ticket's drink; item stays null).
+      for (let d = 0; d < snap.dr - pv.dr; d++) {
+        const pop = (g.pops || []).filter((q) => q.t === g.ticks && q.at && q.at[0] === "rail")[d];
+        const tid = pop ? pop.at[2] : null, tk = tid != null && g.service ? g.service.tickets.find((t) => t.id === tid) : null;
+        const seat = opts.seatOf && tid != null ? opts.seatOf(tid) % geo.seats.length : (S.seatRR++) % geo.seats.length;
+        const p = { id: S.nextId++, k: 0, seat, sent: false, from: "rail", item: null, drink: tk ? tk.drink : "WATER", state: "pass", t0: S.t, tPass: S.t, q: 0, tick: g.ticks };
+        S.plates.push(p); log("drink", { plate: p.id, seat, drink: p.drink, tick: g.ticks });
+      }
       let k = snap.n - pv.n; if (k <= 0) return;
       const half = Math.floor(g.slots.length / 2), found = [];
       pv.slots.forEach((q, i) => { if (q && q.srv && (!snap.slots[i] || snap.slots[i].born !== q.born)) found.push({ k: i < half ? 0 : 1, us: q.us, from: "slot" + i, item: q.item, key: q.key }); });

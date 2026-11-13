@@ -57,8 +57,10 @@
   ART.draw = function (ctx, key, ox, oy, alpha) {
     const s = ART.m && ART.m.sprites[key]; if (!s) return false;
     const im = ART.atl[s.a]; if (!im) return false;
-    if (alpha != null && alpha < 1) { const a0 = ctx.globalAlpha; ctx.globalAlpha = a0 * alpha; ctx.drawImage(im, s.sx, s.sy, s.w, s.h, ox + s.x, oy + s.y, s.w, s.h); ctx.globalAlpha = a0; }
-    else ctx.drawImage(im, s.sx, s.sy, s.w, s.h, ox + s.x, oy + s.y, s.w, s.h);
+    // (1112 art pass) sw/sh = the sprite's px in the atlas when it is stored above draw size (the 2× food set); w/h = panel px
+    const sw = s.sw || s.w, sh = s.sh || s.h;
+    if (alpha != null && alpha < 1) { const a0 = ctx.globalAlpha; ctx.globalAlpha = a0 * alpha; ctx.drawImage(im, s.sx, s.sy, sw, sh, ox + s.x, oy + s.y, s.w, s.h); ctx.globalAlpha = a0; }
+    else ctx.drawImage(im, s.sx, s.sy, sw, sh, ox + s.x, oy + s.y, s.w, s.h);
     return true;
   };
   return ART;

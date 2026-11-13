@@ -1,0 +1,60 @@
+{
+ "tool": "3D PIPELINE/games/patty-melt/tools/joe_cast.py",
+ "note": "clean cut of Joe's paintings, no re-ink",
+ "looks": {
+  "heroes": {
+   "poses": {
+    "patty-idle": "patty-flip.png",
+    "patty-flip": "patty-flip-lunge.png",
+    "patty-cheer": "patty-cheer.png",
+    "patty-serve": "patty-serve.png",
+    "patty-cheese": "patty-cheese.png",
+    "chrissy-idle": "chrissy-idle.png",
+    "chrissy-flip": "chrissy-flip.png",
+    "chrissy-cheer": "chrissy-cheer.png",
+    "chrissy-serve": "chrissy-serve.png",
+    "chrissy-cheese": "chrissy-cheese.png",
+    "billy-slack": "billy-frustrated.png",
+    "billy-serve": "billy-run-tray.png",
+    "billy-turn": "billy-run-tray-b.png"
+   },
+   "extras": {
+    "patty-cheer-b": "patty-cheer-b.png",
+    "patty-plate": "patty-plate.png",
+    "patty-carry": "patty-carry.png",
+    "chrissy-plate": "chrissy-plate.png",
+    "chrissy-press": "chrissy-press.png",
+    "chrissy-cheese-b": "chrissy-cheese-b.png",
+    "chrissy-cheese-c": "chrissy-cheese-c.png"
+   },
+   "skipped": {
+    "patty-idle-ONESPATULA": "one hand empty: breaks the two-spatula rule",
+    "patty-back": "rear cooks already use it",
+    "chrissy-back": "rear cooks already use it"
+   }
+  },
+  "diner": {
+   "poses": {
+    "patty-idle": "patty-idle.png",
+    "patty-flip": "patty-flip.png",
+    "patty-cheer": "patty-cheer.png",
+    "patty-serve": "patty-ready.png",
+    "chrissy-idle": "diner/paintover/chrissy-idle.png",
+    "chrissy-flip": "diner/paintover/chrissy-flip.png",
+    "chrissy-cheer": "diner/paintover/chrissy-cheer.png",
+    "chrissy-serve": "diner/paintover/chrissy-serve.png",
+    "chrissy-cheese": "diner/paintover/chrissy-cheese.png",
+    "billy-slack": "diner/paintover/billy-frustrated.png",
+    "billy-serve": "diner/paintover/billy-run-tray.png",
+    "billy-turn": "diner/paintover/billy-run-tray-b.png"
+   },
+   "extras": {
+    "patty-dash": "patty-dash.png"
+   },
+   "skipped": {
+    "patty-cook-alt": "future skin, Joe still working on it",
+    "patty-back": "3/4 back view, arms down: not usable for the rear cooks"
+   }
+  }
+ }
+}

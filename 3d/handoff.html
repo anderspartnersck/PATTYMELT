@@ -25,6 +25,7 @@
   <div id="tag">◄ ► move · F flip · C cheese · X toast · V HEY BILLY · H = TAG OUT (pass the spatula) · R restart</div>
 </div></div>
 <script src="engine.js"></script>
+<script src="lib/hidpi.js?v=1"></script>
 <script src="sprites.js"></script>
 <script src="service.js"></script>
 <script src="../assets/art3d/stages/stages.manifest.js"></script>
@@ -39,6 +40,7 @@ const SERVICE_PRACTICE = ["demo", "bot", "auto", "ticks", "warm", "fill", "at", 
 const GRILL = parseInt(Q.get("grill") || "6", 10);
 const cv = document.getElementById("screen"), ctx = cv.getContext("2d");
 const W = cv.width, H = cv.height;
+if (globalThis.PMHiDPI) PMHiDPI.setup(cv, W, H);   // (1112 art pass) device-res backing store, W×H stays the layout
 
 const COOKS = [{ name:"PATTY", color:"#ff5a4d" }, { name:"CHRISSY", color:"#6fb0e0" }];
 const COL = { cream:"#f3e6c8", amber:"#e0a92e", cheese:"#ffd23f", good:"#7ad17a", bad:"#ff5a4d",
@@ -92,6 +94,7 @@ function stageCol(p) { if (!p) return null;
 
 function render() {
   const drawPM = {...pm, MELT_DONE:pm.melt_done(game)}; // sprite melt animation follows this profile
+  if (globalThis.PMHiDPI) PMHiDPI.begin(ctx);
   ctx.fillStyle = "#0c0a08"; ctx.fillRect(0, 0, W, H);
   // ?art=3d — the rendered HANDOFF line (lib/stages3d.js, art3d r2) under the HUD; 6-slot grills only, else the 2D grid
   const A3 = (/^3d$/i.test(new URLSearchParams(location.search).get("art") || "") && globalThis.PMStages && game.slots.length === 6

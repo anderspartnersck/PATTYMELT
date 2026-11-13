@@ -21,10 +21,12 @@
 <body>
 <div id="stage"><canvas id="cv" width="1280" height="720"></canvas><iframe id="demo" title="live demo" tabindex="-1"></iframe></div>
 <script src="engine.js"></script>
+<script src="lib/hidpi.js?v=1"></script>
+<script src="lib/signs.js?v=1"></script>
 <script src="lib/audio.js?v=1"></script>
 <script src="lib/ghost.js?v=1"></script>
-<script src="lib/cast.js?v=1"></script>
-<script src="lib/cine.js?v=1"></script>
+<script src="lib/cast.js?v=2"></script>
+<script src="lib/cine.js?v=2"></script>
 <script src="../assets/art3d/stages/stages.manifest.js"></script>
 <script src="lib/stages3d.js?v=3"></script>
 <script>
@@ -33,6 +35,7 @@ const Q = new URLSearchParams(location.search);
 const W = 1280, H = 720, cv = document.getElementById("cv"), ctx = cv.getContext("2d"), stage = document.getElementById("stage"), demoEl = document.getElementById("demo");
 function fit() { const k = Math.min(innerWidth / W, innerHeight / H); stage.style.transformOrigin = "50% 50%"; stage.style.transform = `translate(-50%,-50%) scale(${k})`; }
 addEventListener("resize", fit); fit();
+if (globalThis.PMHiDPI) PMHiDPI.setup(cv, W, H);   // (1112 art pass) device-res backing store; the stage still scales the 1280×720 layout
 const FX = PMCine._fx, NEON = PMCine.NEON;
 const COLS = { diner: { a: "#c8302a", b: "#ffd23f", deep: "#3a0c08", cream: "#f3e6c8" }, school: { a: "#1f3a63", b: "#f2c230", deep: "#0b1830", cream: "#f3e6c8" } };
 const P1 = "#ff5a4d", P2 = "#6fb0e0";
@@ -52,16 +55,19 @@ const audio = new PMAudio.AudioBus(); const wake = () => { audio.ensure(); audio
 
 // ---------- THE MODES (each = one launch of the parity-locked engine in kitchen.html) ----------
 const MODES = [
-  { id: "campaign", name: "THE CAMPAIGN", tag: "1UP · 12 SHIFTS · DAWN TO CLOSING", cast: ["patty", "cheer"], screens: 1,
-    desc: ["Soft open to the dinner slam.", "Learn FLIP → CHEESE → HEY BILLY, then the toaster,", "then the full menu. Bonus rounds in the back."], q: {} },
+  { id: "campaign", name: "THE CAMPAIGN", tag: "1UP · 7 SHIFTS · 11 AM TO CLOSE ON THE CLOCK", cast: ["patty", "cheer"], screens: 1,
+    desc: ["One day at the diner, open to last call:", "each shift runs to its closing time on the clock.", "Survive the rush. Bonus rounds in the back."], q: {} },
   { id: "coop", name: "CO-OP KITCHEN", tag: "2UP · PATTY + CHRISSY · ONE BILLY", cast: ["chrissy", "cheer"], screens: 2, players: 2,
     desc: ["One grill split down the middle — Patty left, Chrissy right.", "One Billy: holler him to YOUR half.", "P2 = J/L · I flip · K cheese · . toast · M Billy"], q: { players: "2" } },
   { id: "battle", name: "MELTDOME", tag: "2UP VERSUS · 90s GRILL-OFF", cast: ["chrissy", "flip"], screens: 2, players: 2, battle: true,
     desc: ["Same grill, same Billy — most CLEAN orders at the bell wins.", "Steal Billy's attention. Don't burn the line.", "Pure merit. No sabotage (yet)."], q: { battle: "" } },
+  // (1112) SPEED BATTLE — the 1-minute flip/serve duel vs Chrissy, two stackers, sudden death, best of 3/5 (own page)
+  { id: "speed", name: "SPEED BATTLE", tag: "PATTY vs CHRISSY · 1-MIN FLIP-OFF · SUDDEN DEATH", cast: ["chrissy", "cheer"], players: 2, battle: true,
+    page: "speedbattle.html", desc: ["Mirrored grills. PERFECT = 3, GOOD = 2, OK = 1.", "Your stacker towers every burger you serve.", "Tied at the bell? Next PERFECT wins."], q: {} },
   { id: "jailbreak", name: "THE POP-UP", tag: "JAILBREAK · THE FULL MENU FROM SHIFT 1", cast: ["patty", "serve"], screens: 2,
     desc: ["Burgers, patty melts, grilled cheese — all at once.", "The toaster is its own clock.", "The deep end."], q: { items: "full" } },
-  { id: "weeds", name: "STRAIGHT TO THE WEEDS", tag: "FEEL TEST · SHIFT 9 DINNER SLAM", cast: ["billy", "slack"], screens: 1,
-    desc: ["Skip the teaching — drop into shift 9.", "This is the playtest question:", "does waiting for RDY under pressure feel good?"], q: { shift: "9" } },
+  { id: "weeds", name: "STRAIGHT TO THE WEEDS", tag: "FEEL TEST · SHIFT 6 THE BLAST", cast: ["billy", "slack"], screens: 1,
+    desc: ["Skip the teaching — drop into THE BLAST (8 PM).", "This is the playtest question:", "does waiting for RDY under pressure feel good?"], q: { shift: "6" } },
   { id: "rear", name: "COOKS FROM BEHIND", tag: "EXPERIMENT · THE REAR-VIEW COOKS", cast: ["patty", "idle"], screens: 1,
     desc: ["The campaign with the cooks' backs to you —", "the floating pair does the work.", "(Joe's cheat-the-flip test.)"], q: { cooks: "rear" } },
   // (1110 r4) the two other 2UP views, in the 3D look (their own pages, ?art=3d&shell=1 → back here at the bell / ESC)
@@ -73,21 +79,28 @@ const MODES = [
 const EDITIONS = [["school", "HEROES — THE CAFETERIA"], ["diner", "THE DINER"]];
 const DEMANDS = [["", "AS AUTHORED"], ["kids", "KIDS — UNLOSEABLE"], ["arcade", "ARCADE — QUARTER-EATER"]];
 const SCREENS = [["", "BEST FOR THE MODE"], ["1", "ONE SCREEN"], ["2", "TWO SCREENS — KITCHEN | DINING"]];
-let sel = 0, row = 0, ed = (Q.get("skin") || "school") === "diner" ? 1 : 0, dem = 0, scr = 0;
-{ const s = (Q.get("sel") || "").split(","); if (s.length === 4) { sel = +s[0] || 0; ed = +s[1] || 0; dem = +s[2] || 0; scr = +s[3] || 0; } }
+// (1112) LENGTH — the GAME CLOCK scale for the day (campaign.js LENGTHS); on SPEED BATTLE it is the round clock
+const LENGTHS = [["", "FULL DAY — 1 MIN PER HOUR", "60", "1 MINUTE ROUNDS"], ["quick", "QUICK — 30 S PER HOUR", "120", "2 MINUTE ROUNDS"],
+                 ["long", "LONG HAUL — 2 MIN PER HOUR", "180", "3 MINUTE ROUNDS"]];
+const NROWS = 5;   // the mode list + EDITION · DEMAND · SCREENS · LENGTH
+let sel = 0, row = 0, ed = (Q.get("skin") || "school") === "diner" ? 1 : 0, dem = 0, scr = 0, len = 0;
+{ const s = (Q.get("sel") || "").split(","); if (s.length >= 4) { sel = +s[0] || 0; ed = +s[1] || 0; dem = +s[2] || 0; scr = +s[3] || 0; len = +s[4] || 0; } }
+const selStr = (i) => [i, ed, dem, scr, len].join(",");
 const skin = () => EDITIONS[ed][0];
 function launchUrl(i = sel) {
   const m = MODES[i], p = new URLSearchParams({ art: "3d", shell: "1" });
   if (m.page) {   // a view with its own page (diner set; no screens / edition choice): the demand dial still applies
     for (const [k, v] of Object.entries(m.q)) p.set(k, v);
     if (DEMANDS[dem][0]) p.set("mode", DEMANDS[dem][0]);
-    p.set("label", m.name); p.set("sel", [i, ed, dem, scr].join(",")); return m.page + "?" + p.toString(); }
+    if (m.id === "speed") p.set("secs", LENGTHS[len][2]);
+    p.set("label", m.name); p.set("sel", selStr(i)); return m.page + "?" + p.toString(); }
   const sc = SCREENS[scr][0] || String(m.screens); p.set("screens", m.battle ? "2" : sc);
   if (skin() === "school") p.set("skin", "school");
   for (const [k, v] of Object.entries(m.q)) p.set(k, v);
   if (DEMANDS[dem][0] && !m.battle) p.set("mode", DEMANDS[dem][0]);
+  if (LENGTHS[len][0] && !m.battle) p.set("length", LENGTHS[len][0]);
   if (PMCast.ink) p.set("cast", "ink");
-  p.set("label", m.name); p.set("sel", [i, ed, dem, scr].join(","));
+  p.set("label", m.name); p.set("sel", selStr(i));
   return "kitchen.html?" + p.toString().replace("battle=&", "battle&").replace(/battle=$/, "battle");
 }
 function launch() { audio.win && audio.win(); state = "launch"; t0 = now(); setTimeout(() => { location.href = launchUrl(); }, 420); }
@@ -119,13 +132,14 @@ function act(a) {
   if (state !== "menu") return;
   if (a === "back") return go("title");
   if (a === "up") { if (row > 0) row--; else sel = (sel + MODES.length - 1) % MODES.length; audio.spatula(); }
-  else if (a === "down") { if (row > 0) row = (row + 1) % 4; else sel = (sel + 1) % MODES.length; audio.spatula(); }
-  else if (a === "tab") { row = (row + 1) % 4; audio.spatula(); }
+  else if (a === "down") { if (row > 0) row = (row + 1) % NROWS; else sel = (sel + 1) % MODES.length; audio.spatula(); }
+  else if (a === "tab") { row = (row + 1) % NROWS; audio.spatula(); }
   else if (a === "left" || a === "right") { const d = a === "left" ? -1 : 1;
     if (row === 0) { sel = (sel + MODES.length + d) % MODES.length; }
     else if (row === 1) { ed = (ed + EDITIONS.length + d) % EDITIONS.length; PMCine.init({ skin: skin() }); }
     else if (row === 2) dem = (dem + DEMANDS.length + d) % DEMANDS.length;
-    else scr = (scr + SCREENS.length + d) % SCREENS.length; audio.spatula(); }
+    else if (row === 3) scr = (scr + SCREENS.length + d) % SCREENS.length;
+    else len = (len + LENGTHS.length + d) % LENGTHS.length; audio.spatula(); }
   else if (a === "ok") { if (row === 0) launch(); else row = 0; }
 }
 addEventListener("keydown", (e) => {
@@ -135,7 +149,7 @@ addEventListener("keydown", (e) => {
   act(map[k] || "any"); e.preventDefault();
 });
 cv.addEventListener("pointerdown", (e) => { const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height;
-  if (state === "menu") { for (let i = 0; i < MODES.length; i++) { const ry = 158 + i * 64; if (x > 60 && x < 560 && y > ry && y < ry + 56) { if (sel === i && row === 0) return act("ok"); sel = i; row = 0; audio.spatula(); return; } }
+  if (state === "menu") { for (let i = 0; i < MODES.length; i++) { const ry = 150 + i * 58; if (x > 60 && x < 560 && y > ry && y < ry + 56) { if (sel === i && row === 0) return act("ok"); sel = i; row = 0; audio.spatula(); return; } }
     for (let r2 = 1; r2 < 4; r2++) { const ry = 560 + (r2 - 1) * 40; if (x > 620 && x < 1220 && y > ry - 26 && y < ry + 10) { row = r2; return act(x > 920 ? "right" : "left"); } } return; }
   if (state === "results") return act(x < W / 2 ? "ok" : "alt");
   act("ok"); });
@@ -168,21 +182,25 @@ function titlePlate(t, dim = 0.32) {   // (1110 r4) the title shot IN the 3D kit
   const im = skin() === "school" ? ART.titleH : ART.titleD;
   if (!ok(im)) return bgPlate(t, 0.5);
   const k = 1.04 + 0.04 * Math.sin(t / 9000), dx = 18 * Math.sin(t / 13000);
-  ctx.save(); ctx.translate(W / 2 + dx, H / 2); ctx.scale(k, k); ctx.drawImage(im, -W / 2, -H / 2, W, H); ctx.restore();
+  ctx.save(); ctx.translate(W / 2 + dx, H / 2); ctx.scale(k, k); ctx.drawImage(im, -W / 2, -H / 2, W, H);
+  if (skin() === "school" && globalThis.PMSigns) PMSigns.draw(ctx, "heroes_title", { x: -W / 2, y: -H / 2, w: W, h: H });   // (1112) re-lettered plates
+  ctx.restore();
   const g = ctx.createLinearGradient(0, 0, W, 0); g.addColorStop(0, `rgba(8,4,14,${dim + 0.35})`); g.addColorStop(0.45, `rgba(8,4,14,${dim})`); g.addColorStop(1, `rgba(8,4,14,${dim * 0.6})`);
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
   const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, W * 0.75); vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,.6)");
   ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
 }
 function logo(cx, y, w) {
-  if (skin() === "school" && ok(ART.logoH)) { const sw = ART.logoH.naturalWidth * 0.655, sh = ART.logoH.naturalHeight, h = w * sh / sw;
+  if (skin() === "school" && ok(ART.logoH)) { const sw = ART.logoH.naturalWidth * 0.64,   /* (1112) x>0.64 = the OLD Patty's spatula */ sh = ART.logoH.naturalHeight, h = w * sh / sw;
     ctx.drawImage(ART.logoH, 0, 0, sw, sh, cx - w / 2, y, w, h); return h; }
   if (ok(ART.logoD)) { const h = w * ART.logoD.naturalHeight / ART.logoD.naturalWidth;
     ctx.save(); ctx.shadowColor = "rgba(255,240,200,.9)"; ctx.shadowBlur = 18; ctx.drawImage(ART.logoD, cx - w / 2, y, w, h); ctx.restore(); return h; }
   T("PATTY MELT", cx, y + 80, 90, "#ffd23f", "center", 10); return 100;
 }
 const hero = (who, pose) => PMCast.hero(skin() === "school" ? "school" : "diner", who, pose);
-const heroH = (who, pose) => PMCast.hero("school", who, pose);    // HEROES Patty = the front door's star in both editions
+// (1112) each edition shows ITS OWN Patty now that Joe painted the DINER Patty (white/red waitress, paper hat): HEROES
+// Patty no longer headlines the diner door. Diner Chrissy/Billy = paint-overs of the HEROES paintings (1112).
+const heroH = (who, pose) => hero(who, pose);
 function blink(t, hz = 1.6) { return Math.floor(t / 1000 * hz) % 2 === 0; }
 
 function drawSplash(t) {      // the Castle Grillscreen ident: Ken Burns push, flames flicker in, flash to the title
@@ -201,13 +219,16 @@ function drawTitle(t, attractMode = false) {
   FX.speedLines(ctx, W * 0.3, H * 0.58, H * 0.2, W * 0.9, 56, t, [NEON.pink, NEON.cyan, NEON.violet, C.b], 0.20, 2);
   FX.slashBand(ctx, H * 0.63, H * 0.42, H * 0.05, 1, "rgba(0,0,0,0.0)", C.b);
   FX.halftone(ctx, 0, H * 0.42, W, H * 0.44, C.b, 0.06, 16);
+  { const bw = 560, by = H * 0.6 - 34, bh = H * 0.74 - by, g = ctx.createLinearGradient(W * 0.56 - bw / 2, 0, W * 0.56 + bw / 2, 0);   // (1112) a dark band
+    g.addColorStop(0, "rgba(6,4,12,0)"); g.addColorStop(0.18, "rgba(6,4,12,.62)"); g.addColorStop(0.82, "rgba(6,4,12,.62)"); g.addColorStop(1, "rgba(6,4,12,0)");
+    ctx.fillStyle = g; ctx.fillRect(W * 0.56 - bw / 2, by, bw, bh); }   // (under the cast) so the menu lines never sit on busy kitchen art
   const s1 = FX.squashAt(300, t, 0.2), s2 = FX.squashAt(600, t, 0.2), s3 = FX.squashAt(900, t, 0.2);
   const pIn = FX.outBack(FX.seg(t, 0, 380)), cIn = FX.outBack(FX.seg(t, 250, 650)), bIn = FX.outBack(FX.seg(t, 600, 1000));
   FX.drawCast(ctx, hero("chrissy", "cheer"), W * 0.79 + (1 - cIn) * W * 0.5, H * 1.01, H * 0.7, s2[1], s2[0] * PMCine.breathe("c"), true, P2, 0.95);
   FX.drawCast(ctx, hero("billy", "serve"), W * 0.6, H * 1.02 + (1 - bIn) * H * 0.5, H * 0.42, s3[1], s3[0], true, null);
   FX.drawCast(ctx, heroH("patty", "cheer"), W * 0.2 - (1 - pIn) * W * 0.5, H * 1.01, H * 0.88, s1[1], s1[0] * PMCine.breathe("p"), false, C.b);
   const lh = logo(W * 0.56, H * 0.06, skin() === "school" ? 560 : 600);
-  T(skin() === "school" ? "THE 3D EDITION · THE CAFETERIA" : "THE 3D EDITION · BIG GRILL ENERGY", W * 0.56, H * 0.06 + lh + 30, 26, C.cream, "center", 5);
+  T(skin() === "school" ? "THE 3D EDITION · THE CAFETERIA" : "THE 3D EDITION · THE DINER", W * 0.56, H * 0.06 + lh + 30, 26, C.cream, "center", 5);
   if (blink(t)) T(attractMode ? "INSERT 25¢ · PRESS START" : "PRESS  START", W * 0.56, H * 0.6, 44, C.b, "center", 8);
   T("◄ ►  EDITION: " + EDITIONS[ed][1] + "  ◄ ►", W * 0.56, H * 0.67, 18, C.cream, "center", 4);
   T("two spatulas · no hands on the food · it's all about food safety", W * 0.56, H * 0.72, 15, "rgba(243,230,200,.8)", "center", 3);
@@ -220,7 +241,7 @@ function drawMenu(t) {
   T("PICK YOUR SHIFT", 60, 112, 40, C.b, "left", 7);
   T(skin() === "school" ? "PATTY MELT'S HEROES · 3D" : "PATTY MELT · 3D", 60, 72, 20, C.cream, "left", 4);
   for (let i = 0; i < MODES.length; i++) {
-    const ry = 158 + i * 64, on = i === sel, j = on ? PMCine.squash("menu", sel, 0.08) : { sx: 1, sy: 1 };
+    const ry = 150 + i * 58, on = i === sel, j = on ? PMCine.squash("menu", sel, 0.08) : { sx: 1, sy: 1 };
     ctx.save(); ctx.translate(60 + (on ? 18 : 0), ry + 28); ctx.scale(j.sx, j.sy);
     ctx.beginPath(); ctx.moveTo(-0, -28); ctx.lineTo(500, -28); ctx.lineTo(486, 28); ctx.lineTo(-14, 28); ctx.closePath();
     ctx.fillStyle = on ? (row === 0 ? C.a : "rgba(60,30,40,.9)") : "rgba(10,6,14,.72)"; ctx.fill();
@@ -240,10 +261,11 @@ function drawMenu(t) {
   T(m.name, 640, 188, 30, C.b, "left", 5, m.battle ? 300 : 400);
   m.desc.forEach((l, i) => T(l, 640, 222 + i * 24, 16, C.cream, "left", 3, m.battle ? 300 : 400));
   // the settings rows
-  ctx.fillStyle = "rgba(8,4,14,.8)"; ctx.fillRect(610, 520, 620, 130);
+  ctx.fillStyle = "rgba(8,4,14,.8)"; ctx.fillRect(610, 476, 620, 172);
   const rows = [["EDITION", m.page ? "THE DINER (this view)" : EDITIONS[ed][1]], ["DEMAND", m.battle && !m.page ? "MELTDOME RULES" : DEMANDS[dem][1]],
-    ["SCREENS", m.page ? "ONE SCREEN — ITS OWN VIEW" : m.battle ? "TWO SCREENS" : (SCREENS[scr][0] ? SCREENS[scr][1] : (m.screens === 2 ? "TWO SCREENS (best)" : "ONE SCREEN (best)"))]];
-  rows.forEach(([k, v], i) => { const ry = 560 + i * 40, on = row === i + 1;
+    ["SCREENS", m.page ? "ONE SCREEN — ITS OWN VIEW" : m.battle ? "TWO SCREENS" : (SCREENS[scr][0] ? SCREENS[scr][1] : (m.screens === 2 ? "TWO SCREENS (best)" : "ONE SCREEN (best)"))],
+    ["LENGTH", m.id === "speed" ? LENGTHS[len][3] : m.battle ? "THE BELL (90 s)" : LENGTHS[len][1]]];
+  rows.forEach(([k, v], i) => { const ry = 516 + i * 40, on = row === i + 1;
     if (on) { ctx.fillStyle = C.a; ctx.fillRect(614, ry - 26, 612, 36); }
     T(k, 630, ry, 18, on ? "#fff" : "rgba(243,230,200,.6)", "left", 3); T("◄  " + v + "  ►", 1214, ry, 20, on ? C.b : C.cream, "right", 4); });
   T("▲▼ pick  ·  ◄► change  ·  TAB settings  ·  SPACE / A = COOK  ·  ESC back", W / 2, H - 22, 15, "rgba(243,230,200,.75)", "center", 3);
@@ -324,12 +346,12 @@ function drawAttract(t) {
 function drawResults(t) {
   const r = results || {}, C = COLS[r.skin === "school" ? "school" : skin()];
   bgPlate(t, 0.72);
-  const battle = r.mode === "battle", names = ["PATTY", "CHRISSY"];
+  const battle = r.mode === "battle" || r.mode === "speed", names = ["PATTY", "CHRISSY"];
   let head, sub, pics;
-  if (battle) { const w = r.winner; head = w < 0 ? "A DEAD HEAT!" : names[w] + " WINS THE MELTDOME";
-    sub = (r.a || 0) + " — " + (r.b || 0) + " clean orders";
+  if (battle) { const w = r.winner; head = w < 0 ? "A DEAD HEAT!" : names[w] + (r.mode === "speed" ? " TAKES THE SPEED BATTLE" : " WINS THE MELTDOME");
+    sub = (r.a || 0) + " — " + (r.b || 0) + (r.mode === "speed" ? " rounds" : " clean orders");
     pics = w < 0 ? [["patty", "idle", 0.25, 0.8, P1], ["chrissy", "idle", 0.75, 0.8, P2]] : [[w === 0 ? "patty" : "chrissy", "cheer", w === 0 ? 0.22 : 0.78, 0.98, w === 0 ? P1 : P2], [w === 0 ? "chrissy" : "patty", "idle", w === 0 ? 0.84 : 0.16, 0.6, null]]; }
-  else if (r.outcome === "closing") { head = "CLOSING TIME — YOU MADE IT"; sub = "all twelve shifts. the house got fed."; pics = [["patty", "cheer", 0.2, 0.98, C.b], ["chrissy", "cheer", 0.8, 0.8, P2], ["billy", "serve", 0.62, 0.5, null]]; }
+  else if (r.outcome === "closing") { head = "CLOSING TIME — YOU MADE IT"; sub = "open to close. the house got fed."; pics = [["patty", "cheer", 0.2, 0.98, C.b], ["chrissy", "cheer", 0.8, 0.8, P2], ["billy", "serve", 0.62, 0.5, null]]; }
   else if (r.outcome === "break") { head = r.skin === "school" ? "LUNCH BELL — WE FELL BEHIND" : "BILLY NEEDS A BREAK"; sub = "you made it to shift " + (r.shift || 1) + (r.shiftName ? " — " + r.shiftName : ""); pics = [["patty", "idle", 0.16, 0.8, C.b], ["billy", "slack", 0.84, 0.55, NEON.violet]]; }
   else { head = "SHIFT'S OVER"; sub = r.shiftName ? "you left on shift " + r.shift + " — " + r.shiftName : ""; pics = [["patty", "idle", 0.16, 0.8, C.b]]; }
   FX.speedLines(ctx, W * pics[0][2], H * 0.6, H * 0.2, W * 0.9, 48, t, [NEON.pink, NEON.cyan, NEON.violet, C.b], 0.3, 5);
@@ -352,6 +374,7 @@ function frame() {
   const t = now() - t0;
   pollPads();
   if ((state === "title" || state === "menu") && now() - idleT > 30000) go("attract");
+  if (globalThis.PMHiDPI) PMHiDPI.begin(ctx);
   ctx.save();
   if (state === "splash") drawSplash(t);
   else if (state === "title") drawTitle(t);

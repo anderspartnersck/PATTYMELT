@@ -33,6 +33,7 @@
   <div id="tag">MELTDOME · DINNER SERVICE — most CLEAN orders when the bell rings WINS · P1 A/D·F/C/V  P2 J/L·I/K/M · R = rematch · (?cutthroat=1 adds sabotage)</div>
 </div></div>
 <script src="engine.js"></script>
+<script src="lib/hidpi.js?v=1"></script>
 <script src="sprites.js"></script>
 <script src="lib/audio.js"></script>
 <script src="../assets/art3d/stages/stages.manifest.js"></script>
@@ -53,6 +54,7 @@ function sideSfx(side) {                              // success-gated cook soun
 }
 const cv = document.getElementById("screen"), ctx = cv.getContext("2d");
 const W = cv.width, H = cv.height, MID = W / 2;
+if (globalThis.PMHiDPI) PMHiDPI.setup(cv, W, H);   // (1112 art pass) device-res backing store, W×H stays the layout
 const Q = new URLSearchParams(location.search);
 const MODE = Q.get("mode") || "arcade", GRILL = parseInt(Q.get("grill") || "6", 10);
 // HELL'S KITCHEN service race: a fixed dinner-service clock; most CLEAN service when the bell rings wins.
@@ -174,28 +176,29 @@ function stageCol(p) {
 }
 function drawSide(s, x0, w) {
   const g = s.g, pad = 28;
-  // header
-  txt(s.name, x0 + pad, 52, 30, s.color, "left", 800);
-  txt(`SCORE ${String(g.score).padStart(6, "0")}`, x0 + w - pad, 44, 20, COL.cream, "right", 700);
-  txt(`${g.cfg.label} · DAY ${g.cfg.day} · R${g.rnd}`, x0 + w - pad, 68, 14, COL.amber, "right", 600);
-  txt(`ORDERS ${String(g.orders_left).padStart(2)}   COMBO x${PM.combo_mult(g.combo)}`, x0 + pad, 74, 15, COL.cream, "left", 600);
+  // header — inset clear of the centre gutter (MID±34), which used to clip SCORE / ORDERS / SERVED (1112)
+  const hl = x0 + pad + (x0 > 0 ? 36 : 0), hr = x0 + w - pad - (x0 > 0 ? 0 : 36);
+  txt(s.name, hl, 52, 30, s.color, "left", 800);
+  txt(`SCORE ${String(g.score).padStart(6, "0")}`, hr, 44, 20, COL.cream, "right", 700);
+  txt(`${g.cfg.label} · DAY ${g.cfg.day} · R${g.rnd}`, hr, 68, 14, COL.amber, "right", 600);
+  txt(`ORDERS ${String(g.orders_left).padStart(2)}   COMBO x${PM.combo_mult(g.combo)}`, hl, 74, 15, COL.cream, "left", 600);
   // THE WEEDS bar
-  const wf = Math.min(1, g.wait / PM.WAIT_FULL), bw = w - pad * 2;
-  ctx.fillStyle = "#241c12"; ctx.fillRect(x0 + pad, 88, bw, 12);
-  ctx.fillStyle = wf >= 0.78 ? COL.bad : wf >= 0.5 ? COL.amber : COL.good; ctx.fillRect(x0 + pad, 88, bw * wf, 12);
+  const wf = Math.min(1, g.wait / PM.WAIT_FULL), bw = hr - hl;
+  ctx.fillStyle = "#241c12"; ctx.fillRect(hl, 88, bw, 12);
+  ctx.fillStyle = wf >= 0.78 ? COL.bad : wf >= 0.5 ? COL.amber : COL.good; ctx.fillRect(hl, 88, bw * wf, 12);
   // SERVICE scoreboard (the judged metric is SCORE above; these are the supporting stats)
   const clean = Math.max(0, g.served - g.sent_back);
   txt(`SERVED ${g.served}  ·  CLEAN ${clean}  ·  BURNT/LOST ${g.fails}` + (s.eightySixed ? `  ·  86×${s.eightySixed}` : ""),
-      x0 + pad, 122, 13, COL.amber, "left", 600);
+      hl, 122, 13, COL.amber, "left", 600);
   if (CUTTHROAT) {                                  // the optional sabotage layer — charge + state
     const sf = s.sab / SAB_READY;
-    ctx.fillStyle = "#241c12"; ctx.fillRect(x0 + pad, 130, bw, 6);
-    ctx.fillStyle = s.sab >= SAB_READY ? COL.cheese : "#9a6a3a"; ctx.fillRect(x0 + pad, 130, bw * Math.min(1, sf), 6);
+    ctx.fillStyle = "#241c12"; ctx.fillRect(hl, 130, bw, 6);
+    ctx.fillStyle = s.sab >= SAB_READY ? COL.cheese : "#9a6a3a"; ctx.fillRect(hl, 130, bw * Math.min(1, sf), 6);
     let st = "", sc = COL.cheese;
     if (s.incoming) { st = "◀ DEFEND!  F=RUSH C=GUM V=SCORCH"; sc = COL.bad; }
     else if (s.primeT > 0) { st = "PRIMED! pick  F=RUSH C=GUM V=SCORCH"; sc = COL.cheese; }
     else if (s.sab >= SAB_READY) { st = "⚡ SABOTAGE READY — double-tap BILLY"; sc = COL.cheese; }
-    if (st) txt(st, x0 + pad, 148, 12, sc, "left", 700);
+    if (st) txt(st, hl, 148, 12, sc, "left", 700);
   }
   if (s.flashT > 0) txt(s.flash, x0 + w - pad, 122, 15, COL.cream, "right", 800);
   // grill: 2 rows x ceil(n/2) cols
@@ -222,6 +225,7 @@ function drawSide(s, x0, w) {
   if (wf >= 0.9) { ctx.fillStyle = `rgba(180,20,12,${(0.10 + (wf - 0.9) * 2).toFixed(2)})`; ctx.fillRect(x0, 0, w, H); }
 }
 function render() {
+  if (globalThis.PMHiDPI) PMHiDPI.begin(ctx);
   ctx.fillStyle = "#0a0806"; ctx.fillRect(0, 0, W, H);
   if (st3d()) PMStages.plate(ctx, "meltdome");   // ?art=3d: the rendered MeltDome (HUD bands are dark on the plate)
   drawSide(sides[0], 0, MID);

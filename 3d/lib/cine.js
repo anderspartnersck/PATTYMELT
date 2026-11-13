@@ -85,6 +85,7 @@
   // a cast picture by its FEET (x, footY), height h, with squash (sx, sy) and an optional mirror + ink outline glow
   function drawCast(ctx, im, x, footY, h, sx = 1, sy = 1, mirror = false, glow = null, alpha = 1) {
     if (!ok(im)) return false;
+    if (mirror && /cast_joe\//.test(im.currentSrc || im.src)) mirror = false;   // (1112) Joe's paintings carry lettering (COUGARS, name tags): never flip
     const w = h * im.naturalWidth / im.naturalHeight;
     ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, footY); ctx.scale((mirror ? -1 : 1) * sx, sy);
     if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = F(26); }
