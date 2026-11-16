@@ -73,9 +73,12 @@
   }
   function drawClock(ctx, x, y, r, min, ph, txt, bump, frame) {
     ctx.save();
-    const art = propC(ctx, "clock", [], frame ? frame[0] + frame[2] / 2 : x, frame ? frame[1] + frame[3] / 2 : y, frame ? frame[3] : r * 2.2);
-    if (art) { ctx.shadowColor = ph.col; ctx.shadowBlur = r * 0.6; ctx.strokeStyle = ph.col; ctx.lineWidth = Math.max(1.5, r * 0.1);
-      ctx.beginPath(); ctx.arc(x, y, r * 1.1, 0, 7); ctx.stroke(); ctx.shadowBlur = 0; }
+    // (1116) the Blender clock, sized so ITS dial matches the hands' radius (diner: a square case, dial ≈ 0.62 of the
+    // height; HEROES: a round school clock, dial ≈ 0.86); the hour's neon glows softly behind it instead of a ring.
+    const dialK = root.PMProps && root.PMProps.skin !== "diner" ? 0.86 : 0.62;
+    if (root.PMProps && root.PMProps.spr(root.PMProps.key("clock"))) { ctx.shadowColor = ph.col; ctx.shadowBlur = r * 0.9; ctx.fillStyle = ph.col;
+      ctx.globalAlpha = 0.35; ctx.beginPath(); ctx.arc(x, y, r * 1.05, 0, 7); ctx.fill(); ctx.globalAlpha = 1; ctx.shadowBlur = 0; }
+    const art = propC(ctx, "clock", [], x, y, (r * 2) / dialK);
     if (art) {} else if (frame) {                                  // the square case (chrome, a soft wall shadow under it)
       const [fx, fy, fw, fh] = frame;
       ctx.fillStyle = "rgba(0,0,0,.35)"; rrect(ctx, fx + 1.5, fy + 2.5, fw, fh, 5); ctx.fill();
@@ -228,6 +231,44 @@
   }
 
   // o: { DIN, txt, door:{x,y}, takeout:{x,y}, audio, live, clockAt?:{x,y,r} }
+  // (1116, Q838) THE LATE BUMP — the TOUR BUS pulls up. A 4.6 s cut-in across the dining room (the house cut-in
+  // vocabulary: a dark band, like BIG GRILL ENERGY): the Blender bus rolls in from the right, honks, the late-lunchers
+  // file off it (the sidewalk crowd sprites), and it pulls away left. Render-only; fires once, when the engine bumps.
+  const BUS_DUR = 4.6;
+  let _busG = null, _busT = -1;
+  function horn(a) {
+    if (!a || !a.on || !a.on() || !a._tone) return;
+    const t = a.ctx.currentTime;
+    for (let i = 0; i < 2; i++) { a._tone(t + i * 0.34, 311, 311, 0.26, "sawtooth", 0.05); a._tone(t + i * 0.34, 392, 392, 0.26, "sawtooth", 0.04); }
+  }
+  function drawBus(ctx, D, T, t, txt) {
+    const P = root.PMProps, key = P ? P.key("bus") : null, sp = P && P.spr(key);
+    const fade = Math.min(1, t / 0.3, (BUS_DUR - t) / 0.4), by = D.y + D.h * 0.70, bh = 128;
+    ctx.save(); ctx.globalAlpha = Math.max(0, fade);
+    ctx.fillStyle = "rgba(10,6,14,.86)"; ctx.fillRect(D.x, by - bh / 2, D.w, bh);
+    ctx.fillStyle = "#e0a92e"; ctx.fillRect(D.x, by - bh / 2, D.w, 3); ctx.fillRect(D.x, by + bh / 2 - 3, D.w, 3);
+    ctx.fillStyle = "#3a3640"; ctx.fillRect(D.x, by + 38, D.w, 10);                              // the kerb
+    ctx.beginPath(); ctx.rect(D.x, by - bh / 2, D.w, bh); ctx.clip();
+    const stopX = D.x + D.w * 0.56, ease = (u) => 1 - Math.pow(1 - Math.min(1, Math.max(0, u)), 3);
+    const bx = t < 1.3 ? D.x + D.w + 170 - (D.x + D.w + 170 - stopX) * ease(t / 1.3)
+             : t < 3.3 ? stopX + (t > 1.3 && t < 1.5 ? Math.sin((t - 1.3) * 60) * 1.5 : 0)
+             : stopX - (stopX - (D.x - 200)) * Math.pow(Math.min(1, (t - 3.3) / 1.3), 2);
+    // the late-lunchers walk off the bus toward the door (right), from 1.5 s
+    for (let k = 0; k < 6; k++) {
+      const u = t - 1.5 - k * 0.22; if (u < 0) continue;
+      const px = stopX + 20 + u * 120, py = by + 40, ck = P && P.key("crowd", k % 7, Math.floor(T * 5 + k) % 2), cs = ck && P.spr(ck);
+      if (px > D.x + D.w + 20) continue;
+      if (!(cs && P.draw(ctx, ck, px, py, 44 / cs.h))) { ctx.fillStyle = "#1c1424"; ctx.fillRect(px - 5, py - 40, 10, 40); ctx.beginPath(); ctx.arc(px, py - 45, 6, 0, 7); ctx.fill(); }
+    }
+    if (!(sp && P.draw(ctx, key, bx, by + 40, 92 / sp.h, { flip: true }))) {                 // placeholder: a cream coach
+      ctx.fillStyle = "#efe9dc"; ctx.fillRect(bx - 130, by - 44, 260, 70); ctx.fillStyle = "#d0202a"; ctx.fillRect(bx - 130, by - 2, 260, 6);
+      ctx.fillStyle = "#6c7a86"; for (let i = 0; i < 7; i++) ctx.fillRect(bx - 118 + i * 34, by - 36, 26, 22);
+      ctx.fillStyle = "#1a1a1a"; ctx.beginPath(); ctx.arc(bx - 80, by + 28, 12, 0, 7); ctx.arc(bx + 80, by + 28, 12, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+    if (txt && t > 0.9 && t < BUS_DUR - 0.3) { ctx.save(); ctx.globalAlpha = Math.max(0, fade);
+      txt("THE LATE BUMP", D.x + 18, by - 8, 22, "#ffd23f", "left", 900); txt("A TOUR BUS!", D.x + 18, by + 16, 16, "#f3e6c8", "left", 800); ctx.restore(); }
+  }
   function draw(ctx, pm, g, o) {
     const min = clockOf(pm, g);
     if (min == null || !g.service) return;
@@ -244,6 +285,10 @@
     }
     _cue = cue; _cueKind = wave.kind;
     drawShelf(ctx, pm, g, o.takeout, T);
+    if (g.service.day && g.service.day.bumped) {                     // (Q838) THE LATE BUMP: the tour bus, once per game
+      if (_busG !== g) { _busG = g; _busT = T; if (o.live) horn(o.audio); }
+      if (T - _busT < BUS_DUR) drawBus(ctx, D, T, T - _busT, o.txt);
+    }
     // the breather: the room exhales — a faint cool wash while the meter is recovering fast
     const br = pm.day_breather(g) && pm.buried_index(g) < pm.WAIT_COMFORT && g.wait > 0;
     if (br) { ctx.fillStyle = "rgba(120,200,220,0.05)"; ctx.fillRect(D.x, D.y, D.w, D.h); }

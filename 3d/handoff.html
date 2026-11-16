@@ -32,7 +32,7 @@
 <script src="lib/stages3d.js"></script>
 <script src="../assets/art3d/props/props.manifest.js"></script>
 <script src="lib/props.js?v=2"></script>
-<script src="lib/scoring.js?v=2"></script>
+<script src="lib/scoring.js?v=3"></script>
 <script src="lib/pausekit.js?v=1"></script>
 <script>
 "use strict";
@@ -197,7 +197,7 @@ function render() {
   if (scoreFeed && !game.won && !game.over) { const now = performance.now();
     scoreFeed.take(game, (at) => (at && at[0] === "grill" && slotXY[at[1]]) || { x: W / 2, y: gy + gh / 2 }, now);
     scoreFeed.draw(ctx, now, txt, { top: 140 }); }
-  if (game.won) { if (globalThis.PMScore) PMScore.drawCard(ctx, game, W, H, txt, { title: "ROUND " + game.rnd + " CLEAR", rank: PMScore.peekRank(game),   // (1116) the emblem breakdown
+  if (game.won) { if (globalThis.PMScore) PMScore.drawCard(ctx, game, W, H, txt, { title: "ROUND " + game.rnd + " CLEAR", rank: PMScore.bank(game, SERVICE_PRACTICE),   // (1116) the emblem breakdown; a cleared round BANKS the house RANK once, like a solo/co-op shift (Q833)
       foot: "press SPACE — " + COOKS[1 - up].name + " is up next" });
     else banner("ROUND CLEAR — press SPACE (" + COOKS[1 - up].name + " is up next)", COL.good); }
   if (game.over) {

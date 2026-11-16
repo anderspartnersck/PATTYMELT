@@ -185,7 +185,7 @@
 <script src="./lib/spatulas.js?v=1"></script>
 <script src="assets/art3d/props/props.manifest.js"></script>
 <script src="./lib/props.js?v=2"></script>
-<script src="./lib/scoring.js?v=2"></script>
+<script src="./lib/scoring.js?v=3"></script>
 <script>
 const pm = globalThis.PM;   // UMD engine — single source, parity-proven vs Python
 
@@ -740,7 +740,10 @@ for (const st of ["idle", "flip", "serve", "cheer"]) {
 for (const st of ["idle", "flip", "cheer"]) {
   const im = new Image(); im.onload = () => { CHRISSY[st] = im; }; im.src = "assets/chars/chrissy-" + st + ".png";
 }
-for (const th of ["diner", "school"]) for (const st of ["slack", "serve", "turn"]) {
+// (1116) only the skins whose files exist: there is no billy-school-*.png yet (it 404'd on every boot); school
+// falls back to the diner art via billyPose(). Add "school" back here when that art lands in assets/chars/.
+const BILLY_SKINS = ["diner"];
+for (const th of BILLY_SKINS) for (const st of ["slack", "serve", "turn"]) {
   const im = new Image(); im.onload = () => { BILLY[th][st] = im; };
   im.src = "assets/chars/billy-" + (th === "school" ? "school-" : "") + st + ".png";
 }
