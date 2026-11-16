@@ -161,8 +161,13 @@ function endRound(w, sudden) {
   else sides.forEach((s) => s.mood = "slump");
   sides.forEach((s) => s.moodT = performance.now() / 1000);
 }
+// (1116 playtest) DRAWN ROUNDS can't run a match forever: two cooks who play the same (CPU v CPU at one level — ?demo&cpu=easy —
+// or a mirrored pair) draw every round on the 45 s sudden-death cap, and no round ever counted. After bestOf + MATCH_EXTRA
+// rounds the match ends on the trophies won so far (level = A DEAD HEAT, which the match card + matchResult() already show).
+const MATCH_EXTRA = 2;
+const matchCapped = () => round >= bestOf + MATCH_EXTRA;
 function nextRound() {
-  if (wins[0] >= need() || wins[1] >= need()) { phase = "matchover"; overT = 0; audio.win(); return; }
+  if (wins[0] >= need() || wins[1] >= need() || matchCapped()) { phase = "matchover"; overT = 0; audio.win(); return; }
   round++; newRound(); phase = "ready"; readyT = 3.2;
 }
 function flash(sd, m) { sd.flash = m; sd.flashT = 14; }
@@ -375,7 +380,7 @@ function drawRoundOver() {
   if (w < 0) otxt("A DRAWN ROUND", MID, 270, 46, COL.cream, "center", 900, 8);
   else otxt(`${sides[w].name} TAKES ROUND ${round}`, MID, 270, 46, sides[w].col, "center", 900, 8);
   txt(`${h[0]} — ${h[1]}` + (h[3] ? "   ·   decided in SUDDEN DEATH" : ""), MID, 306, 22, COL.cream, "center", 800);
-  const done = wins[0] >= need() || wins[1] >= need();
+  const done = wins[0] >= need() || wins[1] >= need() || matchCapped();
   txt(done ? "SPACE — the match" : "SPACE — next round", MID, 350, 16, (overT >> 4) & 1 ? COL.cheese : COL.cream, "center", 800);
 }
 function drawMatchOver() {

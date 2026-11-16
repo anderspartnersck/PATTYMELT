@@ -74,8 +74,8 @@ const CUTTHROAT = Q.get("cutthroat") === "1";
 // carries the result to the front door's RESULTS card. Off by default: the page behaves exactly as before.
 const SHELL = Q.get("shell") === "1";
 function toFront(r) { location.href = "front.html?" + (r ? "results=" + encodeURIComponent(JSON.stringify(r)) + "&" : "menu&") + "sel=" + encodeURIComponent(Q.get("sel") || ""); }
-function battleResult() { const [a, b] = sides, clean = (s) => Math.max(0, s.g.served - s.g.sent_back);
-  const tie = a.g.score === b.g.score && a.g.served === b.g.served && a.g.fails === b.g.fails;
+function battleResult() { const [a, b] = sides, clean = (s) => Math.max(0, tot(s, "served") - tot(s, "sent_back"));
+  const tie = isTie();
   return { mode: "battle", label: Q.get("label") || "MELTDOME", skin: "diner", winner: tie ? -1 : sides.indexOf(winner), a: clean(a), b: clean(b), pa: a.g.score, pb: b.g.score }; }                            // the RPS sabotage layer — OFF by default (clean service race)
 const COL = { cream:"#f3e6c8", cheese:"#ffd23f", amber:"#e0a92e", good:"#7ad17a", bad:"#ff5a4d",
   dim:"#6b5a3a", gridln:"#2a2018", raw:"#c98a5a", seared:"#7c4f2c", melt:"#ffd23f", done:"#e9a23b", burnt:"#3a2418" };
@@ -93,10 +93,16 @@ let gtick = 0;
 
 function makeSide(name, color) {
   return { g: PM.new_game(1, MODE, 1, "diner", GRILL), auto: true, name, color, dead: false, eightySixed: 0, aud: null,
+           carry: { served: 0, sent_back: 0, fails: 0 },   // (1116 playtest) the bell judges the WHOLE service: earlier ticket books' counts
            sab: 0, lastServed: 0, lastBilly: -99, primeT: 0, incoming: null, flash: "", flashT: 0,
            feed: globalThis.PMScore ? PMScore.createFeed() : null, slotXY: [] };   // (1116 Q655) PERFECT/GOOD pops + emblems per cook
 }
 let sides, matchOver, winner, winT;
+// (1116 playtest) advance_round starts a fresh ticket book (served/sent_back/fails back to 0, score carried), so every
+// service stat the bell reads is the side's carry + the current book. Before this the report, the served tiebreak and
+// the front-door RESULTS showed only the LAST book (e.g. "6 clean" after 30 plates).
+const tot = (s, k) => s.carry[k] + s.g[k];
+const isTie = () => sides[0].g.score === sides[1].g.score && tot(sides[0], "served") === tot(sides[1], "served") && tot(sides[0], "fails") === tot(sides[1], "fails");
 // (1116) the PAUSE sheet — P / Esc (lib/pausekit.js): resume · rematch · controls · quit to the menu (shell)
 const PAUSE = PMPause.create({ title: "MELTDOME — PAUSED",
   items: () => [["resume", "RESUME"], ["rematch", "REMATCH"], ["controls", "CONTROLS"]].concat(SHELL ? [["quit", "QUIT TO MENU"]] : []),
@@ -145,7 +151,7 @@ function step() {
   for (const s of sides) {
     const g = s.g;
     if (!g.over && !g.won) { if (s.auto) PM.auto_step(g); PM.tick(g); }
-    else if (g.won) s.g = PM.advance_round(g, GRILL, null, 0);   // cleared the ticket book → keep the orders flowing to the bell
+    else if (g.won) { for (const k in s.carry) s.carry[k] += g[k]; s.g = PM.advance_round(g, GRILL, null, 0); s.lastServed = 0; }   // cleared the ticket book → keep the orders flowing to the bell
     else if (g.over) {                                           // BURIED — in a service race you don't die, you RESET the line (86'd)
       s.eightySixed++; sflash(s, "86'D — RESET THE LINE"); audio.buzzer();
       g.over = false; g.wait = PM.WAIT_FULL * 0.5; g.billy = PM.BILLY_FULL;   // same safe recovery as the 1P continue
@@ -168,7 +174,7 @@ function ringBell() {
   audio.servicebell(); audio.win();
   // SERVICE judging: the engine score already rewards clean serves + the in-order combo + the perfect-sear/melt
   // quality bonus, and is docked by lost orders — so it IS the service score. Tiebreak on serves, then fewer fails.
-  winner = [...sides].sort((a, b) => (b.g.score - a.g.score) || (b.g.served - a.g.served) || (a.g.fails - b.g.fails))[0];
+  winner = [...sides].sort((a, b) => (b.g.score - a.g.score) || (tot(b, "served") - tot(a, "served")) || (tot(a, "fails") - tot(b, "fails")))[0];
 }
 
 // ---------- render: two grills, the center VS strip, the winner banner ----------
@@ -197,8 +203,8 @@ function drawSide(s, x0, w) {
   ctx.fillStyle = "#241c12"; ctx.fillRect(hl, 88, bw, 12);
   ctx.fillStyle = wf >= 0.78 ? COL.bad : wf >= 0.5 ? COL.amber : COL.good; ctx.fillRect(hl, 88, bw * wf, 12);
   // SERVICE scoreboard (the judged metric is SCORE above; these are the supporting stats)
-  const clean = Math.max(0, g.served - g.sent_back);
-  txt(`SERVED ${g.served}  ·  CLEAN ${clean}  ·  BURNT/LOST ${g.fails}` + (s.eightySixed ? `  ·  86×${s.eightySixed}` : ""),
+  const clean = Math.max(0, tot(s, "served") - tot(s, "sent_back"));
+  txt(`SERVED ${tot(s, "served")}  ·  CLEAN ${clean}  ·  BURNT/LOST ${tot(s, "fails")}` + (s.eightySixed ? `  ·  86×${s.eightySixed}` : ""),
       hl, 122, 13, COL.amber, "left", 600);
   if (CUTTHROAT) {                                  // the optional sabotage layer — charge + state
     const sf = s.sab / SAB_READY;
@@ -276,13 +282,13 @@ function render() {
     }
     ctx.fillStyle = "rgba(10,5,4,0.84)"; ctx.fillRect(0, H / 2 - 96, W, 200);
     txt("🔔 SERVICE! — THE BELL RINGS", MID, H / 2 - 58, 18, COL.amber, "center", 800);
-    const tie = sides[0].g.score === sides[1].g.score && sides[0].g.served === sides[1].g.served && sides[0].g.fails === sides[1].g.fails;   // (1116) a dead heat is a draw, not a Patty win
+    const tie = isTie();   // (1116) a dead heat is a draw, not a Patty win
     txt(tie ? "DEAD HEAT — A DRAW" : `${winner.name} WINS SERVICE`, MID, H / 2 - 20, 40, tie ? COL.cheese : winner.color, "center", 800);
     // the SERVICE REPORT — each side's numbers, Hell's-Kitchen style
-    const card = (s, x) => { const g = s.g, clean = Math.max(0, g.served - g.sent_back);
+    const card = (s, x) => { const g = s.g, clean = Math.max(0, tot(s, "served") - tot(s, "sent_back"));
       txt(s.name, x, H / 2 + 14, 16, s.color, "center", 800);
       txt(`SCORE ${g.score}`, x, H / 2 + 36, 14, COL.cream, "center", 700);
-      txt(`${clean} clean · ${g.fails} burnt/lost${s.eightySixed ? ` · 86×${s.eightySixed}` : ""}`, x, H / 2 + 56, 12, COL.amber, "center", 600);
+      txt(`${clean} clean · ${tot(s, "fails")} burnt/lost${s.eightySixed ? ` · 86×${s.eightySixed}` : ""}`, x, H / 2 + 56, 12, COL.amber, "center", 600);
       if (globalThis.PMScore) { const b = PMScore.breakdown(g), top = PMScore.CATS.map((c) => b.cats[c]).sort((p, q) => q.tier - p.tier)[0];   // (1116) the shift grade + best emblem
         txt(`GRADE ${b.grade}` + (top && top.tier ? ` · ${top.emblem}` : ""), x, H / 2 + 74, 13, b.grade[0] === "A" ? COL.cheese : COL.cream, "center", 800); } };
     card(sides[0], MID - 240); card(sides[1], MID + 240);
