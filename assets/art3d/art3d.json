@@ -2970,22 +2970,22 @@
    "cheese": "cast/chrissyJ-cheese.webp"
   },
   "billy": {
-   "serve": "cast/billyT-serve.webp",
-   "slack": "cast/billyT-slack.webp",
-   "turn": "cast/billyT-turn.webp",
+   "serve": "cast/billyD-serve.webp",
+   "slack": "cast/billyD-slack.webp",
+   "turn": "cast/billyD-turn.webp",
    "walk": [
-    "cast/billyT-walk-0.webp",
-    "cast/billyT-walk-1.webp",
-    "cast/billyT-walk-2.webp",
-    "cast/billyT-walk-3.webp",
-    "cast/billyT-walk-4.webp",
-    "cast/billyT-walk-5.webp",
-    "cast/billyT-walk-6.webp",
-    "cast/billyT-walk-7.webp"
+    "cast/billyD-walk-0.webp",
+    "cast/billyD-walk-1.webp",
+    "cast/billyD-walk-2.webp",
+    "cast/billyD-walk-3.webp",
+    "cast/billyD-walk-4.webp",
+    "cast/billyD-walk-5.webp",
+    "cast/billyD-walk-6.webp",
+    "cast/billyD-walk-7.webp"
    ],
    "run": [
-    "cast/billyT-run-0.webp",
-    "cast/billyT-run-1.webp"
+    "cast/billyD-run-0.webp",
+    "cast/billyD-run-1.webp"
    ]
   },
   "pattyRelief": {

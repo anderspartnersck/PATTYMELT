@@ -183,6 +183,9 @@
 <script src="./art3d.js"></script>
 <script src="./lib/ghost.js?v=1"></script>
 <script src="./lib/spatulas.js?v=1"></script>
+<script src="assets/art3d/props/props.manifest.js"></script>
+<script src="./lib/props.js?v=2"></script>
+<script src="./lib/scoring.js?v=2"></script>
 <script>
 const pm = globalThis.PM;   // UMD engine — single source, parity-proven vs Python
 
@@ -1722,6 +1725,7 @@ function drawSafetyCard(s, gy, gh) {
   ctx.restore();
 }
 
+const cabFeed = globalThis.PMScore ? PMScore.createFeed() : null;   // (1116) the shift-points pop feed
 function renderPlay(s, isDemo = false) {
   const th = pm.THEMES[s.theme];
   asciiBackdrop(s);                       // ASCII pass: dim diner terminal behind everything
@@ -1837,6 +1841,12 @@ function renderPlay(s, isDemo = false) {
     if (s.players.length === 2) txt(pi === 0 ? "P" : "C", g.x, c.y - c.r * 1.9, 12, pi === 0 ? COL.ketchup : COL.cheese, "center", 800);
   });
   asciiGrillFx(s, zones, gy, gh);         // ASCII pass: steam / smoke / singing notes / sparks
+  if (!isDemo && globalThis.PMScore) {    // (1116 Q655) PERFECT/GOOD/ON TIME pops over the food + the emblem chips, like the 3D kitchen
+    const now = performance.now(), zc = (i) => { const z = zones[Math.min(i, zones.length - 1)]; return z.well ? { x: z.well.x, y: z.well.y } : { x: z.x + z.w / 2, y: z.y + z.h / 2 }; };
+    cabFeed.take(s, (at) => at && (at[0] === "grill" || at[0] === "toaster") ? zc(at[0] === "grill" ? at[1] : s.slots.length - 1) : { x: W / 2, y: gy + gh / 2 }, now);
+    cabFeed.draw(ctx, now, txt, { top: gy });
+    PMScore.drawHud(ctx, s, W - 28 - 248, 72, txt, { chipsOnly: true });
+  }
   drawSafetyCard(s, gy, gh);              // shift open: NO HANDS ON THE FOOD — it's all about food safety
   if (!isDemo) drawServeFx(zones);        // the HANDOFF beat: a patty flips off the spatula on a serve
 

@@ -4,8 +4,8 @@
 
 A grill rush. You're Patty. Billy is expediting, and Billy is not reliable.
 
-**Status:** playable, not finished. The 12-shift campaign plays through; art, balance and the two-player
-modes are still being tuned.
+**Status:** playable, not finished. Every mode on the front door plays start to finish. Art (Blender props:
+drinks, clock, phone, bags, crowd, the tour bus, the stackers) and balance are still landing.
 
 ## About
 
@@ -14,50 +14,74 @@ their own clocks, and the one skill the game teaches is waiting for **RDY** inst
 dining room isn't a scoreboard bolted on the side: it *is* the score, played as drama. Two spatulas per cook,
 no hands on the food.
 
+One campaign is one restaurant day: seven shifts from 11 AM open to last call, each played on a compressed
+game clock. You clear a shift by surviving to its closing time.
+
 ## Where to start
 
-- **[THE DINER](https://anderspartnersck.github.io/PATTYMELT/3d/)**: the campaign, 12 shifts from dawn to closing.
-- **[HEROES — THE CAFETERIA](https://anderspartnersck.github.io/PATTYMELT/3d/heroes.html)**: the same campaign in the school cafeteria.
-- **[THE FRONT DOOR](https://anderspartnersck.github.io/PATTYMELT/)**: every mode, edition and setting from one menu (the bare link opens it).
-- **[THE OLD 2D KITCHEN](https://anderspartnersck.github.io/PATTYMELT/old-2d.html)**: the original painted 2D version.
+- **[THE FRONT DOOR](https://anderspartnersck.github.io/PATTYMELT/)**: title, every mode, edition and setting
+  from one menu (the bare link opens it).
+- **[THE DINER](https://anderspartnersck.github.io/PATTYMELT/3d/)**: straight into the campaign.
+- **[HEROES — THE CAFETERIA](https://anderspartnersck.github.io/PATTYMELT/3d/heroes.html)**: the same day in the
+  school cafeteria.
+- **[THE OLD 2D KITCHEN](https://anderspartnersck.github.io/PATTYMELT/old-2d.html)**: the original painted 2D
+  version, kept for reference.
 
 ## How to play
 
-Any key starts the campaign.
-
 | Keyboard | Pad | |
 |---|---|---|
-| **← / →** or **A / D** | stick / d-pad | move the spatulas (along the grill, and on past it to the toaster and the bread) |
+| **← / →** or **A / D** | stick / d-pad | move the spatulas (along the grill, and on to the toaster and the bread) |
 | **F** | A | flip |
 | **C** | B | topping (cheese / onions) |
 | **X** | X | bread: grab the order's bun, lay it on the toaster, toast a grilled cheese |
-| **SPACE** (or V / B) | Y / RT | EXPO: HEY BILLY! Billy runs the plate to its table |
-| **P** or **Esc** | START | pause menu |
+| **SPACE** (or V / B) | Y / RT | EXPO: HEY BILLY! Billy runs the plate (or a drink) to its table |
+| **P** or **Esc** | START | pause menu (resume · restart · controls · quit) |
 | **R** | | restart this shift |
 | **H** | | hide the tip on screen |
 | **S** | | sound on / off |
 
-Wait for **RDY**: act too soon and the order is sent back. Every order needs its bread, so read the ticket
-(SESAME, RYE or WHITE); the bun joins its patty by itself once it's toasted.
+Flip on **RDY**, once. Too early and the patty comes back undercooked (flip again to fix it); raw or burnt is
+waste. Every order needs its bread, so read the ticket (SESAME, RYE or WHITE); the bun joins its patty by
+itself once it's toasted.
 
-**Co-op (2 players):** P1 as above. P2 (Chrissy): **J / L** move · **I** flip · **K** topping · **.** bread /
-toast · **M** HEY BILLY, or a second pad. Hand off / drop a jammed slot: P1 **G / T**, P2 **U / O**.
+Each plate is graded **PERFECT / GOOD / OK** as it goes out, and a cleared shift earns emblems, a letter grade
+and points toward your cook **RANK** (kept per edition, shown on the front door).
+
+**Two players:** P1 as above. P2 (Chrissy): **J / L** move · **I** flip · **K** topping · **.** bread / toast ·
+**M** HEY BILLY, or a second pad. In co-op, hand off / drop a jammed slot: P1 **G / T**, P2 **U / O**.
+
+## The day
+
+| Shift | Clock | What's new |
+|---|---|---|
+| 1 OPEN | 11:00 AM | learn the grill: flip, cheese, HEY BILLY |
+| 2 THE LUNCH POP | 11:45 AM | seatings in waves and take-out bags; a hot lunch brings THE LATE BUMP (a tour bus) |
+| 3 THE AFTERNOON LULL | 3:00 PM | the patty melt and the bun toaster; then the walk-in freezer bonus |
+| 4 HAPPY HOUR | 5:30 PM | rounds of drinks off the rail; the bar crowd orders drinks only |
+| 5 DINNER | 7:00 PM | the SMASH burger: slow, hogs a slot, pays the most |
+| 6 THE BLAST | 8:00 PM | two full seatings and the phone; then the basement bonus |
+| 7 LAST CALL | 10:00 PM | it winds down, then the movie lets out. Close at 11 |
 
 ## Modes (on the front door)
 
-↑ ↓ picks a mode; **TAB** moves to the edition (HEROES / THE DINER), demand (as authored / kids / arcade) and
-screens rows, and ← → changes them; **ENTER** or **SPACE** cooks.
+↑ ↓ picks a mode. **TAB** moves to the settings, and ← → changes them: **EDITION** (THE DINER / HEROES),
+**DEMAND** (as authored / kids / arcade), **SCREENS**, and **LENGTH** (QUICK 30 s per hour · FULL DAY
+1 minute per hour · LONG HAUL 2 minutes per hour). **ENTER** or **SPACE** cooks.
 
-- **THE CAMPAIGN**: 12 shifts, with bonus rounds in the back.
+- **THE CAMPAIGN**: one player, the seven-shift day.
 - **CO-OP KITCHEN**: Patty and Chrissy split one grill and share one Billy.
-- **MELTDOME**: two-player versus, a 90-second grill-off. Most clean orders at the bell wins.
+- **MELTDOME**: two-player versus, a 90-second grill-off on one grill. Most clean orders at the bell wins.
+- **SPEED BATTLE**: Patty vs Chrissy on mirrored grills, one minute. PERFECT 3 · GOOD 2 · OK 1; tied at the
+  bell, the next PERFECT wins.
 - **THE POP-UP**: the full menu from shift 1.
-- **STRAIGHT TO THE WEEDS**: starts at shift 9, the dinner slam.
+- **STRAIGHT TO THE WEEDS**: drops you into THE BLAST (8 PM).
 - **COOKS FROM BEHIND**: the campaign with the cooks' backs to you (an experiment).
 - **MELTDOME — SIDE BY SIDE**: two flat-tops on one screen.
-- **TAG TEAM**: two cooks share one grill; **H** tags your partner in.
+- **TAG TEAM**: two cooks take turns on one grill; **H** tags your partner in.
 
-The old 2D version is kept at <https://anderspartnersck.github.io/PATTYMELT/old-2d.html> for reference.
+Every mode pauses on **P / Esc**. Leave the game idle on the title and it plays its attract
+loop.
 
 ## Credits
 

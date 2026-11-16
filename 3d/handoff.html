@@ -22,7 +22,7 @@
 <body>
 <div id="frame"><div id="wrap">
   <canvas id="screen" width="760" height="620"></canvas>
-  <div id="tag">◄ ► move · F flip · C cheese · X toast · V HEY BILLY · H = TAG OUT (pass the spatula) · R restart</div>
+  <div id="tag">◄ ► move · F flip · C cheese · X toast · SPACE/V HEY BILLY · H = TAG OUT (pass the spatula) · P pause · R restart</div>
 </div></div>
 <script src="engine.js"></script>
 <script src="lib/hidpi.js?v=1"></script>
@@ -30,6 +30,10 @@
 <script src="service.js"></script>
 <script src="../assets/art3d/stages/stages.manifest.js"></script>
 <script src="lib/stages3d.js"></script>
+<script src="../assets/art3d/props/props.manifest.js"></script>
+<script src="lib/props.js?v=2"></script>
+<script src="lib/scoring.js?v=2"></script>
+<script src="lib/pausekit.js?v=1"></script>
 <script>
 "use strict";
 const pm = globalThis.PM, S = pm.Stage;
@@ -66,6 +70,14 @@ function tagOut(auto) {                       // pass the spatula to the other c
 // any key carries the shift to the front door's RESULTS card. Off by default.
 const SHELL = Q.get("shell") === "1";
 function toFront(r) { finishService(); location.href = "front.html?" + (r ? "results=" + encodeURIComponent(JSON.stringify(r)) + "&" : "menu&") + "sel=" + encodeURIComponent(Q.get("sel") || ""); }
+// (1116) the PAUSE sheet (lib/pausekit.js) — P / Esc: resume · restart · controls · quit to the menu (shell). It drives
+// the same `paused` flag the receipts rail's pause button uses, so the sim + continue clock freeze identically.
+const PAUSE = globalThis.PMPause ? PMPause.create({ title: "TAG TEAM — PAUSED",
+  items: () => [["resume", "RESUME"], ["restart", "RESTART"], ["controls", "CONTROLS"]].concat(SHELL ? [["quit", "QUIT TO MENU"]] : []),
+  controls: [["MOVE ◄ ►", "A / D  or  ← →"], ["FLIP", "F"], ["CHEESE", "C"], ["TOAST", "X"], ["HEY BILLY", "SPACE / V / B"], ["TAG OUT", "H / TAB"], ["PAUSE", "P / Esc"], ["SOUND", "—"]],
+  onToggle(v) { paused = v; }, onPick(id) { if (id === "restart") { reset(); prevServed = 0; } else if (id === "quit") toFront(null); } }) : null;
+// (1116 Q655) PERFECT/GOOD/ON TIME pops over the food + the emblem chips, like the kitchen
+const scoreFeed = globalThis.PMScore ? PMScore.createFeed() : null, slotXY = [];
 function billyBack() { game.over = false; game.wait = pm.WAIT_FULL * 0.45; game.billy = pm.BILLY_FULL; continueT = -1; continuesUsed++; }
 
 const SIM_DT = 1000 / pm.TPS;
@@ -109,8 +121,10 @@ function render() {
       (game.combo >= pm.FLOW_COMBO ? "  BIG GRILL ENERGY" : ""), pad, 62, 15, game.combo >= pm.FLOW_COMBO ? COL.cheese : COL.cream, "left", 600);
   // WEEDS bar
   const wf = Math.min(1, game.wait / pm.WAIT_FULL), bw = W - pad * 2;
-  ctx.fillStyle = "#241c12"; ctx.fillRect(pad, 76, bw, 11);
-  ctx.fillStyle = wf >= .78 ? COL.bad : wf >= .5 ? COL.amber : COL.good; ctx.fillRect(pad, 76, bw * wf, 11);
+  const ww = scoreFeed ? bw - 262 : bw;   // (1116) the weeds bar shares its row with the emblem chips
+  ctx.fillStyle = "#241c12"; ctx.fillRect(pad, 76, ww, 11);
+  ctx.fillStyle = wf >= .78 ? COL.bad : wf >= .5 ? COL.amber : COL.good; ctx.fillRect(pad, 76, ww * wf, 11);
+  if (scoreFeed) PMScore.drawHud(ctx, game, W - pad - 248, 74, txt, { chipsOnly: true });
   // TAG-TEAM cards
   for (let i = 0; i < 2; i++) {
     const cx = pad + i * (bw / 2), cw = bw / 2 - 8, on = i === up;
@@ -129,6 +143,7 @@ function render() {
     let ccx = gx + c * cwd + cwd / 2, ccy = gy + r * ch + ch / 2;
     if (A3 && A3[i]) { ccx = A3[i].x; ccy = A3[i].y; }                   // the rendered well (anchors match the 2D cells)
     else { ctx.strokeStyle = COL.gridln; ctx.lineWidth = 2; ctx.strokeRect(gx + c * cwd + 6, gy + r * ch + 6, cwd - 12, ch - 12); }
+    slotXY[i] = { x: ccx, y: ccy };
     const p = game.slots[i];
     if (p && !(A3 && PMStages.food(ctx, p, pm, ccx, ccy, pm.melt_done(game))))
       PMDrawItem(ctx, p, ccx, ccy, rad, drawPM, performance.now() / 1000);   // animated item sprite (sizzle/pop/steam)
@@ -179,7 +194,12 @@ function render() {
     }
   }
 
-  if (game.won) { banner("ROUND CLEAR — press SPACE (" + COOKS[1 - up].name + " is up next)", COL.good); }
+  if (scoreFeed && !game.won && !game.over) { const now = performance.now();
+    scoreFeed.take(game, (at) => (at && at[0] === "grill" && slotXY[at[1]]) || { x: W / 2, y: gy + gh / 2 }, now);
+    scoreFeed.draw(ctx, now, txt, { top: 140 }); }
+  if (game.won) { if (globalThis.PMScore) PMScore.drawCard(ctx, game, W, H, txt, { title: "ROUND " + game.rnd + " CLEAR", rank: PMScore.peekRank(game),   // (1116) the emblem breakdown
+      foot: "press SPACE — " + COOKS[1 - up].name + " is up next" });
+    else banner("ROUND CLEAR — press SPACE (" + COOKS[1 - up].name + " is up next)", COL.good); }
   if (game.over) {
     const secs = Math.max(0, Math.ceil(continueT));
     ctx.fillStyle = "rgba(10,5,4,.74)"; ctx.fillRect(0, H / 2 - 50, W, 100);
@@ -188,12 +208,15 @@ function render() {
         W / 2, H / 2 + 20, 16, continueT > 0 ? (secs <= 3 ? COL.bad : COL.cream) : COL.amber, "center", 700);
     txt("PATTY " + slung[0] + "   ·   CHRISSY " + slung[1] + " slung", W / 2, H / 2 + 44, 13, COL.dim, "center", 600);
   }
-  if (paused) banner("PAUSED", COL.cream);
+  if (paused && !(PAUSE && PAUSE.open)) banner("PAUSED", COL.cream);
+  if (PAUSE) PAUSE.draw(ctx, W, H);
 }
 function banner(s, c) { ctx.fillStyle = "rgba(10,5,4,.66)"; ctx.fillRect(0, H / 2 - 26, W, 52); txt(s, W / 2, H / 2 + 8, 22, c, "center", 800); }
 
 addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
+  if (PAUSE && paused && !PAUSE.open && k === "p") { paused = false; return; }   // paused from the receipts rail: P resumes
+  if (PAUSE && (PAUSE.open || k === "p" || (k === "escape" && !game.won && !(game.over && continueT === 0)))) { PAUSE.key(k); e.preventDefault(); return; }
   if (SHELL && k === "escape") { toFront(null); return; }
   if (SHELL && game.over && continueT === 0) { toFront({ mode: "tag", outcome: "break", skin: "diner", label: Q.get("label") || "TAG TEAM",
     score: game.score, served: game.served, shift: game.rnd, shiftName: "PATTY " + slung[0] + " · CHRISSY " + slung[1] + " slung" }); return; }

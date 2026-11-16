@@ -14,6 +14,19 @@
 // queue silhouettes (see docs/DAY-1112.md).
 (function (root) {
   "use strict";
+  // (1116) the Blender PROP SET (lib/props.js, absent-safe): fit a prop into the placeholder's box. `cx`/`cy` place the
+  // sprite's own anchor; `fit` = the box height it should fill. Returns false (→ draw the vector placeholder) when absent.
+  function prop(ctx, fam, rest, x, y, fit, o) {
+    const P = root.PMProps; if (!P) return false;
+    const key = P.key(fam, ...rest), sp = P.spr(key);
+    return !!(sp && P.draw(ctx, key, x, y, fit / sp.h, o));
+  }
+  function propC(ctx, fam, rest, x, y, fit) {          // centred on (x, y) whatever the sprite's anchor
+    const P = root.PMProps; if (!P) return false;
+    const key = P.key(fam, ...rest), sp = P.spr(key); if (!sp) return false;
+    const k = fit / sp.h;
+    return P.draw(ctx, key, x + (sp.ax - sp.w / 2) * k, y + (sp.ay - sp.h / 2) * k, k);
+  }
   const COL = { cream: "#f3e6c8", amber: "#e0a92e", bad: "#ff5a4d", good: "#7ad17a", dim: "#a89a80", ink: "#16100c" };
   // the hour's colour + name (minutes since midnight). Weekend closes at 24:00; the names still fit.
   const PHASES = [
@@ -60,13 +73,17 @@
   }
   function drawClock(ctx, x, y, r, min, ph, txt, bump, frame) {
     ctx.save();
-    if (frame) {                                  // the square case (chrome, a soft wall shadow under it)
+    const art = propC(ctx, "clock", [], frame ? frame[0] + frame[2] / 2 : x, frame ? frame[1] + frame[3] / 2 : y, frame ? frame[3] : r * 2.2);
+    if (art) { ctx.shadowColor = ph.col; ctx.shadowBlur = r * 0.6; ctx.strokeStyle = ph.col; ctx.lineWidth = Math.max(1.5, r * 0.1);
+      ctx.beginPath(); ctx.arc(x, y, r * 1.1, 0, 7); ctx.stroke(); ctx.shadowBlur = 0; }
+    if (art) {} else if (frame) {                                  // the square case (chrome, a soft wall shadow under it)
       const [fx, fy, fw, fh] = frame;
       ctx.fillStyle = "rgba(0,0,0,.35)"; rrect(ctx, fx + 1.5, fy + 2.5, fw, fh, 5); ctx.fill();
       const g = ctx.createLinearGradient(fx, fy, fx + fw, fy + fh); g.addColorStop(0, "#f2f2ee"); g.addColorStop(0.45, "#9a9c9e"); g.addColorStop(0.55, "#c9cbcc"); g.addColorStop(1, "#5c5f62");
       ctx.fillStyle = g; rrect(ctx, fx, fy, fw, fh, 5); ctx.fill();
       ctx.fillStyle = "#b8231d"; rrect(ctx, fx + 2.5, fy + 2.5, fw - 5, fh - 5, 3.5); ctx.fill();   // diner-red enamel behind the dial
     }
+    if (!art) {
     ctx.shadowColor = ph.col; ctx.shadowBlur = r * 0.6;                 // the hour's neon ring
     ctx.strokeStyle = ph.col; ctx.lineWidth = Math.max(1.5, r * 0.1); ctx.beginPath(); ctx.arc(x, y, r * 1.1, 0, 7); ctx.stroke();
     ctx.shadowBlur = 0;
@@ -84,6 +101,7 @@
       for (let i = 1; i <= 12; i++) { const a = i / 12 * Math.PI * 2; ctx.fillText(String(i), x + Math.sin(a) * r * 0.55, y - Math.cos(a) * r * 0.55 + r * 0.02); }
       ctx.textBaseline = "alphabetic";
     }
+    }                                                                   // (/vector face)
     const ha = ((min / 60) % 12) / 12 * Math.PI * 2, ma = (min % 60) / 60 * Math.PI * 2, sa = (min * 60 % 60) / 60 * Math.PI * 2;
     ctx.shadowColor = "rgba(0,0,0,.35)"; ctx.shadowBlur = r * 0.08; ctx.shadowOffsetY = r * 0.04;
     hand(ctx, x, y, ha, r * 0.46, r * 0.075, r * 0.03, "#1a1008");
@@ -104,6 +122,7 @@
   // the waiting line on the sidewalk, seen through the front window: varied silhouettes (heights, hats, a kid), backlit
   function person(ctx, x, y, sc, k, T) {
     const h = [1, 0.92, 1.06, 0.7, 0.97, 1.03, 0.88][k % 7] * sc, sway = Math.sin(T * 2.2 + k * 1.9) * 0.6;
+    if (prop(ctx, "crowd", [k % 7, Math.floor(T * 1.6 + k * 0.7) % 2], x + sway, y + 12 * h, 40 * h, { flip: k % 2 === 1 })) return;   // (1116) Blender crowd
     const g = ctx.createLinearGradient(x, y - 30 * h, x, y + 12 * h); g.addColorStop(0, "rgba(40,30,52,.92)"); g.addColorStop(1, "rgba(16,10,22,.92)");
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.moveTo(x - 6.5 * h + sway, y - 14 * h); ctx.quadraticCurveTo(x + sway, y - 19 * h, x + 6.5 * h + sway, y - 14 * h);   // shoulders
@@ -130,6 +149,10 @@
   function drawPhone(ctx, x, y, T) {          // the take-out phone on the wall by the shelf: a red wall phone, handset rattling
     const j = Math.sin(T * 40) * 1.2;
     ctx.save();
+    if (prop(ctx, "phone", ["body"], x, y - 11, 24)) {                  // (1116) Blender wall phone: body + a rattling handset
+      const P = root.PMProps, hk = P.key("phone", "handset"), hs = P.spr(hk), bs = P.spr(P.key("phone", "body"));
+      if (hs && bs) P.draw(ctx, hk, x + j, y - 12, 24 / bs.h, {});
+    } else {
     ctx.fillStyle = "rgba(0,0,0,.3)"; ctx.fillRect(x - 8, y - 9, 18, 24);
     const body = ctx.createLinearGradient(x - 9, 0, x + 9, 0); body.addColorStop(0, "#7e120e"); body.addColorStop(0.35, "#e0362b"); body.addColorStop(1, "#8e1a14");
     ctx.fillStyle = body; rrect(ctx, x - 9, y - 11, 18, 24, 3); ctx.fill();
@@ -140,6 +163,7 @@
     ctx.restore();
     ctx.strokeStyle = "#2a1008"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x - 9, y + 8);           // the coiled cord
     for (let i = 0; i < 8; i++) ctx.quadraticCurveTo(x - 13 - (i % 2) * 2, y + 10 + i * 2, x - 11, y + 11 + i * 2); ctx.stroke();
+    }
     ctx.strokeStyle = "#f3e6c8"; ctx.lineWidth = 1.4;                                                  // RING lines
     for (const s of [-1, 1]) for (const rr of [15, 20]) { ctx.globalAlpha = rr === 15 ? 0.9 : 0.5; ctx.beginPath();
       ctx.arc(x, y - 10, rr, s < 0 ? Math.PI * 1.12 : -0.4, s < 0 ? Math.PI * 1.4 : -0.12); ctx.stroke(); }
@@ -147,6 +171,10 @@
   }
 
   function drawBag(ctx, x, y, late) {          // a kraft take-out bag: folded top, side gusset shade, a red THANK YOU sticker
+    if (prop(ctx, "bag", [], x, y, 17)) {        // (1116) Blender bag; a late one still wears the red sticker
+      if (late) { ctx.save(); ctx.fillStyle = COL.bad; ctx.beginPath(); ctx.arc(x, y - 7, 2.8, 0, 7); ctx.fill(); ctx.restore(); }
+      return;
+    }
     ctx.save();
     ctx.fillStyle = "rgba(0,0,0,.28)"; ctx.beginPath(); ctx.ellipse(x + 1, y, 8.5, 1.8, 0, 0, 7); ctx.fill();
     const g = ctx.createLinearGradient(x - 7, 0, x + 7, 0); g.addColorStop(0, "#a8783c"); g.addColorStop(0.3, "#d7a868"); g.addColorStop(0.75, "#c8955a"); g.addColorStop(1, "#8e6430");

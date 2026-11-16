@@ -58,7 +58,9 @@
 <script src="lib/hidpi.js?v=1"></script>
 <script src="service.js"></script>
 <script src="lib/orders.js?v=1"></script>
-<script src="lib/scoring.js?v=1"></script>
+<script src="assets/art3d/props/props.manifest.js"></script>
+<script src="lib/props.js?v=2"></script>
+<script src="lib/scoring.js?v=2"></script>
 <script src="campaign.js"></script>
 <script src="lib/day.js?v=1"></script>
 <script src="lib/signs.js?v=1"></script>
@@ -105,6 +107,7 @@ if (SHELL === "demo") { const st = document.createElement("style"); st.textConte
 // HEROES (school cafeteria) skin — base wired. ?skin=school, or auto on the 2up HEROES frame.
 const SKIN = (Q.get("skin") || (Q.get("frame") === "2up-heroes" ? "school" : "diner")).toLowerCase();
 const SCHOOL = SKIN === "school";
+if (globalThis.PMProps) PMProps.skin = SKIN;   // (1116) the Blender prop set picks the diner / HEROES variant
 document.body.classList.toggle("school", SCHOOL);
 // BUILD tag (?build=mark1) — the airy-engine generation; surfaced on screen, tab title + the deck strip.
 // These open as DESKTOP modes (the big gingham deck) — NOT the tiny cab cutout — so they're easy to find
@@ -490,7 +493,8 @@ let _asmPlate = null;                        // where the assembled plate sits (
 // ---------- THE CAMPAIGN (campaign.js) — authored deterministic SHIFTS on the proven engine ----------
 // A shift = a classic-arcade level. The table drives new_game's levers (mode/grill/items/quota); the
 // player climbs shift 1 → 12 (coin-op style). ITEMS (jailbreak FULL MENU) still overrides the shift menu.
-const CAMP = PMCampaign.forNight(Q.get("night"), Q.get("length"));   // THE DAY (1112): ?night=weekend = Fri/Sat (3 seatings, close at 12) · ?length=quick|day|long = the GAME CLOCK scale
+const CAMP = PMCampaign.forNight(Q.get("night"), Q.get("length"));
+if (Q.get("barflies") === "off") PMCampaign.setBarflies(false);   // (1116 Q659) HAPPY HOUR without the drinks-only bar crowd   // THE DAY (1112): ?night=weekend = Fri/Sat (3 seatings, close at 12) · ?length=quick|day|long = the GAME CLOCK scale
 const START_IDX = Math.max(0, Math.min(CAMP.SHIFTS.length - 1, (parseInt(Q.get("shift") || "1", 10) || 1) - 1));
 const DEMO_IDX = Math.min(5, CAMP.SHIFTS.length - 1);   // attract self-plays a lively mid shift (THE BUS), not the sparse opener
 let shiftIdx = START_IDX;
@@ -1883,7 +1887,7 @@ function render() {
   }
   drawTimeOfDay();                          // the shift's clock washes the scene (dawn → midday → dusk → night)
   ctx.restore();
-  if (!BATTLE && phase === "play") drawScorePops();                       // 1112: +PERFECT / +ON TIME / +DRINK RUN / WASTE pop-ups
+  if (phase === "play") drawScorePops();   // (1116 Q655) MELTDOME too: the PERFECT/GOOD pops ride over each cook's food (no shared emblem HUD in a battle)                       // 1112: +PERFECT / +ON TIME / +DRINK RUN / WASTE pop-ups
   if (!BATTLE && phase === "play" && globalThis.PMDay) PMDay.draw(ctx, pm, game, { DIN, txt, door: doorXY(), takeout: takeoutXY(), audio, live: sfxLive(), clockAt: diningClock() });   // THE DAY: clock · rush cue · pickup shelf                       // 1112: +PERFECT / +ON TIME / +DRINK RUN / WASTE pop-ups
   if (!BATTLE && (phase === "play" || phase === "ready")) drawOrders();   // ORDERS (1111): printer + ticket rail + the call
   const _cb = cineBusy();
@@ -1933,10 +1937,10 @@ function drawScorePops() {
     if (at[0] === "toaster" && lastSlotXY) { const c = lastSlotXY(game.slots.length - 1); return { x: c.x + 40 + at[1] * 30, y: c.y }; }
     if (at[0] === "rail") { const q = passPoint(); return { x: q.x, y: q.y - 20 }; }
     return kh;
-  }, now);
+  }, now, BATTLE ? (p) => p.cat === "grill" && /^(PERFECT|GOOD|OK)/.test(p.label) : undefined);   // (1116) MELTDOME: the cook grade only (its own score)
   const rb = game.service ? railBox() : null;   // (1112) pops stack in columns, under the header, never over the tickets
-  scoreFeed.draw(ctx, now, txt, { top: KIT.y + (SCREENS === 1 ? 96 : 112), avoid: rb ? [[rb.x, rb.y - 4, rb.w, (rb.th || 66) + 26]] : [] });
-  if (!_skipHUD) PMScore.drawHud(ctx, game, KIT.x + KIT.w - 22 - 246, KIT.y + KIT.h - 46, txt, { drinks: true });   // emblem chips · WASTE bin · DRINK rail
+  scoreFeed.draw(ctx, now, txt, { top: KIT.y + (SCREENS === 1 ? 96 : 112), avoid: rb ? [[rb.x, rb.y - 4, rb.w, (rb.th || 66) + 26]] : [], noPts: BATTLE });
+  if (!_skipHUD && !BATTLE) PMScore.drawHud(ctx, game, KIT.x + KIT.w - 22 - 246, KIT.y + KIT.h - 46, txt, { drinks: true });   // emblem chips · WASTE bin · DRINK rail
 }
 function banner(s, c) { ctx.fillStyle = "rgba(10,5,4,.66)"; ctx.fillRect(0, H / 2 - 34, W, 68);
   txt(s, W / 2, H / 2 + 8, 30, c, "center", 800); }

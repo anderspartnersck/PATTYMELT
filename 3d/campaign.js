@@ -68,7 +68,10 @@
     { n: 4, name: "HAPPY HOUR", time: "5:30 PM", music: "day",
       wrinkle: "Rounds of drinks: Billy's running the rail. Lighter food, but keep him at the pass.",
       mode: "family", grill: 6, rnd: 2, items: "fifties",
-      day: { t0: H(17, 30), t1: H(19), flow: [[H(17, 32), H(18, 55), 150, "walk"], [H(17, 50), 0, 130, "bar", 6], [H(18, 25), 0, 130, "bar", 6]] } },
+      day: { t0: H(17, 30), t1: H(19), flow: [[H(17, 32), H(18, 55), 150, "walk"], [H(17, 50), 0, 130, "bar", 6], [H(18, 25), 0, 130, "bar", 6]],
+             // (1116, Q659) THE BAR CROWD — drinks-only regulars on the stools: no food, just a round each (kind "sip").
+             // Pure Billy pressure: the grill stays light, but every round is a run he has to be hollered into.
+             barflies: [[H(17, 40), H(18, 45), 360, "sip"], [H(18, 5), 0, 120, "sip", 4]] } },
     { n: 5, name: "DINNER", time: "7:00 PM", music: "rush",
       wrinkle: "SMASH hits the menu — low-and-slow, hogs a slot 1.5x longer, pays the most. Dinner builds.",
       mode: "family", grill: 6, rnd: 2, items: "full",
@@ -115,10 +118,17 @@
   }
   // What the last shift handed this one (note()): THE LATE BUMP ran long → the lull opens later.
   let _prev = null;
+  // (1116, Q659) the BAR CROWD switch: HAPPY HOUR adds its drinks-only `barflies` flow. Default ON; ?barflies=off
+  // (kitchen.html → setBarflies(false)) plays the 1112 happy hour. Needs the DRINKS opt-in (the engine turns a "sip"
+  // into an ordinary food walk-in without it).
+  let _barflies = true;
+  function setBarflies(v) { _barflies = !!v; }
   function note(g) { _prev = g ? { combo_best: g.combo_best, waste: g.waste || 0, bumped: !!(g.service && g.service.day && g.service.day.bumped) } : null; }
-  function planFor(sh, prev = _prev, length = DEFAULT_LENGTH) {
+  function planFor(sh, prev = _prev, length = DEFAULT_LENGTH, barflies = _barflies) {
     if (!sh.day) return { day: null, bumped: false, label: null };
     const day = Object.assign({}, sh.day, { tpm: LENGTHS[lengthOf(length)].tpm });
+    if (sh.day.barflies && barflies) day.flow = sh.day.flow.concat(sh.day.barflies);
+    delete day.barflies;
     const late = !!(prev && prev.bumped && sh.day.t0bump);
     if (late) day.t0 = sh.day.t0bump;
     delete day.t0bump;
@@ -129,7 +139,8 @@
   // walk can't buy its emblems on a few perfect plates.
   const TARGET = 0.8;
   function verdict(g) {
-    const walkins = g && g.cfg ? g.cfg.orders : 0, target = Math.ceil(walkins * TARGET), served = g ? g.served : 0;
+    const sips = g && g.cfg && g.cfg.sched && g.cfg.sched.kinds && g.cfg.drinks ? g.cfg.sched.kinds.filter((k) => k === "sip").length : 0;   // (1116) bar patrons eat nothing
+    const walkins = g && g.cfg ? g.cfg.orders - sips : 0, target = Math.ceil(walkins * TARGET), served = g ? g.served : 0;
     return { cleared: !!(g && g.won), walkins, target, served, hit: served >= target,
              bumped: !!(g && g.service && g.service.day && g.service.day.bumped) };
   }
@@ -163,7 +174,7 @@
   // only); `length` = the clock scale (LENGTHS). ?day=off drops it: the old flat arrivals, a quota of the same headcount.
   function build(pm, sh, players, theme, itemsOverride, profile = "legacy", bread = false, drinks = false, useDay = true, length) {
     const items = itemsOverride && itemsOverride.length ? itemsOverride : itemSeq(pm, sh.items);
-    const plan = planFor(sh, _prev, length || (this && this.length));
+    const plan = planFor(sh, _prev, length || (this && this.length), _barflies && !!drinks);   // the bar crowd drinks only: no DRINKS opt-in, no bar crowd
     const day = useDay && profile === "service" ? plan.day : null;
     const g = pm.new_game(sh.rnd || 1, sh.mode || "family", players || 1, theme || "diner", sh.grill || 6, items, profile, bread, drinks, day);
     if (!day) {                                          // flat arrivals: a quota of the clocked shift's headcount
@@ -175,7 +186,7 @@
     return g;
   }
 
-  const CAMPAIGN = { SHIFTS, WEEKEND, LENGTHS, DEFAULT_LENGTH, TARGET, length: DEFAULT_LENGTH, itemSeq, build, forNight, planFor, note, verdict, cardView, secsOf, lengthOf };
+  const CAMPAIGN = { SHIFTS, WEEKEND, LENGTHS, DEFAULT_LENGTH, TARGET, length: DEFAULT_LENGTH, itemSeq, build, forNight, planFor, note, verdict, cardView, secsOf, lengthOf, setBarflies };
   global.PMCampaign = CAMPAIGN;
   if (typeof module !== "undefined" && module.exports) module.exports = CAMPAIGN;
 })(typeof globalThis !== "undefined" ? globalThis : this);

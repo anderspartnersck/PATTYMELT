@@ -334,7 +334,7 @@
       cfg, mode, theme, rnd, players: roster,
       ...(profile === "service" ? {service:{profile:"service",nextId:1,tickets:[],events:[],queue:[],waste:{totals:{pattyBuilds:0,breadPortions:0,onionPortions:0,cheeseSlices:0},events:[]},
         ...(cfg.drinks ? {drinks:{rail:new Array(DRINK_RAIL).fill(null),queue:[]}} : {}),
-        ...(cfg.sched ? {day:Object.assign({late:0,wseen:0}, cfg.sched.clocked ? {bumped:0} : {})} : {})}} : {}),
+        ...(cfg.sched ? {day:Object.assign({late:0,wseen:0,sips:0}, cfg.sched.clocked ? {bumped:0} : {})} : {})}} : {}),
       slots: new Array(grill).fill(null),
       toaster,
       pile: 0, orders_left: cfg.orders, score: 0, fails: 0, bun_fails: 0, wait: 0.0,
@@ -408,8 +408,10 @@
     let rounds = 1;
     if (s.cfg.sched) {                               // THE DAY: who this is (walk-in / seating / take-out / bar)
       const sc = s.cfg.sched, k = id - 1, kind = k < sc.kinds.length ? sc.kinds[k] : "walk", togo = kind === "togo";
-      rounds = togo ? 0 : kind === "bar" ? BAR_ROUNDS : 1;
+      const sip = kind === "sip" && !!s.cfg.drinks;   // (1116 Q659) a drinks-only bar patron — mirrors Python
+      rounds = togo ? 0 : (kind === "bar" || sip) ? BAR_ROUNDS : 1;
       Object.assign(ticket, { party: kind, togo, bag: k < sc.bag.length ? sc.bag[k] : 0, due: togo ? s.ticks + TAKEOUT_WINDOW : null, pickupLate: false });
+      if (sip) ticket.sip = true;
       if (togo) ticket.drink = null;                 // take-out: no table, no drink run
       else if (s.cfg.drinks) Object.assign(ticket, { rounds, poured: 0, drinksOut: 0 });
     }
@@ -521,13 +523,16 @@
     if(!s.service||s.service.closed) return;
     for(const p of s.slots.concat(s.toaster)) if(p) _record_waste(s,p,'discarded');
     const closing=!!(s.cfg.sched&&s.cfg.sched.clocked&&s.won);   // GAME CLOCK: still in flight when the doors closed
-    for(const t of s.service.tickets) if(t.rating===null) _settle(s,null,closing?"closed":"lost",t);
+    for(const t of s.service.tickets){
+      if(t.rating===null&&t.sip){ t.status='rejected'; t.rating=1; t.reason=closing?'Still at the bar at close':'Left the bar'; }   // (1116) no food review
+      else if(t.rating===null) _settle(s,null,closing?"closed":"lost",t);
+    }
     s.service.closed=true;
   }
   function order_receipts(s) {
     if(!s.service) return [];
     const active=s.slots.concat(s.toaster).filter(p=>p&&!isBun(p));
-    return s.service.tickets.filter(t=>t.rating===null).map(t=>{
+    return s.service.tickets.filter(t=>t.rating===null&&!t.sip).map(t=>{   // (1116) bar patrons have no kitchen receipt
       const p=active.find(p=>p.orderId===t.id), w=cook_window(s,p||{item:t.item,serviceScale:2});
       const at=s.slots.indexOf(p), ti=s.toaster.indexOf(p);
       const nextAction=!p?'WAIT':p.stage===Stage.DONE?(_needs_bun(p)&&!p.bunned?'TOAST BUN':'SERVE'):
@@ -791,6 +796,11 @@
     for (const t of s.service.tickets)
       if (t.drink && t.drinkTick === null && !t.drinkLate && t.status !== "rejected" && s.ticks - t.arrivedTick > DRINK_PATIENCE) { t.drinkLate = true; s.drink_late += 1; }
   }
+  function _sip_done(s, t) {          // (1116) a drinks-only bar patron got their round — mirrors Python
+    t.status = "served"; t.servedTick = s.ticks; t.rating = t.drinkLate ? 4 : 5;
+    t.reason = t.drinkLate ? "Bar round came late" : "Bar round"; s.service.day.sips += 1;
+    s.orders_left = Math.max(0, s.orders_left - 1);   // a customer looked after (quota games); never a food serve
+  }
   function _run_drink(s) {           // Billy's drink run: the first POURED drink goes to its seat
     const d = s.service ? s.service.drinks : null;
     if (!d) return false;
@@ -799,7 +809,7 @@
       if (e !== null && e.pour >= DRINK_POUR[e.drink]) {
         d.rail[k] = null;
         const t = s.service.tickets.find((t) => t.id === e.id);
-        if (t.drinksOut !== undefined) { t.drinksOut += 1; if (t.drinksOut >= t.rounds) t.drinkTick = s.ticks; }   // THE DAY: the round lands with its last drink
+        if (t.drinksOut !== undefined) { t.drinksOut += 1; if (t.drinksOut >= t.rounds) { t.drinkTick = s.ticks; if (t.sip) _sip_done(s, t); } }   // THE DAY: the round lands with its last drink
         else t.drinkTick = s.ticks;
         s.drinks_run += 1;
         if (t.drinkLate) _pop(s, "service", "LATE DRINK", PTS.DRINK_LATE, ["rail", k, e.id]);
@@ -853,6 +863,7 @@
       else if(s.service.tickets.filter(t=>t.rating===null).length>=s.orders_left) return;
       const t=_new_ticket(s);
       if(s.cfg.sched) s.drop_t=_day_gap(s,t.id);   // THE DAY: the gap before the NEXT arrival (the curve)
+      if(t.sip){ t.status='bar'; return; }          // (1116) a bar patron: no food to place, the rail pours the round
       if(s.service.queue.length||!_place_next(s,t)){
         if(s.pile>=s.cfg.pile_max){_settle(s,null,"lost",t);s.fails++;_break_combo(s);_say(s,"ORDER LOST!");}
         else {s.service.queue.push(t);s.pile++;}
@@ -1200,6 +1211,15 @@
       for (let i = 0; i < TAKEOUT_WINDOW + 2; i++) { lp.billy = 0; lp.wait = 0; tick(lp); }
       dok = dok && lp.service.day.late === 1 && lp.service.tickets[0].pickupLate;
       ok("the day: curve gaps, wave cue, breather, take-out bags + pickup clock, happy-hour rounds, half waste spike", dok);
+      // (1116, Q659) THE BAR CROWD — mirrors the Python selftest
+      const sg = new_game(1, "family", 1, "diner", SLOTS, null, "service", true, true, { t0: 1050, t1: 1110, segs: [[1, 50, "walk"], [2, 60, "sip"], [1, 60, "walk"]] });
+      while (!(sg.won || sg.over) && sg.ticks < 6000) { auto_step(sg); tick(sg); }
+      const st = sg.service.tickets;
+      const nd = new_game(1, "family", 1, "diner", SLOTS, null, "service", true, false, { t0: 1050, t1: 1110, segs: [[2, 60, "sip"]] }); nd.drop_t = 1; tick(nd);
+      ok("bar crowd: drinks-only patrons settle on their round — no food, no review, no serve; no drinks → a walk-in",
+        sg.won && st.slice(0, 4).map((t) => !!t.sip).join() === "false,true,true,false" && sg.service.day.sips === 2 && sg.served === sg.cfg.orders - 2
+        && st.slice(1, 3).every((t) => t.status === "served" && t.drinksOut === BAR_ROUNDS && t.placedTick === null)
+        && !sg.service.events.some((e) => e.id === 2 || e.id === 3) && !nd.service.tickets[0].sip);
     }
     // SHIFTS ON A GAME CLOCK (1112 pt 2, opt-in tpm) — mirrors the Python selftest block
     {

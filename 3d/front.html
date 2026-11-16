@@ -27,6 +27,7 @@
 <script src="lib/ghost.js?v=1"></script>
 <script src="lib/cast.js?v=2"></script>
 <script src="lib/cine.js?v=2"></script>
+<script src="lib/scoring.js?v=2"></script>
 <script src="../assets/art3d/stages/stages.manifest.js"></script>
 <script src="lib/stages3d.js?v=3"></script>
 <script>
@@ -239,6 +240,7 @@ function drawMenu(t) {
   const C = COLS[skin()], m = MODES[sel];
   bgPlate(t, 0.66);
   T("PICK YOUR SHIFT", 60, 112, 40, C.b, "left", 7);
+  rankPlate(skin(), 480, 86, "left", 0.9);   // (1116) your lifetime RANK (lib/scoring.js), per edition
   T(skin() === "school" ? "PATTY MELT'S HEROES · 3D" : "PATTY MELT · 3D", 60, 72, 20, C.cream, "left", 4);
   for (let i = 0; i < MODES.length; i++) {
     const ry = 150 + i * 58, on = i === sel, j = on ? PMCine.squash("menu", sel, 0.08) : { sx: 1, sy: 1 };
@@ -362,12 +364,25 @@ function drawResults(t) {
   T(r.label || "", W / 2, H * 0.1, 18, C.cream, "center", 4);
   const k = FX.seg(t, 700, 1000); ctx.save(); ctx.globalAlpha = k;
   T(sub, W / 2, H * 0.29, 22, C.cream, "center", 4);
-  ctx.fillStyle = "rgba(8,4,14,.8)"; ctx.fillRect(W / 2 - 230, H * 0.35, 460, 170);
+  ctx.fillStyle = "rgba(8,4,14,.8)"; ctx.fillRect(W / 2 - 230, H * 0.35, 460, battle ? 170 : 212);
   const cnt = (v) => Math.round((v || 0) * FX.ease(FX.seg(t, 900, 1900)));
   if (battle) { T("PATTY   " + cnt(r.pa) + " pts", W / 2, H * 0.43, 26, P1, "center", 4); T("CHRISSY   " + cnt(r.pb) + " pts", W / 2, H * 0.5, 26, P2, "center", 4); }
   else { T(String(cnt(r.score)).padStart(6, "0"), W / 2, H * 0.45, 56, C.b, "center", 7); T("PLATES OUT  " + cnt(r.served), W / 2, H * 0.53, 22, C.cream, "center", 4); }
   ctx.restore();
-  if (FX.seg(t, 1400, 1600) > 0) { T("SPACE / A = COOK AGAIN", W / 2 - 170, H * 0.66, 22, blink(t) ? C.b : C.cream, "center", 5); T("ESC / B = MENU", W / 2 + 190, H * 0.66, 22, C.cream, "center", 5); }
+  if (!battle) rankPlate(r.skin === "school" ? "school" : "diner", W / 2, H * 0.35 + 158, "center", FX.seg(t, 1100, 1400), 360);   // (1116) where your rank stands now
+  if (FX.seg(t, 1400, 1600) > 0) { T("SPACE / A = COOK AGAIN", W / 2 - 170, H * (battle ? 0.66 : 0.7), 22, blink(t) ? C.b : C.cream, "center", 5); T("ESC / B = MENU", W / 2 + 190, H * (battle ? 0.66 : 0.7), 22, C.cream, "center", 5); }
+}
+// (1116) THE RANK PLATE — the persistent cook rank (lifetime shift points, banked per cleared shift, per edition)
+function rankPlate(sk, x, y, al = "center", a = 1, bar = 0) {
+  if (!globalThis.PMScore) return;
+  const k = sk === "school" ? "school" : "diner", r = PMScore.loadRank(k), R = PMScore.rankOf(k, r.pts);
+  ctx.save(); ctx.globalAlpha *= a;
+  T("RANK · " + R.title, x, y, 22, "#ffd23f", al, 4);
+  T(r.pts.toLocaleString("en-US") + " pts · " + r.shifts + " shift" + (r.shifts === 1 ? "" : "s") + (r.best ? " · best " + r.best : "") + (R.next ? " · " + R.toNext.toLocaleString("en-US") + " to " + R.next : ""),
+    x, y + 22, 14, "rgba(243,230,200,.8)", al, 3);
+  if (bar) { const x0 = al === "center" ? x - bar / 2 : al === "right" ? x - bar : x;
+    ctx.fillStyle = "rgba(20,10,8,.85)"; ctx.fillRect(x0, y + 30, bar, 8); ctx.fillStyle = "#e0a92e"; ctx.fillRect(x0, y + 30, bar * Math.min(1, R.frac), 8); }
+  ctx.restore();
 }
 // ---------- the loop ----------
 function frame() {
