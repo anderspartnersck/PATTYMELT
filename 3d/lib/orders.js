@@ -3,7 +3,8 @@
 //   printer  — Joe's receipt-printer sprite; every new ticket PRINTS (slides out, the printer jolts)
 //   rail     — the ticket rail: one readable ticket per open order, oldest first:
 //              SEAT (B1-B6 counter / T1-T4 booths) · item · bread · where it is now (WAITING / GRILL 3 / UP!)
-//   call     — the order is CALLED: a banner over the kitchen + read aloud (speech; the S mute silences it)
+//   call     — the order is CALLED: an RPG-style text box types it out, then fades; the ticket is already on the rail
+//              (1117: no speech by default; ?voice=on restores the read-aloud)
 //   chips    — the same seat tag rides on the food itself (grill patty / toaster bun), in its bread's colour,
 //              so every patty on the flat-top says whose it is and what it goes on
 //   pans     — the bread pans (SESAME · RYE · WHITE) as stops on the line, labelled; the bread on your blades
@@ -57,7 +58,10 @@
                                        (SAY_ITEM[t.item] || itemLabel(t.item).toLowerCase()) + (bread ? " " + SAY_BREAD[bread] : "") + ".");
     }
   }
+  // (1117, Joe: "lose that weird AI voice") the spoken call is OFF; the RPG text box carries the order. ?voice=on brings it back.
+  const VOICE_ON = /[?&]voice=on\b/.test((root.location && root.location.search) || "");
   function say(line) {
+    if (!VOICE_ON) return;
     const S = root.speechSynthesis; if (!S || !root.SpeechSynthesisUtterance) return;
     try {
       if (S.speaking && speakQ >= 2) S.cancel(), speakQ = 0;          // never fall behind the kitchen: drop the backlog
@@ -148,16 +152,28 @@
     });
     if (open.length > shown.length) T(ctx, "+" + (open.length - shown.length) + " MORE", x0 + shown.length * (tw + gap) + 4, box.y + th / 2 + 6, 13, "#f2c14e", "left", 900);
   }
-  // the order CALL: a banner across the top of the kitchen for ~1.8 s
+  // the order CALL (1117, Joe): an RPG-style text box — double-rule frame, the line TYPES OUT, a blinking ▼, then it fades.
+  // The ticket itself is already sliding onto the rail from the printer, so the box is only the moment, never the record.
+  const CALL_CPS = 55, CALL_HOLD = 900, CALL_FADE = 280;
   function drawCall(ctx, box) {
-    if (!call) return; const age = now() - call.t0; if (age > 1800) return;
-    const a = age < 150 ? age / 150 : age > 1500 ? (1800 - age) / 300 : 1;
-    ctx.save(); ctx.globalAlpha = a;
-    ctx.font = '900 20px "Saira Condensed","Arial Narrow",sans-serif'; const w = Math.min(box.w - 20, ctx.measureText(call.text).width + 34);
-    const x = box.x + (box.w - w) / 2, y = box.y;
-    ctx.fillStyle = "rgba(20,14,10,.86)"; rr(ctx, x, y, w, 30, 6); ctx.fill();
-    ctx.strokeStyle = call.bread ? BREAD_COL[call.bread] : "#f2c14e"; ctx.lineWidth = 2; ctx.stroke();
-    T(ctx, call.text, x + w / 2, y + 22, 20, "#f2c14e", "center", 900);
+    if (!call) return; const age = now() - call.t0;
+    const n = call.text.length, typeMs = n * 1000 / CALL_CPS, life = typeMs + CALL_HOLD + CALL_FADE;
+    if (age > life) return;
+    const a = age < 120 ? age / 120 : age > life - CALL_FADE ? (life - age) / CALL_FADE : 1;
+    const shown = call.text.slice(0, Math.min(n, Math.floor(age * CALL_CPS / 1000)));
+    ctx.save(); ctx.globalAlpha = Math.max(0, a);
+    ctx.font = '800 19px "Saira Condensed","Arial Narrow",sans-serif';
+    const w = Math.min(box.w - 20, ctx.measureText(call.text).width + 46), h = 36;
+    const x = box.x + (box.w - w) / 2, y = box.y - 2;
+    ctx.fillStyle = "rgba(14,16,40,.93)"; rr(ctx, x, y, w, h, 5); ctx.fill();               // the classic RPG window: deep blue,
+    ctx.strokeStyle = "#f3ead6"; ctx.lineWidth = 2; rr(ctx, x + 1.5, y + 1.5, w - 3, h - 3, 4); ctx.stroke();   // white outer rule
+    ctx.strokeStyle = call.bread ? BREAD_COL[call.bread] : "#f2c14e"; ctx.lineWidth = 1.2;  // + an inner rule in the bread's colour
+    rr(ctx, x + 5, y + 5, w - 10, h - 10, 3); ctx.stroke();
+    T(ctx, shown, x + 16, y + 24, 19, "#f7f0e2", "left", 800);
+    if (shown.length >= n && ((age / 260) | 0) % 2 === 0) {                                // done typing: the blinking ▼
+      ctx.fillStyle = "#f2c14e"; ctx.beginPath(); const tx = x + w - 15, ty = y + h - 13;
+      ctx.moveTo(tx - 5, ty - 4); ctx.lineTo(tx + 5, ty - 4); ctx.lineTo(tx, ty + 2); ctx.closePath(); ctx.fill();
+    }
     ctx.restore();
   }
   // the bread pans as stops on the line: labels + the cursor ring + "PICK" hint; the bread riding the pair

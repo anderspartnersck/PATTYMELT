@@ -33,6 +33,18 @@
     ART.m = globalThis.ART3D_MANIFEST || null; globalThis.ART3D_MANIFEST = null;
     if (!ART.m) { try { const r = await fetch(BASE + "art3d.json", { cache: "no-cache" }); ART.m = await r.json(); } catch (e) {} }
     if (!ART.m) { ART.failed = true; return ART; }
+    // (1117) THE 3D CAST overlay: the designed crew / students / patrons (3D PIPELINE/games/patty-melt/tools/cast1117_pack.py) ride in
+    // cast3d/overlay.js as REPLACEMENT manifest keys (patron_atlases + patrons, staff.ladies, students.list), same frame format, so the
+    // draw code is untouched. ?cast3d=0 (or no overlay file) = the shipped placeholders.
+    if (!globalThis.PMCast || PMCast.crowd3d) {
+      await new Promise((res) => { const sc = document.createElement("script"); sc.src = BASE + "cast3d/overlay.js";
+        sc.onload = res; sc.onerror = res; document.head.appendChild(sc); });
+      const ov = globalThis.CAST3D_OVERLAY; globalThis.CAST3D_OVERLAY = null;
+      if (ov) for (const [k, v] of Object.entries(ov)) {
+        if (v && !Array.isArray(v) && typeof v === "object" && ART.m[k] && typeof ART.m[k] === "object" && !Array.isArray(ART.m[k])) ART.m[k] = Object.assign({}, ART.m[k], v);
+        else ART.m[k] = v;
+      }
+    }
     const m = ART.m, jobs = [];
     let done = 0; const tick = (p) => p.then((v) => { done++; ART.progress = done / jobs.length; return v; });
     for (const [k, f] of Object.entries(m.bg)) jobs.push(tick(loadImg(f)).then((im) => { ART.img["bg_" + k] = im; }));
