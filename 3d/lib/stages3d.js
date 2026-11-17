@@ -17,12 +17,18 @@
   let base = null;
   function im(f) { if (!IMG[f]) { const i = new Image(); i.src = base + f; IMG[f] = i; } return IMG[f]; }
   const ok = (i) => i && i.complete && i.naturalWidth > 0;
-  function load(b) { if (!D) return false; base = b; for (const s of Object.values(D.stages)) im(s.plate); im(D.food.atlas); im(D.mini.atlas); return true; }
+  function load(b) { if (!D) return false; base = b; for (const s of Object.values(D.stages)) im(s.plate); im(D.food.atlas); im(D.mini.atlas);
+    if (root.ART3D_STAGES_FOOD2X) im(root.ART3D_STAGES_FOOD2X.atlas); return true; }   // (1116) 2× food set, same keys+anchors
   const stage = (n) => D && D.stages[n];
   const ready = (n) => !!(D && base && stage(n) && ok(IMG[stage(n).plate]));
   function plate(ctx, n) { const s = stage(n); if (!s || !ok(IMG[s.plate])) return false; ctx.drawImage(IMG[s.plate], 0, 0, s.canvas[0], s.canvas[1]); return true; }
   function blit(ctx, atlasFile, spr, x, y) { const a = IMG[atlasFile]; if (!spr || !ok(a)) return false;
-    ctx.drawImage(a, spr.sx, spr.sy, spr.w, spr.h, x - spr.ax, y - spr.ay, spr.w, spr.h); return true; }
+    ctx.drawImage(a, spr.sx, spr.sy, spr.sw || spr.w, spr.sh || spr.h, x - spr.ax, y - spr.ay, spr.w, spr.h); return true; }
+  function foodBlit(ctx, k, x, y) {                    // (1116, ART-1116 §2) prefer the 2× food atlas once decoded; same draw box
+    const F2 = root.ART3D_STAGES_FOOD2X;
+    if (F2 && F2.sprites[k] && ok(IMG[F2.atlas])) return blit(ctx, F2.atlas, F2.sprites[k], x, y);
+    return blit(ctx, D.food.atlas, D.food.sprites[k], x, y);
+  }
   const has = (k) => !!(D.food.sprites[k]);
   function foodKey(p, PM, meltDone) {                  // engine Stage (+ item) → the atlas key (kitchen.html grillKey3D rules)
     const S = PM.Stage; let st;
@@ -44,7 +50,7 @@
   }
   function food(ctx, p, PM, x, y, meltDone) {
     if (!D || !p || p.stage === undefined || p.item === PM.Item.GRILLED_CHEESE) return false;   // (a grilled cheese lives on the toaster)
-    const k = foodKey(p, PM, meltDone); return !!k && blit(ctx, D.food.atlas, D.food.sprites[k], x, y);
+    const k = foodKey(p, PM, meltDone); return !!k && foodBlit(ctx, k, x, y);
   }
   function toastKey(b, PM, g) {                        // toaster[j]: a Bun (no .stage) by its cook, or a grilled cheese by its Stage
     if (b.stage === undefined) {
@@ -53,7 +59,7 @@
     }
     const S = PM.Stage; return "toaster.GC_" + (b.stage === S.MELT ? "MELT" : b.stage === S.DONE ? "DONE" : b.stage === S.BURNT ? "BURNT" : "TOAST");
   }
-  function toast(ctx, b, PM, g, x, y) { if (!D || !b) return false; const k = toastKey(b, PM, g); return blit(ctx, D.food.atlas, D.food.sprites[k], x, y); }
+  function toast(ctx, b, PM, g, x, y) { if (!D || !b) return false; const k = toastKey(b, PM, g); return foodBlit(ctx, k, x, y); }
   function mini(ctx, key, x, y) { return !!D && blit(ctx, D.mini.atlas, D.mini.sprites[key], x, y); }
   const atlas = () => (D && ok(IMG[D.food.atlas]) ? IMG[D.food.atlas] : null);   // the food atlas Image once decoded (front.html HOW TO COOK)
   root.PMStages = { load, ready, stage, plate, food, toast, mini, foodKey, toastKey, atlas, data: D };

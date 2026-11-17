@@ -2241,7 +2241,7 @@ function drawTip() {
 addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
   wakeAudio();                                     // first keypress arms WebAudio
-  if (k === "s") { audio.setMuted(!audio.muted); if (audio.muted) PMOrders.hush(); return; }   // S = speaker toggle (mute)
+  if (k === "s" && phase !== "initials") { audio.setMuted(!audio.muted); if (audio.muted) PMOrders.hush(); return; }   // S = speaker toggle (mute) — (1116 playtest) not on the initials card, where S = letter down
   if (cineBusy()) { PMCine.skip(); e.preventDefault(); return; }   // any key skips a cutscene
   if (phase === "play" && (paused || (k === "escape" || k === "p") && !game.over && !game.won)) { pauseKey(k); e.preventDefault(); return; }   // the PAUSE MENU
   if (k === "escape" && SHELL === "1") { toShell(_shellRes); e.preventDefault(); return; }   // back to the front door
