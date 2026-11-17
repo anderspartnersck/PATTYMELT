@@ -209,8 +209,9 @@ function drawSide(s, x0, w) {
       hl, 122, 13, COL.amber, "left", 600);
   if (CUTTHROAT) {                                  // the optional sabotage layer — charge + state
     const sf = s.sab / SAB_READY;
-    ctx.fillStyle = "#241c12"; ctx.fillRect(hl, 130, bw, 6);
-    ctx.fillStyle = s.sab >= SAB_READY ? COL.cheese : "#9a6a3a"; ctx.fillRect(hl, 130, bw * Math.min(1, sf), 6);
+    const sy = st3d() ? 132 : 130;   // (HUD 1117) ?art=3d: centred on the plate's rail (130..140), not flush on its top edge
+    ctx.fillStyle = "#241c12"; ctx.fillRect(hl, sy, bw, 6);
+    ctx.fillStyle = s.sab >= SAB_READY ? COL.cheese : "#9a6a3a"; ctx.fillRect(hl, sy, bw * Math.min(1, sf), 6);
     let st = "", sc = COL.cheese;
     if (s.incoming) { st = "◀ DEFEND!  F=RUSH C=GUM V=SCORCH"; sc = COL.bad; }
     else if (s.primeT > 0) { st = "PRIMED! pick  F=RUSH C=GUM V=SCORCH"; sc = COL.cheese; }

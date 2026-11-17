@@ -130,10 +130,11 @@ function render() {
   for (let i = 0; i < 2; i++) {
     const cx = pad + i * (bw / 2), cw = bw / 2 - 8, on = i === up;
     ctx.strokeStyle = on ? COOKS[i].color : "#3a2018"; ctx.lineWidth = on ? 3 : 1;
-    ctx.strokeRect(cx, 98, cw, 40);
-    txt(COOKS[i].name, cx + 10, 116, 15, COOKS[i].color, "left", 800);
-    txt(slung[i] + " slung", cx + 10, 132, 12, COL.dim, "left", 600);
-    if (on) txt("ON THE GRILL", cx + cw - 10, 116, 11, COL.good, "right", 700);
+    const ky = A3 ? 93 : 98;   // (HUD 1117) ?art=3d: centred in the plate's dark band (89..137); at 98 the card's bottom sat on the band's edge
+    ctx.strokeRect(cx, ky, cw, 40);
+    txt(COOKS[i].name, cx + 10, ky + 18, 15, COOKS[i].color, "left", 800);
+    txt(slung[i] + " slung", cx + 10, ky + 34, 12, COL.dim, "left", 600);
+    if (on) txt("ON THE GRILL", cx + cw - 10, ky + 18, 11, COL.good, "right", 700);
   }
   // grill
   const n = game.slots.length, cols = Math.ceil(n / 2), rows = n > 1 ? 2 : 1;
