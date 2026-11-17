@@ -107,11 +107,11 @@ function launchUrl(i = sel) {
   p.set("label", m.name); p.set("sel", selStr(i));
   return "kitchen.html?" + p.toString().replace("battle=&", "battle&").replace(/battle=$/, "battle");
 }
-function launch() { audio.win && audio.win(); state = "launch"; t0 = now(); setTimeout(() => { location.href = launchUrl(); }, 420); }
+function launch() { audio.ui("lock"); audio.scene("launch"); state = "launch"; t0 = now(); setTimeout(() => { location.href = launchUrl(); }, 420); }
 
 // ---------- the state machine ----------
 const now = () => performance.now();
-let state = "splash", t0 = now(), idleT = now(), results = null;
+let state = "splash", t0 = now(), idleT = now(), results = null, leaving = false;
 if (Q.get("results")) { try { results = JSON.parse(Q.get("results")); state = "results"; } catch (e) {} }
 else if (Q.has("attract")) state = "attract";
 else if (Q.has("menu") || Q.get("sel")) state = "menu";
@@ -131,20 +131,20 @@ function act(a) {
   wake(); idleT = now();
   if (state === "splash") return go("title");
   if (state === "attract") return go("title");
-  if (state === "title") { if (a === "ok") { audio.bell && audio.bell(2); go("menu"); } else if (a === "left" || a === "right") { ed = 1 - ed; PMCine.init({ skin: skin() }); audio.spatula(); } return; }
-  if (state === "results") { if (a === "ok") { location.href = launchUrl(); } else if (a === "back" || a === "alt") go("menu"); return; }
+  if (state === "title") { if (a === "ok") { audio.ui("select"); go("menu"); } else if (a === "left" || a === "right") { ed = 1 - ed; PMCine.init({ skin: skin() }); audio.ui("move"); } return; }
+  if (state === "results") { if (a === "ok") { if (leaving) return; leaving = true; audio.ui("lock"); audio.scene("launch"); setTimeout(() => { location.href = launchUrl(); }, 380); } else if (a === "back" || a === "alt") { audio.ui("back"); go("menu"); } return; }
   if (state !== "menu") return;
-  if (a === "back") return go("title");
-  if (a === "up") { if (row > 0) row--; else sel = (sel + MODES.length - 1) % MODES.length; audio.spatula(); }
-  else if (a === "down") { if (row > 0) row = (row + 1) % NROWS; else sel = (sel + 1) % MODES.length; audio.spatula(); }
-  else if (a === "tab") { row = (row + 1) % NROWS; audio.spatula(); }
+  if (a === "back") { audio.ui("back"); return go("title"); }
+  if (a === "up") { if (row > 0) row--; else sel = (sel + MODES.length - 1) % MODES.length; audio.ui("move"); }
+  else if (a === "down") { if (row > 0) row = (row + 1) % NROWS; else sel = (sel + 1) % MODES.length; audio.ui("move"); }
+  else if (a === "tab") { row = (row + 1) % NROWS; audio.ui("move"); }
   else if (a === "left" || a === "right") { const d = a === "left" ? -1 : 1;
     if (row === 0) { sel = (sel + MODES.length + d) % MODES.length; }
     else if (row === 1) { ed = (ed + EDITIONS.length + d) % EDITIONS.length; PMCine.init({ skin: skin() }); }
     else if (row === 2) dem = (dem + DEMANDS.length + d) % DEMANDS.length;
     else if (row === 3) scr = (scr + SCREENS.length + d) % SCREENS.length;
-    else len = (len + LENGTHS.length + d) % LENGTHS.length; audio.spatula(); }
-  else if (a === "ok") { if (row === 0) launch(); else row = 0; }
+    else len = (len + LENGTHS.length + d) % LENGTHS.length; audio.ui("move"); }
+  else if (a === "ok") { if (row === 0) launch(); else { row = 0; audio.ui("select"); } }
 }
 addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
@@ -153,7 +153,7 @@ addEventListener("keydown", (e) => {
   act(map[k] || "any"); e.preventDefault();
 });
 cv.addEventListener("pointerdown", (e) => { const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height;
-  if (state === "menu") { for (let i = 0; i < MODES.length; i++) { const ry = 150 + i * 58; if (x > 60 && x < 560 && y > ry && y < ry + 56) { if (sel === i && row === 0) return act("ok"); sel = i; row = 0; audio.spatula(); return; } }
+  if (state === "menu") { for (let i = 0; i < MODES.length; i++) { const ry = 150 + i * 58; if (x > 60 && x < 560 && y > ry && y < ry + 56) { if (sel === i && row === 0) return act("ok"); sel = i; row = 0; audio.ui("move"); return; } }
     for (let r2 = 1; r2 < 4; r2++) { const ry = 560 + (r2 - 1) * 40; if (x > 620 && x < 1220 && y > ry - 26 && y < ry + 10) { row = r2; return act(x > 920 ? "right" : "left"); } } return; }
   if (state === "results") return act(x < W / 2 ? "ok" : "alt");
   act("ok"); });
@@ -392,6 +392,9 @@ function frame() {
   const t = now() - t0;
   pollPads();
   if ((state === "title" || state === "menu") && now() - idleT > 30000) go("attract");
+  // (1117) THE ONE MUSIC ENGINE (lib/audio.js): the ident is silent; SYNTH MOTIF hits as the title lands, then the MAIN
+  // MOTIF loops under title · menu · attract · results; a launch fades it out before the page changes.
+  audio.scene(state === "splash" ? "silent" : (state === "launch" || leaving) ? "launch" : state === "attract" ? "attract" : "title");
   if (globalThis.PMHiDPI) PMHiDPI.begin(ctx);
   ctx.save();
   if (state === "splash") drawSplash(t);

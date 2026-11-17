@@ -468,6 +468,7 @@ const READY_SECS = 3.2;         // GET READY countdown after START, before the g
 //   phase "play"    — the real shift (this is the only phase the sim ticks for real input)
 let phase, readyT = 0, blink = 0;
 let game, billyPos, lastServed, lastFails, fx, fxId, paused, continueT, continuesUsed;
+let audArr = -1, audBR = null, audBRi = 0, audServed = 0, roundSerial = 0;   // (1117) Joe's sound set: render-side seams (ORDER IN / Billy's run / the round serial)
 const SERVICE_PRACTICE = ["demo", "bot", "auto", "ticks", "warm", "fill", "at", "selftest", "bonus", "mini", "ready", "board", "hs"].some(k => Q.has(k));
 const serviceUI = PMService.mount({ pm, view:"kitchen", pause:value=>{ if (phase === "play") paused = value == null ? !paused : value; } });
 addEventListener("pagehide", event => { if (!event.persisted) serviceUI.finish(game, {excluded:SERVICE_PRACTICE || BATTLE}); });
@@ -547,7 +548,7 @@ function reset(profile = SERVICE_PRACTICE && !Q.has("svc") ? "legacy" : "service
   lastServed = 0; lastFails = 0; fx = []; fxId = 0; paused = false; continueT = -1; continuesUsed = 0;
   cook = [{ serves: 0, score: 0 }, { serves: 0, score: 0 }]; battleWinner = -1;
   _cw = { won: false, over: false, combo: 0, buried: 0, slackT: 0, lead: -1, last10: false };
-  newBillyRun();
+  newBillyRun(); roundSerial++; audArr = -1; audServed = game.served;   // (1117) a fresh round: INTRO → LULL again
 }
 function startShift(i) {         // load shift i → fresh game + the SHIFT card / GET READY countdown
   if (phase === "play") plogEnd("restart");
@@ -665,20 +666,43 @@ const PRETICKS = parseInt(Q.get("ticks") || "0", 10);   // ?ticks=N — fast-for
 if (PRETICKS > 0) for (let i = 0; i < PRETICKS && !game.over && !game.won; i++) { pm.auto_step(game); pm.tick(game); }
 
 // ---------- AUDIO (shared synth — the canonical build was silent) ----------
-const audio = new PMAudio.AudioBus();
+const audio = new PMAudio.AudioBus({ silent: SHELL === "demo" });   // the front door's demo window stays silent (the front door owns the music)
 try { audio.ensure(); } catch {}                        // launchers allow autoplay; re-armed on first gesture below
 let audioPrev = null;
+const arrivals = (s) => s.service ? s.service.nextId - 1 : s.dropped + s.pile;   // tickets in (ORDER IN)
 function wakeAudio() { audio.ensure(); audio.resume(); }
 function sfxLive() { return phase === "play" && !paused && !game.over && !game.won; }   // gate one-shots to live play (quiet attract)
 function audioTick(s) {                                  // per SIM tick: fire consequence sounds (serve/fail/flow/win/over)
   for (const e of PMAudio.audioEvents(audioPrev, s, pm.FLOW_COMBO)) audio.fire(e);
   audioPrev = PMAudio.audioSnap(s);
+  const n = arrivals(s); if (audArr >= 0 && n > audArr) audio.orderIn(); audArr = n;   // a ticket prints
+  if (BR) {                                              // ?art=3d: Billy's real run — he sets off with a tray / a plate lands at its seat
+    if (audBR !== BR) { audBR = BR; audBRi = BR.events.length; }
+    for (; audBRi < BR.events.length; audBRi++) { const e = BR.events[audBRi];
+      if (e.type === "run") audio.billyRun(); else if (e.type === "deliver") audio.served(); }
+  } else if (s.served > audServed) audio.served();      // no Billy run drawn: the serve is the delivery
+  audServed = s.served;
+}
+function audioScene() {                                  // (1117) the ONE music engine's scene, every frame (lib/audio.js scene())
+  if (SHELL === "demo" || !game) return;
+  const g = game, P = phase;
+  let sc = "silent", p = {};
+  if (P === "attract") sc = SHELL === "1" ? "silent" : "attract";
+  else if (P === "ready") { sc = readyNext === "bonus" ? "bonus" : "round"; if (readyNext !== "bonus") p = { serial: roundSerial, pressure: 0 }; }
+  else if (P === "bonus") sc = "bonus";
+  else if (P === "play") { if (g.won || g.over) { sc = "end"; p = { serial: roundSerial + (g.won ? ":won" : ":over" + continuesUsed) }; }
+    else { sc = "round"; p = { serial: roundSerial, pressure: g.wait / pm.WAIT_FULL }; } }
+  else if (P === "battle_over" || P === "won_campaign") { sc = "end"; p = { serial: roundSerial + ":" + P }; }
+  else if (P === "initials" || P === "board") sc = "title";
+  audio.scene(sc, p);
+  audio.musicLevel(paused ? 0.35 : 1);                   // the pause menu: music dips, the grill bed stops (setBed)
 }
 function actionSfx() {                                   // success-gated action sound (flash fired THIS press = it worked)
   if (!game || game.flash_t !== pm.TPS) return;
   const f = game.flash;
   if (f === "FLIP!") audio.spatula();
   else if (f === "CHEESE!") audio.fwump();
+  else if (f === "ONIONS!") audio.onion();
   else if (f === "TOAST!") audio.toastpress();
   else if (f.indexOf("BILLY") !== -1) audio.holler();
 }
@@ -700,7 +724,9 @@ function loop(now) { let e = now - last; last = now; if (e > 250) e = 250; acc +
     else if (continueT > 0 && !cineBusy()) continueT = Math.max(0, continueT - e / 1000);
   }
   pollPads();                             // ARCADE STICK + BUTTONS (2-player) — polled once per frame
-  audio.setBed(phase === "play" && !game.over && !game.won && !paused, pm.buried_index(game));   // beds only during the shift
+  audio.setBed(phase === "play" && !game.over && !game.won && !paused, pm.buried_index(game),
+    game.slots.filter((x) => x).length / Math.max(1, game.slots.length));   // beds only during the shift; the GRILL bed = how full the grill is
+  audioScene();
   serviceUI.update(game, {scene:phase, excluded:SERVICE_PRACTICE || BATTLE, paused});
   const _r0 = performance.now(); render(); perfNote(e, performance.now() - _r0); requestAnimationFrame(loop); }
 const PERF = { on: Q.has("fps"), n: 0, frame: 0, rend: 0, worst: 0, samples: [], slow: [] };
@@ -817,12 +843,12 @@ function step() {
     if (game.over || game.won) reset("legacy");   // never lets the demo end — restart the shift silently
     return;
   }
-  if (DEMO) (SHELL === "demo" ? demoBot(game) : pm.auto_step(game));   // plain ?demo stays the perfect oracle (QA)
+  if (DEMO) { SHELL === "demo" ? demoBot(game) : pm.auto_step(game); if (SHELL !== "demo") actionSfx(); }   // plain ?demo stays the perfect oracle (QA) — its actions sound too
   const bServed = game.served, bScore = game.score;
   const _pb = game.billy;
   pm.tick(game); if (BR) BR.onTick(game);
   if (PLOG && !DEMO) PLOG.observe(game);
-  if (game.billy > _pb + 0.5) bellT = performance.now();   // HEY BILLY! → the bell on the pass rings (render-only)
+  if (game.billy > _pb + 0.5) { bellT = performance.now(); if (!BR && sfxLive()) audio.billyRun(); }   // HEY BILLY! → the bell on the pass rings (render-only); 2D: he runs
   if (game.players.length === 2 && game.served > bServed) {   // attribute the clean serve to the cook Billy faced
     const pi = game.billy_facing;
     cook[pi].serves += (game.served - bServed);
@@ -2165,6 +2191,10 @@ function pauseItems() {
   it.push(["quit", SHELL === "1" ? "QUIT TO MENU" : "QUIT TO TITLE"]); return it;
 }
 function pauseKey(k) {
+  if (!paused) audio.ui("select");                      // (1117) Joe's UI set on the pause menu
+  else if (k === "escape" || k === "p" || pmenu.view === "controls") audio.ui("back");
+  else if (k === "arrowup" || k === "w" || k === "arrowdown" || k === "s") audio.ui("move");
+  else if (k === "enter" || k === " " || k === "f") audio.ui("lock");
   if (!paused) { paused = true; pmenu.sel = 0; pmenu.view = "menu"; if (PLOG) PLOG.note("pause", { t: game.ticks }); return; }
   if (pmenu.view === "controls") { pmenu.view = "menu"; return; }
   const it = pauseItems();
