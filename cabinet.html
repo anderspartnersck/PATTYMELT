@@ -444,7 +444,7 @@ syncMute();
 document.getElementById("fs").addEventListener("pointerdown", (e) => {
   e.preventDefault(); e.stopPropagation();
   try { if (document.fullscreenElement) document.exitFullscreen();
-    else document.getElementById("cab").requestFullscreen(); } catch {}
+    else { const r = document.getElementById("cab").requestFullscreen(); if (r && r.catch) r.catch(() => {}); } } catch {}   // (BATCH2 1116) a denied request rejects async: no unhandled rejection
 });
 
 // ---------- CABINET ART: baked 1UP render as the frame; live canvas in the screen cutout ----------
@@ -2088,6 +2088,7 @@ function renderOver() {
     hint.textContent = "↑/↓ letter · → next · B/ENTER done";
   } else {
     const ch = cheesiest(), champ = board[0], justCrowned = overRank === 0;
+    const apMode = apModeNow();                             // (BATCH2 1116 B4) was renderPlay's local → ReferenceError froze GAME OVER
     // the shift recap (positive framing) — or the A&P VERDICT on THE AUDIT cab
     const v = verdictFor(game);
     txt(apMode ? v.grade : `GOOD SHIFT — held to ROUND ${game.rnd} · DAY ${game.cfg.day}`,

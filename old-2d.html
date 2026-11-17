@@ -105,7 +105,9 @@ const MODE_OVR = ["kids", "family", "arcade"].includes(String(Q.get("mode") || "
 const SHELL = Q.get("shell") || "";
 if (SHELL === "demo") { const st = document.createElement("style"); st.textContent = "[class*=pm-order],[class*=pm-service]:not(body),aside{display:none!important}#frame,#cab{position:fixed!important;inset:0!important;right:0!important;background:#000!important}#wrap{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:none!important;border:0!important;border-radius:0!important;box-shadow:none!important;aspect-ratio:auto!important}#tag{display:none}"; document.head.appendChild(st); }
 // HEROES (school cafeteria) skin — base wired. ?skin=school, or auto on the 2up HEROES frame.
-const SKIN = (Q.get("skin") || (Q.get("frame") === "2up-heroes" ? "school" : "diner")).toLowerCase();
+// (BATCH2 1116 B5) normalise: ?skin=heroes (the edition's name) = school; anything unknown = diner. A raw "heroes" reached
+// the engine as an unknown THEMES key and threw on the first HEY BILLY.
+const SKIN = ((s) => s === "school" || s === "heroes" ? "school" : "diner")((Q.get("skin") || (Q.get("frame") === "2up-heroes" ? "school" : "diner")).toLowerCase());
 const SCHOOL = SKIN === "school";
 if (globalThis.PMProps) PMProps.skin = SKIN;   // (1116) the Blender prop set picks the diner / HEROES variant
 document.body.classList.toggle("school", SCHOOL);

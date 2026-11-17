@@ -86,6 +86,9 @@ const LENGTHS = [["", "FULL DAY — 1 MIN PER HOUR", "60", "1 MINUTE ROUNDS"], [
 const NROWS = 5;   // the mode list + EDITION · DEMAND · SCREENS · LENGTH
 let sel = 0, row = 0, ed = (Q.get("skin") || "school") === "diner" ? 1 : 0, dem = 0, scr = 0, len = 0;
 { const s = (Q.get("sel") || "").split(","); if (s.length >= 4) { sel = +s[0] || 0; ed = +s[1] || 0; dem = +s[2] || 0; scr = +s[3] || 0; len = +s[4] || 0; } }
+// (BATCH2 1116 B6) clamp the ?sel carried through the pages: an out-of-range index (an old bookmark, a stale RESULTS URL)
+// made MODES[sel] undefined → drawMenu threw on every frame and the front door froze on its RESULTS / menu.
+{ const cl = (v, n) => Math.min(n - 1, Math.max(0, Math.floor(v) || 0)); sel = cl(sel, MODES.length); ed = cl(ed, EDITIONS.length); dem = cl(dem, DEMANDS.length); scr = cl(scr, SCREENS.length); len = cl(len, LENGTHS.length); }
 const selStr = (i) => [i, ed, dem, scr, len].join(",");
 const skin = () => EDITIONS[ed][0];
 function launchUrl(i = sel) {
