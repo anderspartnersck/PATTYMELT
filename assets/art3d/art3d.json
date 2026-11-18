@@ -13603,11 +13603,11 @@
     "serve": "patty-ready"
    },
    "chrissy": {
-    "idle": "diner/paintover/chrissy-idle",
-    "flip": "diner/paintover/chrissy-flip",
-    "cheer": "diner/paintover/chrissy-cheer",
-    "serve": "diner/paintover/chrissy-serve",
-    "cheese": "diner/paintover/chrissy-cheese"
+    "idle": "chrissy-1117-idle",
+    "flip": "chrissy-1117-flip",
+    "cheer": "chrissy-1117-cheer",
+    "serve": "chrissy-1117-serve",
+    "cheese": "chrissy-1117-cheese"
    }
   }
  },

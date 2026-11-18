@@ -71,13 +71,20 @@
     ctx.moveTo(x - s * len * 0.16 + px * w0, y - c * len * 0.16 + py * w0); ctx.lineTo(x + s * len + px * w1, y + c * len + py * w1);
     ctx.lineTo(x + s * len - px * w1, y + c * len - py * w1); ctx.lineTo(x - s * len * 0.16 - px * w0, y - c * len * 0.16 - py * w0); ctx.closePath(); ctx.fill();
   }
+  const HALO = new Map();
   function drawClock(ctx, x, y, r, min, ph, txt, bump, frame) {
     ctx.save();
     // (1116) the Blender clock, sized so ITS dial matches the hands' radius (diner: a square case, dial ≈ 0.62 of the
     // height; HEROES: a round school clock, dial ≈ 0.86); the hour's neon glows softly behind it instead of a ring.
     const dialK = root.PMProps && root.PMProps.skin !== "diner" ? 0.86 : 0.62;
-    if (root.PMProps && root.PMProps.spr(root.PMProps.key("clock"))) { ctx.shadowColor = ph.col; ctx.shadowBlur = r * 0.9; ctx.fillStyle = ph.col;
-      ctx.globalAlpha = 0.35; ctx.beginPath(); ctx.arc(x, y, r * 1.05, 0, 7); ctx.fill(); ctx.globalAlpha = 1; ctx.shadowBlur = 0; }
+    if (root.PMProps && root.PMProps.spr(root.PMProps.key("clock"))) {   // PERF 1117: the neon halo (an r*0.9 blur every frame) is baked once per (colour, size)
+      const t = ctx.getTransform ? ctx.getTransform() : null, k = t ? Math.max(0.25, Math.hypot(t.a, t.b)) : 1, key = ph.col + "|" + Math.round(r * k);
+      let c = HALO.get(key);
+      if (!c) { if (HALO.size > 16) HALO.clear(); const R = r * k, pd = Math.ceil(R * 0.9 * 1.5 + R * 1.05) + 2;
+        c = document.createElement("canvas"); c.width = c.height = 2 * pd; const g = c.getContext("2d");
+        g.shadowColor = ph.col; g.shadowBlur = r * 0.9; g.fillStyle = ph.col; g.globalAlpha = 0.35; g.beginPath(); g.arc(pd, pd, R * 1.05, 0, 7); g.fill();
+        c.pd = pd / k; HALO.set(key, c); }
+      ctx.drawImage(c, x - c.pd, y - c.pd, 2 * c.pd, 2 * c.pd); }
     const art = propC(ctx, "clock", [], x, y, (r * 2) / dialK);
     if (art) {} else if (frame) {                                  // the square case (chrome, a soft wall shadow under it)
       const [fx, fy, fw, fh] = frame;

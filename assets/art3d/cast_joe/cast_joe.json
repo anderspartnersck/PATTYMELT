@@ -39,17 +39,28 @@
     "patty-flip": "patty-flip.png",
     "patty-cheer": "patty-cheer.png",
     "patty-serve": "patty-ready.png",
-    "chrissy-idle": "diner/paintover/chrissy-idle.png",
-    "chrissy-flip": "diner/paintover/chrissy-flip.png",
-    "chrissy-cheer": "diner/paintover/chrissy-cheer.png",
-    "chrissy-serve": "diner/paintover/chrissy-serve.png",
-    "chrissy-cheese": "diner/paintover/chrissy-cheese.png",
+    "chrissy-idle": "chrissy-1117-idle.png",
+    "chrissy-flip": "chrissy-1117-flip.png",
+    "chrissy-cheer": "chrissy-1117-cheer.png",
+    "chrissy-serve": "chrissy-1117-serve.png",
+    "chrissy-cheese": "chrissy-1117-cheese.png",
     "billy-slack": "diner/paintover/billy-frustrated.png",
-    "billy-serve": "diner/paintover/billy-run-tray.png",
-    "billy-turn": "diner/paintover/billy-run-tray-b.png"
+    "billy-serve": "billy-1117-present.png",
+    "billy-turn": "billy-1117-stop.png"
    },
    "extras": {
-    "patty-dash": "patty-dash.png"
+    "patty-dash": "patty-dash.png",
+    "billy-1117-cheer": "billy-1117-cheer.png",
+    "billy-1117-dash": "billy-1117-dash.png",
+    "billy-1117-order": "billy-1117-order.png",
+    "billy-1117-tray": "billy-1117-tray.png",
+    "billy-1117-runA": "billy-1117-runA.png",
+    "billy-1117-retro": "billy-1117-retro.png",
+    "billy-1117-motion": "billy-1117-motion.png",
+    "billy-1117-holdL": "billy-1117-holdL.png",
+    "billy-1117-fistL": "billy-1117-fistL.png",
+    "billy-1117-upbeat": "billy-1117-upbeat.png",
+    "billy-1117-service": "billy-1117-service.png"
    },
    "skipped": {
     "patty-cook-alt": "future skin, Joe still working on it",

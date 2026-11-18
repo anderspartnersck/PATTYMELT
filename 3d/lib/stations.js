@@ -65,9 +65,13 @@
     if (carry) {
       const c = frameOf("bunpick", now - carry.t0, true); if (!c) return;
       const dx = bays && bays[carry.j] && bays[0] ? (bays[carry.j].x - bays[0].x) * (c.i / (c.n - 1)) : 0;   // the loop lands in bay 0: steer it to the real bay
-      ctx.save(); if (carry.pi === 1) ctx.filter = "hue-rotate(150deg) saturate(1.2)";                      // P2's pair (same tint as lib/spatulas.js)
-      ctx.drawImage(c.im, kx + c.rect[0] + dx, ky + c.rect[1]); ctx.restore();
+      // P2's pair (same tint as lib/spatulas.js); PERF 1117: tinted once per frame image, not a ctx.filter pass per draw
+      ctx.drawImage(carry.pi === 1 ? tintP2(c.im) : c.im, kx + c.rect[0] + dx, ky + c.rect[1]);
     }
   }
+  const P2T = new WeakMap();
+  function tintP2(im) { let c = P2T.get(im); if (c) return c; const w = im.width, h = im.height;
+    c = document.createElement("canvas"); c.width = w; c.height = h; const g = c.getContext("2d");
+    g.filter = "hue-rotate(150deg) saturate(1.2)"; g.drawImage(im, 0, 0); P2T.set(im, c); return c; }
   root.PMStations = { init, ok, observe, hideBay, carrying, drawSizzle, drawToaster, OFF, _carry: () => carry };
 })(typeof globalThis !== "undefined" ? globalThis : this);

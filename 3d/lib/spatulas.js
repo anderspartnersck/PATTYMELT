@@ -163,6 +163,19 @@
   }
   // one spatula with its blade centre at (x,y); side -1 = the LEFT spatula (mirrored), +1 = the RIGHT (as painted)
   let CUR = null;                                           // the drawPair options in force (fromBehind, grips)
+  const BAKE = new Map();
+  function bakedSpatula(ctx, im, sc, filter, rim, h) {
+    const t = ctx.getTransform ? ctx.getTransform() : null, k = t ? Math.max(0.25, Math.hypot(t.a, t.b)) : 1;
+    const blur = rim ? Math.max(3, h * 0.08) : 0, key = (filter || "") + "|" + (rim || "") + "|" + Math.round(h * k) + "|" + (im.src || im.width);
+    let b = BAKE.get(key); if (b) return b;
+    if (BAKE.size > 32) BAKE.clear();
+    const pd = Math.ceil(blur * 1.5) + 1, w = Math.max(1, Math.round(im.width * sc * k)), hh = Math.max(1, Math.round(im.height * sc * k));
+    const c = document.createElement("canvas"); c.width = w + 2 * pd; c.height = hh + 2 * pd; const g = c.getContext("2d");
+    if (filter) g.filter = filter;
+    if (rim) { g.shadowColor = rim; g.shadowBlur = blur; }   // the cook's colour, so the pair reads on a dark grill
+    g.drawImage(im, pd, pd, w, hh);
+    b = { c, pad: pd / k }; BAKE.set(key, b); return b;
+  }
   function spatula(ctx, x, y, side, rot, h, lift, filter, rim) {
     const im = SPR.level, fy = CUR && CUR.fromBehind ? -1 : 1;
     if (CUR && CUR.grips && im && im.width) {                // where this spatula's handle ends, for the cook's hand
@@ -174,10 +187,11 @@
     ctx.save(); ctx.translate(x, y - lift); ctx.rotate((rot + (fy < 0 ? TILT_BEHIND : TILT)) * side); ctx.scale(side, fy);
     if (im && im.width) {
       const sc = h / im.height;
-      if (filter) ctx.filter = filter;
-      if (rim) { ctx.shadowColor = rim; ctx.shadowBlur = Math.max(3, h * 0.08); }   // the cook's colour, so the pair reads on a dark grill
-      ctx.drawImage(im, -im.width * BLADE_AX * sc, -im.height * BLADE_AY * sc, im.width * sc, im.height * sc);
-      ctx.filter = "none"; ctx.shadowBlur = 0;
+      if (filter || rim) {   // PERF 1117 (HIGH TABLE docs/PERF-3D-RULES.md 3+4): the P2 tint filter and the rim blur were
+        //   two GPU passes per spatula per frame (4 spatulas in co-op). Baked once per (tint, rim, device size) and blitted.
+        const b = bakedSpatula(ctx, im, sc, filter, rim, h);
+        ctx.drawImage(b.c, -im.width * BLADE_AX * sc - b.pad, -im.height * BLADE_AY * sc - b.pad, im.width * sc + 2 * b.pad, im.height * sc + 2 * b.pad);
+      } else ctx.drawImage(im, -im.width * BLADE_AX * sc, -im.height * BLADE_AY * sc, im.width * sc, im.height * sc);
     } else {                                                // vector stand-in: blade + handle
       ctx.fillStyle = "#c9c2b2"; ctx.beginPath(); ctx.moveTo(-h * 0.2, 0); ctx.lineTo(h * 0.2, -h * 0.06);
       ctx.lineTo(h * 0.24, h * 0.06); ctx.lineTo(-h * 0.16, h * 0.1); ctx.closePath(); ctx.fill();

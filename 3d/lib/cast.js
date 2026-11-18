@@ -106,5 +106,18 @@
   const ready = (im) => !!(im && im.complete && im.naturalWidth);
   const rigFeet = (sd, file) => { const R = globalThis.PM_RIG; const n = String(file).split("/").pop(); return (RIG_ON && R && R[sd] && R[sd][n] && R[sd][n].feet) || null; };
   const rigFeetOf = (im) => { if (!RIG_ON || !im || !im.src) return null; const m = /\/cast_rig\/(diner|heroes)\/([^/?#]+)/.exec(im.src); return m ? rigFeet(m[1], m[2]) : null; };
-  globalThis.PMCast = { ink: INK, rig: RIG_ON, CASTRIG, rigFeet, rigFeetOf, cast3d: CAST3D_ON, crowd3d: CROWD3D_ON, CAST3D, skinDir, heroChain, art3dChain, img, hero, preload, ready, HERO, JOE };
+  // (1117) FLAP — the secondary-motion layer (3D PIPELINE/games/patty-melt/tools/flap1117.py): a rig frame with "flap": N in
+  // PM_RIG has N idle variants <name>.f0..fN-1.webp (hair + cloth swaying). Picked from the CLOCK (render-only; never game
+  // RNG), phase-offset per frame name so two cooks don't sway in lockstep. Falls back to the plain frame until loaded.
+  const FLAPC = {};
+  const flapOf = (im, t) => {
+    if (!RIG_ON || !im || !im.src) return im;
+    const m = /\/cast_rig\/(diner|heroes)\/([^/?#]+)\.webp/.exec(im.src); if (!m) return im;
+    const R = globalThis.PM_RIG, r = R && R[m[1]] && R[m[1]][m[2] + ".webp"]; if (!r || !r.flap) return im;
+    let seed = 0; for (const c of m[2]) seed = (seed * 31 + c.charCodeAt(0)) % 997;
+    const k = Math.floor(t / 170 + seed) % r.flap, key = m[1] + "/" + m[2] + ".f" + k;
+    let v = FLAPC[key]; if (!v) { v = FLAPC[key] = new Image(); v.src = im.src.replace(/\.webp(\?.*)?$/, ".f" + k + ".webp"); }
+    return v.complete && v.naturalWidth ? v : im;
+  };
+  globalThis.PMCast = { ink: INK, rig: RIG_ON, CASTRIG, rigFeet, rigFeetOf, flapOf, cast3d: CAST3D_ON, crowd3d: CROWD3D_ON, CAST3D, skinDir, heroChain, art3dChain, img, hero, preload, ready, HERO, JOE };
 })();
