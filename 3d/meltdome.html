@@ -20,11 +20,12 @@
       repeating-linear-gradient(90deg, rgba(181,53,43,.92) 0 22px, rgba(181,53,43,.55) 22px 44px),
       #7a1f18;
   }
-  #screenwrap { position:relative; width:96vw; max-width:1280px; aspect-ratio:1280/600;
+  #screenwrap { position:relative; width:min(96vw, calc((100dvh - 72px) * 1280 / 600)); aspect-ratio:1280/600;   /* RESIZE 1118: fit the height */
     border:14px solid #2a1410; border-radius:10px; box-shadow:0 0 0 6px #0a0504, 0 18px 60px #000; }
   canvas { display:block; width:100%; height:100%; image-rendering:pixelated; background:#0a0806; border-radius:4px; }
   #tag { position:absolute; bottom:-2.6em; width:100%; text-align:center; color:var(--cream);
     font:600 14px "Saira Condensed","Arial Narrow",sans-serif; letter-spacing:.12em; opacity:.85; }
+  @media (max-height:500px) { #tag { display:none } #screenwrap { border-width:5px; box-shadow:0 0 0 2px #0a0504; width:min(98vw, calc((100dvh - 14px) * 1280 / 600)) } }
 </style>
 </head>
 <body>

@@ -46,6 +46,12 @@
   //         going: a tour bus + the late-lunchers, close moves to `t1` ("4-5 hours if you push").
   //   t0bump: if the previous shift got THE LATE BUMP, this one opens later (planFor()).
   // `bonus` = the back-of-house interlude after the shift clears.
+  // THE ORDER SPIKE (Joe 1118: "add an order spike"): a surge that ALWAYS comes, mid-shift, and that you SEE coming —
+  // the bus pulls up at the kerb, the line builds on the sidewalk, the rail rattles (engine SPIKE_WARN = 20 s of
+  // telegraph). n tickets `gap`% of drop_interval apart. Serve every one = SPIKE BEATEN (the WAIT meter drops); lose one =
+  // weathered. ?spike=0 (setSpike(false)) = the 1117 day. The LATE BUMP's tour bus (earned, ~never fires for human
+  // hands outside KIDS) still exists; the spike is the bus everyone meets.
+  const SPIKE_LULL = { at: H(16, 35), n: 4, gap: 50, label: "THE TOUR BUS", school: "THE FIELD TRIP" };
   const SHIFTS = [
     { n: 1, name: "OPEN", time: "11:00 AM", music: "open",
       wrinkle: "Doors open. Learn the grill: FLIP, CHEESE, then HEY BILLY to serve. Hear the bell? A table's coming in.",
@@ -63,7 +69,8 @@
     { n: 3, name: "THE AFTERNOON LULL", time: "3:00 PM", music: "open",
       wrinkle: "A breather. Stragglers and regulars, and the patty melt lands: toast the rye on the TOASTER.",
       mode: "family", grill: 6, rnd: 1, items: "meltintro", bonus: "FREEZER",
-      day: { t0: H(15), t0bump: H(15, 45), t1: H(17, 30), flow: [[H(15, 5), H(17, 20), 300, "walk"], [H(16, 15), 0, 80, "seat", 2]] } },
+      day: { t0: H(15), t0bump: H(15, 45), t1: H(17, 30), flow: [[H(15, 5), H(17, 20), 300, "walk"], [H(16, 15), 0, 80, "seat", 2]],
+             spike: SPIKE_LULL } },
     // → BONUS: WALK-IN FREEZER (restock breather, no-fail) after the lull
     { n: 4, name: "HAPPY HOUR", time: "5:30 PM", music: "day",
       wrinkle: "Rounds of drinks: Billy's running the rail. Lighter food, but keep him at the pass.",
@@ -123,12 +130,15 @@
   // into an ordinary food walk-in without it).
   let _barflies = true;
   function setBarflies(v) { _barflies = !!v; }
+  let _spike = true;                                   // (1118) THE ORDER SPIKE switch; ?spike=0 = without
+  function setSpike(v) { _spike = !!v; }
   function note(g) { _prev = g ? { combo_best: g.combo_best, waste: g.waste || 0, bumped: !!(g.service && g.service.day && g.service.day.bumped) } : null; }
   function planFor(sh, prev = _prev, length = DEFAULT_LENGTH, barflies = _barflies) {
     if (!sh.day) return { day: null, bumped: false, label: null };
     const day = Object.assign({}, sh.day, { tpm: LENGTHS[lengthOf(length)].tpm });
     if (sh.day.barflies && barflies) day.flow = sh.day.flow.concat(sh.day.barflies);
     delete day.barflies;
+    if (!_spike) delete day.spike;
     const late = !!(prev && prev.bumped && sh.day.t0bump);
     if (late) day.t0 = sh.day.t0bump;
     delete day.t0bump;
@@ -154,6 +164,9 @@
     if (_views) _views.set(g, view);
     return view;
   }
+
+  // the spike's name for the pages (null without one): "THE TOUR BUS" / HEROES "THE FIELD TRIP"
+  function spikeOf(sh, skin) { const sp = _spike && sh && sh.day && sh.day.spike; return sp ? (skin === "school" && sp.school ? sp.school : sp.label) : null; }
 
   function itemSeq(pm, key) {
     switch ((key || "burger").toLowerCase()) {
@@ -186,7 +199,7 @@
     return g;
   }
 
-  const CAMPAIGN = { SHIFTS, WEEKEND, LENGTHS, DEFAULT_LENGTH, TARGET, length: DEFAULT_LENGTH, itemSeq, build, forNight, planFor, note, verdict, cardView, secsOf, lengthOf, setBarflies };
+  const CAMPAIGN = { SHIFTS, WEEKEND, LENGTHS, DEFAULT_LENGTH, TARGET, length: DEFAULT_LENGTH, itemSeq, build, forNight, planFor, note, verdict, cardView, secsOf, lengthOf, setBarflies, setSpike, spikeOf };
   global.PMCampaign = CAMPAIGN;
   if (typeof module !== "undefined" && module.exports) module.exports = CAMPAIGN;
 })(typeof globalThis !== "undefined" ? globalThis : this);

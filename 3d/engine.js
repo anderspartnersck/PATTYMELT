@@ -62,23 +62,29 @@
   // bar (HAPPY HOUR round of drinks) | rush (a surge). The WAIT meter recovers DAY_RECOVER x in a breather
   // (next arrival a long gap away / schedule spent); a waste spikes WASTE_SPIKE (a redo, not a lost order).
   const DAY_LULL_GAP = 150, DAY_RECOVER = 2.0, WASTE_SPIKE = 9.0, DAY_CUE = 60, DAY_TAIL = 150;
-  const DAY_WAVES = ["seat", "togo", "rush"];
+  const DAY_WAVES = ["seat", "togo", "rush", "spike"];
   const TAKEOUT_WINDOW = 240, TAKEOUT_BAG = 2, TAKEOUT_SPIKE = 4.0, BAG_BEAT = 2, BAR_ROUNDS = 2;
   // SHIFTS ON A GAME CLOCK (Joe 1112, docs/SHIFTS-AND-BATTLE-1112.md) — opt-in `tpm` in the day spec. Mirrors Python:
   // (t1 - t0) restaurant minutes x tpm ticks; a FLOW of [m0, m1, gap, kind(, n(, bag))] (n 0 = a stream until m1,
   // n > 0 = a burst of n); the shift ends at the close (survive = won); `bump` = THE LATE BUMP inside the shift.
   const DAY_REF_TPM = 10;       // GAME CLOCK: the reference scale; a faster clock (QUICK) shrinks every burst to tpm/REF of its people
+  // THE ORDER SPIKE (Joe 1118): a clocked spec's `spike` {at, n, gap} = a surge that always comes, telegraphed SPIKE_WARN
+  // ticks ahead (day_spike()); every spike ticket served = BEATEN (WAIT -SPIKE_RELIEF), any lost = WEATHERED. Mirrors Python.
+  // service.day.spike = {state, lost}: 0 coming · 1 WARN · 2 ON · 3 BEATEN · 4 WEATHERED.
+  const SPIKE_WARN = 200, SPIKE_RELIEF = 35.0;
   const DAY_LAST_ORDERS = 150;   // GAME CLOCK: no new walk-ins in the final 150 ticks (15 s) before close, at any scale
   function _flow_compile(spec, drop_interval) {
     const t0 = spec.t0, tpm = spec.tpm, span = (spec.t1 - t0) * tpm, door = Math.max(1, span - DAY_LAST_ORDERS), ev = [];   // door = the last ticket the grill takes
     let bags = 0;
-    spec.flow.forEach((seg, si) => {
+    const flow = spec.flow.slice(), sp = spec.spike;
+    if (sp) flow.push([sp.at, 0, sp.gap, "spike", sp.n]);   // THE ORDER SPIKE: one more burst, its own kind (cued, tracked)
+    flow.forEach((seg, si) => {
       const m0 = seg[0], m1 = seg[1], gap = seg[2], kind = seg[3], size = seg.length > 5 ? seg[5] : TAKEOUT_BAG;
       let n = seg.length > 4 ? seg[4] : 0;
       const step = Math.max(1, Math.floor(drop_interval * gap / 100)), a = (m0 - t0) * tpm;
       if (n > 0) {
         if (a < 0) return;                           // a burst before this shift opened (the late bump moved t0)
-        if (tpm < DAY_REF_TPM) n = Math.max(1, Math.floor((n * tpm + DAY_REF_TPM - 1) / DAY_REF_TPM));   // QUICK: smaller bursts (tpm/REF, rounded up)
+        if (tpm < DAY_REF_TPM && kind !== "spike") n = Math.max(1, Math.floor((n * tpm + DAY_REF_TPM - 1) / DAY_REF_TPM));   // QUICK: smaller bursts (tpm/REF, rounded up)
         for (let i = 0; i < n; i++) {
           const t = a + i * step; if (t >= door) break;
           if (kind === "togo" && i % size === 0) bags += 1;
@@ -100,7 +106,13 @@
       gaps.push(t - prev); prev = t;
       kinds.push(e[3]); wave.push(e[4]); rest.push(gaps[gaps.length - 1] * 100 >= DAY_LULL_GAP * drop_interval ? 1 : 0); bag.push(e[5]);
     }
-    return { spec, t0, t1: spec.t1, gaps, kinds, wave, rest, bag, total: span, clocked: true, tpm };
+    const out = { spec, t0, t1: spec.t1, gaps, kinds, wave, rest, bag, total: span, clocked: true, tpm };
+    if (sp) {
+      const ks = []; kinds.forEach((kd, k) => { if (kd === "spike") ks.push(k); });
+      out.spike = ks;                                // arrival indices of the spike's tickets (ticket id = k + 1)
+      out.spike_at = ks.length ? gaps.slice(0, ks[0] + 1).reduce((a, x) => a + x, 0) : -1;
+    }
+    return out;
   }
   const day_clocked = (s) => !!(s.cfg.sched && s.cfg.sched.clocked);
   function _day_bump_tick(s) {        // THE LATE BUMP (clocked): at the bump's wall-clock minute a hot shift keeps the pop going
@@ -113,6 +125,32 @@
     s.cfg.sched = nsc; s.cfg.orders += added; s.orders_left += added; s.service.day.bumped = 1;
     const k = s.service.nextId - 1;
     if (k < nsc.gaps.length) s.drop_t = nsc.gaps.slice(0, k + 1).reduce((a, x) => a + x, 0) - s.ticks + 1;
+  }
+  function _day_spike_tick(s) {       // THE ORDER SPIKE: coming -> WARN -> ON -> BEATEN / WEATHERED (mirrors Python)
+    const sc = s.cfg.sched, sp = s.service.day.spike;
+    if (sp === undefined || sp.state >= 3 || !sc.spike) return;
+    const ks = sc.spike;
+    if (sp.state === 0 && s.ticks >= sc.spike_at - SPIKE_WARN) sp.state = 1;
+    if (sp.state === 1 && s.service.nextId - 1 > ks[0]) sp.state = 2;
+    if (sp.state !== 2) return;
+    const tix = s.service.tickets; let lost = 0, left = 0;
+    for (const k of ks) {
+      if (k >= tix.length) left += 1;
+      else if (tix[k].rating === null) left += 1;
+      else if (tix[k].status !== "served") lost += 1;
+    }
+    sp.lost = lost;
+    if (left === 0) {
+      if (lost === 0) { sp.state = 3; s.wait = Math.max(0.0, s.wait - SPIKE_RELIEF); _say(s, "SPIKE BEATEN!"); }
+      else sp.state = 4;
+    }
+  }
+  function day_spike(s) {             // the pages' view: null, or {state, t (ticks until it walks in), n, left, lost}
+    const sc = s.cfg.sched;
+    if (!sc || !s.service || !sc.spike || !s.service.day || s.service.day.spike === undefined) return null;
+    const sp = s.service.day.spike, ks = sc.spike, tix = s.service.tickets;
+    const left = ks.filter((k) => k >= tix.length || tix[k].rating === null).length;
+    return { state: sp.state, t: Math.max(0, sc.spike_at - s.ticks), n: ks.length, left, lost: sp.lost };
   }
   function day_compile(spec, drop_interval) {        // spec -> per-arrival tick gaps + kinds + wave/rest + bags
     if (spec.tpm) return _flow_compile(spec, drop_interval);
@@ -334,7 +372,7 @@
       cfg, mode, theme, rnd, players: roster,
       ...(profile === "service" ? {service:{profile:"service",nextId:1,tickets:[],events:[],queue:[],waste:{totals:{pattyBuilds:0,breadPortions:0,onionPortions:0,cheeseSlices:0},events:[]},
         ...(cfg.drinks ? {drinks:{rail:new Array(DRINK_RAIL).fill(null),queue:[]}} : {}),
-        ...(cfg.sched ? {day:Object.assign({late:0,wseen:0,sips:0}, cfg.sched.clocked ? {bumped:0} : {})} : {})}} : {}),
+        ...(cfg.sched ? {day:Object.assign({late:0,wseen:0,sips:0}, cfg.sched.clocked ? {bumped:0} : {}, cfg.sched.spike ? {spike:{state:0,lost:0}} : {})} : {})}} : {}),
       slots: new Array(grill).fill(null),
       toaster,
       pile: 0, orders_left: cfg.orders, score: 0, fails: 0, bun_fails: 0, wait: 0.0,
@@ -566,7 +604,7 @@
     let gi = s.slots.findIndex((sl) => sl === null);
     if (gi === -1) return false;
     if (s.cfg.alt_deal && s.players.length === 2) {   // MELTDOME FAIR DEAL (opt-in, cfg.alt_deal): this order's half first
-      const want = s.dropped % 2, f = _zone_of(s, want).concat(_zone_of(s, 1 - want)).find((j) => s.slots[j] === null);
+      const want = (s.dropped + (s.cfg.alt_deal === 2 ? 1 : 0)) % 2, f = _zone_of(s, want).concat(_zone_of(s, 1 - want)).find((j) => s.slots[j] === null);
       if (f !== undefined) gi = f;                    // (off = first free slot, byte-identical). Mirrors Python.
     }
     s.slots[gi] = _mint(s, item, ticket); return true;
@@ -850,7 +888,7 @@
   }
   function _day_tick(s) {            // THE DAY: a take-out not bagged by its quoted pickup time goes LATE (once)
     if (!(s.service && s.cfg.sched)) return;
-    if (s.cfg.sched.clocked) _day_bump_tick(s);      // GAME CLOCK: THE LATE BUMP (a hot lunch keeps going)
+    if (s.cfg.sched.clocked) { _day_bump_tick(s); _day_spike_tick(s); }   // GAME CLOCK: THE LATE BUMP + THE ORDER SPIKE
     for (const t of s.service.tickets)
       if (t.togo && t.rating === null && !t.pickupLate && s.ticks > t.due) { t.pickupLate = true; s.service.day.late += 1; }
   }
@@ -1242,6 +1280,19 @@
       while (!(cl.won || cl.over) && cl.ticks < 3000) { cl.billy = 0; cl.wait = 0; tick(cl); }
       cok = cok && cl.won && cl.ticks === 400 && cl.service.tickets[0].reason.startsWith("Still cooking at close");
       ok("game clock: flow compile, close-time end (not the quota), the late bump inside the shift, QUICK bursts, closed tickets", cok);
+      // THE ORDER SPIKE (1118) — mirrors the Python selftest block
+      const ss = { t0: 640, t1: 720, tpm: 10, flow: [[642, 715, 200, "walk"]], spike: { at: 675, n: 3, gap: 50 } };
+      const sg = new_game(1, "family", 1, "diner", SLOTS, null, "service", true, true, ss), ssc = sg.cfg.sched;
+      let sok = ssc.kinds.filter((k) => k === "spike").length === 3 && ssc.wave[ssc.spike[0]] === 1
+        && ssc.spike_at === ssc.gaps.slice(0, ssc.spike[0] + 1).reduce((a, x) => a + x, 0)
+        && sg.service.day.spike.state === 0 && day_spike(sg).n === 3;
+      const seen = new Set(); let warnAt = null;
+      while (!(sg.won || sg.over) && sg.ticks < 3000) { auto_step(sg); tick(sg); const st = sg.service.day.spike.state; if (st === 1 && warnAt === null) warnAt = sg.ticks; seen.add(st); }
+      sok = sok && sg.won && [0, 1, 2, 3].every((k) => seen.has(k)) && warnAt === ssc.spike_at - SPIKE_WARN;
+      const qs = new_game(1, "family", 1, "diner", SLOTS, null, "service", true, true, Object.assign({}, ss, { tpm: 5 }));
+      const ns = new_game(1, "family", 1, "diner", SLOTS, null, "service", true, true, Object.assign({}, ss, { spike: null }));
+      sok = sok && qs.cfg.sched.kinds.filter((k) => k === "spike").length === 3 && !("spike" in ns.service.day) && day_spike(ns) === null;
+      ok("order spike: cued burst, full size on QUICK, WARN at SPIKE_WARN, warn -> on -> beaten, off = no key", sok);
     }
     }
 
@@ -1463,7 +1514,7 @@
     GRADE_PERFECT, GRADE_GOOD, GRADE_OK, FLIP_PENALTY, GRADE_BONUS, WASTE_COST, POOR_SPIKE, CATS, PTS, POPS_MAX,   // 1112 COOK QUALITY
     SIDE_STEPS, MIN_FLIPS, grade_window, DRINKS, DRINK_CYCLE, DRINK_POUR, DRINK_RAIL, DRINK_PATIENCE, DRINK_SPIKE, drink_for,
     DAY_LULL_GAP, DAY_RECOVER, WASTE_SPIKE, DAY_CUE, DAY_TAIL, DAY_WAVES, TAKEOUT_WINDOW, TAKEOUT_BAG, TAKEOUT_SPIKE, BAG_BEAT, BAR_ROUNDS,   // THE DAY
-    day_compile, day_clock, day_breather, day_cue, day_clocked, DAY_LAST_ORDERS, DAY_REF_TPM,
+    day_compile, day_clock, day_breather, day_cue, day_clocked, DAY_LAST_ORDERS, DAY_REF_TPM, day_spike, SPIKE_WARN, SPIKE_RELIEF,
     PERIODS, Stage, combo_mult, pyround, round_config, Patty, new_game, advance_round, cursorOf,
     move, flip, add_cheese, toast, drop, handoff, hey_billy, tick, live_wait, buried_index, crowd_bark,
     qualifies, add_high_score, auto_step, selftest,

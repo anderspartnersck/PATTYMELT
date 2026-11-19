@@ -47,6 +47,18 @@
     background:#b5352b;color:#fff3d5;font:700 12px/1 "Saira Condensed","Arial Narrow",sans-serif;letter-spacing:.14em;cursor:pointer;opacity:.9}
   body.pm-rail-narrow:not(.pm-rail-tucked) #pmRailTab{right:232px}
   @media(max-width:900px){#pmRailTab{display:none}}
+  /* RESIZE 1118: the gingham + the centring follow the rail. Tucked = the whole viewport (it stayed 280px short on the
+     right, so the game sat off-centre and ran past the gingham at 16:9/16:10/4:3); open narrow rail = 232px, not 280. */
+  body.pm-rail-tucked.pm-service-layout #frame,body.pm-rail-tucked.pm-service-layout #cab{right:0!important;bottom:0!important}
+  body.pm-rail-narrow:not(.pm-rail-tucked).pm-service-layout #frame{right:232px!important}
+  /* phone landscape / any short screen: the key strip is for keyboards (hidden), the bezel thins, the game takes the height */
+  @media(max-height:500px){
+    #tag{display:none}
+    #wrap{border-width:5px!important;box-shadow:0 0 0 2px #0a0504!important}
+    body.pm-service-layout #wrap,body.pm-rail-tucked.pm-service-layout #wrap{max-width:98vw!important;width:min(98vw,calc((100dvh - 14px)*var(--pm-screen-aspect,2.13)))!important}
+    .pm-service{display:none!important}
+    body.pm-service-layout #frame,body.pm-service-layout #cab{right:0!important;bottom:0!important}
+  }
 </style>
 </head>
 <body>
@@ -502,13 +514,14 @@ let _asmPlate = null;                        // where the assembled plate sits (
 // A shift = a classic-arcade level. The table drives new_game's levers (mode/grill/items/quota); the
 // player climbs shift 1 → 12 (coin-op style). ITEMS (jailbreak FULL MENU) still overrides the shift menu.
 const CAMP = PMCampaign.forNight(Q.get("night"), Q.get("length"));
-if (Q.get("barflies") === "off") PMCampaign.setBarflies(false);   // (1116 Q659) HAPPY HOUR without the drinks-only bar crowd   // THE DAY (1112): ?night=weekend = Fri/Sat (3 seatings, close at 12) · ?length=quick|day|long = the GAME CLOCK scale
+if (Q.get("barflies") === "off") PMCampaign.setBarflies(false);
+if (Q.get("spike") === "0" || Q.get("spike") === "off") PMCampaign.setSpike(false);   // (1118) THE ORDER SPIKE off = the 1117 day   // (1116 Q659) HAPPY HOUR without the drinks-only bar crowd   // THE DAY (1112): ?night=weekend = Fri/Sat (3 seatings, close at 12) · ?length=quick|day|long = the GAME CLOCK scale
 const START_IDX = Math.max(0, Math.min(CAMP.SHIFTS.length - 1, (parseInt(Q.get("shift") || "1", 10) || 1) - 1));
 const DEMO_IDX = Math.min(5, CAMP.SHIFTS.length - 1);   // attract self-plays a lively mid shift (THE BUS), not the sparse opener
 let shiftIdx = START_IDX;
 const shift = () => CAMP.SHIFTS[shiftIdx];
 // MELTDOME battle: a service clock + per-cook tally (presentation-side; the engine stays parity-locked).
-let battleT = 0, battleWinner = -1;
+let battleT = 0, battleWinner = -1, battleNo = 0;   // battleNo: matches played this page (the fair deal alternates its first half)
 let cook = [{ serves: 0, score: 0 }, { serves: 0, score: 0 }];   // per-cook clean serves + points (co-op stats + battle)
 // ---------- HIGH SCORE (coin-op) — the campaign score ACCUMULATES across shifts (new_game zeroes each shift,
 // so the run total is banked in runScore); GAME OVER / CLOSING TIME → enter initials → persistent board. ----
@@ -538,7 +551,13 @@ function finalizeEntry() {        // commit the 3 letters to the board + persist
 function buildBattle() {        // the shared-grill grill-off: one grill, one Billy, one diner, individual scoring
   const g = pm.new_game(1, "family", 2, SKIN, 6, ITEMS && ITEMS.length ? ITEMS : pm.ITEMS_FULL_MENU);
   g.cfg.orders = 99999; g.orders_left = 99999;   // the CLOCK ends the service, never a quota
-  if (Q.get("deal") === "alt") g.cfg.alt_deal = true;   // opt-in FAIR DEAL (engine cfg.alt_deal): new orders alternate halves
+  // (1118, Joe's SEAT FAIRNESS band 45–55%) the FAIR DEAL is the default: new orders alternate halves (engine cfg.alt_deal),
+  // and which half gets the first order alternates match by match (alt_deal 2 = P2 first), so the deal's one-order edge
+  // flips every rematch (tools/meltdome_fair.mjs: P1 47.9–50.0% by menu). ?deal=old = the 1117 first-free-slot deal (P1
+  // won ~100%); ?deal=alt = the fair deal, always P1 first (the 1116 opt-in).
+  const dq = Q.get("deal");
+  if (dq !== "old") g.cfg.alt_deal = dq === "alt" ? true : (battleNo % 2 ? 2 : true);
+
   return g;
 }
 let BR = null;                                    // ?art=3d: Billy's run + the pass (billy_run.js)
@@ -561,7 +580,9 @@ function startShift(i) {         // load shift i → fresh game + the SHIFT card
   const sh = shift();
   if (CINE && !_opened.has(shiftIdx)) _opened.add(shiftIdx), PMCine.shiftOpen({ n: sh.n, of: CAMP.SHIFTS.length, name: sh.name, time: sh.time, wrinkle: sh.wrinkle, coop: PLAYERS === 2, onEnd: () => { readyT = Math.min(readyT, 2.2); } });
 }
-function startBattle() { if (phase === "play") plogEnd("restart"); reset(); plogStart("battle"); battleT = BATTLE_SECS; readyNext = "play"; phase = "ready"; readyT = READY_SECS; wakeAudio();
+function nextBattleNo() { battleNo++; try { const k = "pmMeltdomeNo", n = (parseInt(localStorage.getItem(k) || "0", 10) || 0) + 1;   // alternate across
+  localStorage.setItem(k, String(n)); battleNo = n; } catch (e) {} }   // launches too (the front door opens a fresh page per match); storage blocked = per page
+function startBattle() { if (phase === "play") plogEnd("restart"); nextBattleNo(); reset(); plogStart("battle"); battleT = BATTLE_SECS; readyNext = "play"; phase = "ready"; readyT = READY_SECS; wakeAudio();
   if (CINE && !_opened.has("vs")) _opened.add("vs"), PMCine.versus({ secs: BATTLE_SECS, onEnd: () => { readyT = Math.min(readyT, 2.2); } }); }
 function endBattle() {           // bell (or the diner got buried): compare CLEAN serves, tiebreak on points, else draw
   const a = cook[0].serves, b = cook[1].serves;
@@ -695,7 +716,8 @@ function audioScene() {                                  // (1117) the ONE music
   else if (P === "ready") { sc = readyNext === "bonus" ? "bonus" : "round"; if (readyNext !== "bonus") p = { serial: roundSerial, pressure: 0 }; }
   else if (P === "bonus") sc = "bonus";
   else if (P === "play") { if (g.won || g.over) { sc = "end"; p = { serial: roundSerial + (g.won ? ":won" : ":over" + continuesUsed) }; }
-    else { sc = "round"; p = { serial: roundSerial, pressure: g.wait / pm.WAIT_FULL }; } }
+    else { sc = "round"; const spk = globalThis.PMDay && PMDay.spikeRattle ? PMDay.spikeRattle(pm, g) : 0;   // (1118) the bus pulls up: the band swings to INTENSE
+      p = { serial: roundSerial, pressure: Math.max(g.wait / pm.WAIT_FULL, spk >= 0.4 ? 0.55 : 0) }; } }
   else if (P === "battle_over" || P === "won_campaign") { sc = "end"; p = { serial: roundSerial + ":" + P }; }
   else if (P === "initials" || P === "board") sc = "title";
   audio.scene(sc, p);
@@ -920,9 +942,14 @@ function spawnWalkout() { const t = tablePoint(game.fails + 2);              // 
 function stepFX() { for (const f of fx) f.t++; fx = fx.filter((f) => f.t < f.life); }
 
 // ---------- shared draw helpers ----------
-function txt(s, x, y, sz, c, al = "left", w = 700) {
-  ctx.fillStyle = c; ctx.textAlign = al; ctx.textBaseline = "alphabetic";
-  ctx.font = w + " " + sz + 'px "Saira Condensed","Arial Narrow",sans-serif'; ctx.fillText(s, x, y); }
+// RESIZE 1118: a legibility floor. The canvas is drawn in W×H units and scaled by CSS; on a phone (2 screens at ~0.6×)
+// a 10-unit label came out 6 px tall. Below 8 CSS px every label grows toward it (at most ×1.35, so it still fits its
+// box). Desktop sizes never trip it. Set once per frame in render(); lib/orders.js reads the same floor.
+let _txtFloor = 0;
+function txtSize(sz) { return _txtFloor > sz ? Math.min(sz * 1.35, _txtFloor) : sz; }
+function txt(s, x, y, sz, c, al = "left", w = 700, mw = 0) {   // mw: optional max width (squeezes, never spills)
+  sz = txtSize(sz); ctx.fillStyle = c; ctx.textAlign = al; ctx.textBaseline = "alphabetic";
+  ctx.font = w + " " + sz + 'px "Saira Condensed","Arial Narrow",sans-serif'; if (mw) ctx.fillText(s, x, y, mw); else ctx.fillText(s, x, y); }
 function stageCol(p) { if (!p) return null;
   if (p.stage === S.SEAR_A) return COL.raw; if (p.stage === S.SEAR_B) return COL.seared;
   if (p.stage === S.TOAST) return COL.toast; if (p.stage === S.MELT) return COL.melt;
@@ -1120,7 +1147,7 @@ function rigContact(im, x, y, w, face, ry) {
 }
 function drawCook3D(who, st) {        // feet on the station point, height = what 1.6 m measures there on this camera
   const pose = pickPattyPose(), sp = castSprite3D(who, pose); if (!sp || !sp.width) return;
-  const h = st.h * 1.02, w = h * sp.width / sp.height, x = KIT.x + st.x, y = KIT.y + st.y;
+  const h = st.h * 1.02, w = h * sp.width / sp.height, x = KIT.x + st.x, y = KIT.y + st.y + (heroHudCompact() ? HERO_COOK_DROP : 0);
   ctx.fillStyle = "rgba(0,0,0,0.28)"; ctx.beginPath(); ctx.ellipse(x, y - 2, w * 0.30, 5, 0, 0, 7); ctx.fill();
   rigContact(sp, x, y, w, 1, 3.5);
   // THE JUICE (render-only): a pose change lands with a squash-and-spring; idle breathes from the feet
@@ -1327,8 +1354,14 @@ function drawKitchen3D() {
   pmark('spatulas');
 }
 
+// RESIZE 1118: HEROES (cooks behind the flat-top) put the cook's head right under the HUD's second line and the WAIT bar
+// across her face. There the HUD packs into two short rows + a thin bar above y≈52 and the cooks stand HERO_COOK_DROP
+// lower (the flat-top's foreground still cuts them at the waist), so nothing overlaps.
+const HERO_COOK_DROP = 14;
+function heroHudCompact() { return SCHOOL && art3d() && !!(ART3D.m && ART3D.m.cooks_behind_grill); }   // both screen counts (one-screen had the same head-in-the-HUD)
 function drawKitchenHUD(r, pad) {
   if (_skipHUD) return;
+  if (heroHudCompact()) return drawKitchenHUDCompact(r, pad);
   if (!BATTLE) txt(L.kit, r.x + pad, r.y + 34, 24, COL.cheese, "left", 800);   // battle: the scoreboard owns the header
   if (!BATTLE) {
     txt("SCORE " + String(game.score).padStart(6, "0"), r.x + r.w - pad, r.y + 30, 18, COL.cream, "right", 700);
@@ -1343,6 +1376,22 @@ function drawKitchenHUD(r, pad) {
   ctx.fillStyle = "#241c12"; ctx.fillRect(r.x + pad, r.y + 68, bw, 11);
   ctx.fillStyle = wf >= .78 ? COL.bad : wf >= .5 ? COL.amber : COL.good; ctx.fillRect(r.x + pad, r.y + 68, bw * wf, 11);
   if (wf >= .5) txt(wf >= .78 ? "IN THE WEEDS!" : "backing up…", r.x + pad, r.y + 94, 13, wf >= .78 ? COL.bad : COL.amber, "left", 700);
+}
+function drawKitchenHUDCompact(r, pad) {
+  const g = ctx.createLinearGradient(0, r.y, 0, r.y + 58); g.addColorStop(0, "rgba(10,8,14,.72)"); g.addColorStop(1, "rgba(10,8,14,0)");
+  ctx.fillStyle = g; ctx.fillRect(r.x, r.y, r.w, 58);
+  if (!BATTLE) {
+    txt(L.kit, r.x + pad, r.y + 24, 20, COL.cheese, "left", 800);
+    txt("SCORE " + String(game.score).padStart(6, "0"), r.x + r.w - pad, r.y + 22, 16, COL.cream, "right", 700);
+    txt("SHIFT " + shift().n + "/" + CAMP.SHIFTS.length + " · " + shift().name, r.x + r.w - pad, r.y + 38, 11, COL.amber, "right", 700);
+    const mult = pm.combo_mult(game.combo), clk = game.cfg.sched && game.cfg.sched.clocked && globalThis.PMDay;
+    txt((clk ? "SERVED " + game.served + "/" + CAMP.verdict(game).target + "  CLOSE " + PMDay.hhmm(game.cfg.sched.t1) : "ORDERS " + String(game.orders_left).padStart(2)) + "  COMBO x" + mult + (game.combo >= pm.FLOW_COMBO ? "  BIG GRILL ENERGY" : ""),
+        r.x + pad, r.y + 39, 12, game.combo >= pm.FLOW_COMBO ? COL.cheese : COL.cream, "left", 600);
+  }
+  const wf = Math.min(1, game.wait / pm.WAIT_FULL), bw = r.w - pad * 2;
+  ctx.fillStyle = "#241c12"; ctx.fillRect(r.x + pad, r.y + 45, bw, 6);
+  ctx.fillStyle = wf >= .78 ? COL.bad : wf >= .5 ? COL.amber : COL.good; ctx.fillRect(r.x + pad, r.y + 45, bw * wf, 6);
+  if (wf >= .5) txt(wf >= .78 ? "IN THE WEEDS!" : "backing up…", r.x + r.w - pad, r.y + 64, 13, wf >= .78 ? COL.bad : COL.amber, "right", 700);
 }
 function drawKitchen() {
   if (art3d()) return drawKitchen3D();
@@ -1905,7 +1954,7 @@ function render3DOneScreen() {
 }
 // THE ORDERS (1111, lib/orders.js): where the printer + rail sit per room, so they never cover the grill or the cooks
 function railBox() {
-  if (SCREENS === 1) return { x: DIN.x + 8, y: DIN.y + 10, w: DIN.w - 16, tw: 92, th: 66 };
+  if (SCREENS === 1) return { x: DIN.x + 96, y: DIN.y + 10, w: DIN.w - 104, tw: 92, th: 66 };   // RESIZE 1118: clear of Billy at the pass (the printer hid him)
   if (art3d() && SCHOOL) return { x: KIT.x + 16, y: KIT.y + KIT.h - 120, w: KIT.w - 32, tw: 92, th: 66 };
   if (!art3d()) return { x: KIT.x + 190, y: KIT.y + 252, w: KIT.w - 204, tw: 88, th: 62 };   // (1112) 2D: the gap between the flat-top and the
   return { x: KIT.x + 14, y: KIT.y + 100, w: KIT.w - 28, tw: 92, th: 66 };                     // assembly (it sat ON the grill before)
@@ -1913,11 +1962,13 @@ function railBox() {
 function drawOrders() {
   PMOrders.update(game, { voice: !SERVICE_PRACTICE && SHELL !== "demo" && Q.get("voice") !== "off", muted: !!audio.muted });
   if (!game.service) return;
-  const rb = railBox(); PMOrders.drawRail(ctx, game, rb);
+  const rb = railBox(); if (globalThis.PMDay && PMDay.spikeRattle) rb.rattle = PMDay.spikeRattle(pm, game);   // (1118) the spike's tell
+  PMOrders.drawRail(ctx, game, rb);
   PMOrders.drawCall(ctx, { x: rb.x, y: rb.y + Math.round((rb.th || 66) / 2) - 15, w: rb.w });   // (1112) the CALL rides on the rail it printed to — never over the grill
 }
 function render() {
   easeBilly(); stepFX();
+  { const cw = cv.clientWidth || W; _txtFloor = cw < W ? 8 * W / cw : 0; globalThis.PM_TXT_FLOOR = _txtFloor; }   // RESIZE 1118 (txtSize)
   const _t0 = PERF.on ? performance.now() : 0;
   prewarm3D();
   const _t1 = PERF.on ? performance.now() : 0;
@@ -1939,7 +1990,7 @@ function render() {
   drawTimeOfDay();                          // the shift's clock washes the scene (dawn → midday → dusk → night)
   ctx.restore();
   if (phase === "play") drawScorePops();   // (1116 Q655) MELTDOME too: the PERFECT/GOOD pops ride over each cook's food (no shared emblem HUD in a battle)                       // 1112: +PERFECT / +ON TIME / +DRINK RUN / WASTE pop-ups
-  if (!BATTLE && phase === "play" && globalThis.PMDay) PMDay.draw(ctx, pm, game, { DIN, txt, door: doorXY(), takeout: takeoutXY(), audio, live: sfxLive(), clockAt: diningClock() });   // THE DAY: clock · rush cue · pickup shelf                       // 1112: +PERFECT / +ON TIME / +DRINK RUN / WASTE pop-ups
+  if (!BATTLE && phase === "play" && globalThis.PMDay) PMDay.draw(ctx, pm, game, { DIN, txt, door: doorXY(), takeout: takeoutXY(), audio, live: sfxLive(), clockAt: diningClock(), spikeLabel: CAMP.spikeOf(shift(), SKIN) });   // THE DAY: clock · rush cue · pickup shelf                       // 1112: +PERFECT / +ON TIME / +DRINK RUN / WASTE pop-ups
   if (!BATTLE && (phase === "play" || phase === "ready")) drawOrders();   // ORDERS (1111): printer + ticket rail + the call
   const _cb = cineBusy();
   if (BATTLE && phase === "play") drawBattleHUD();

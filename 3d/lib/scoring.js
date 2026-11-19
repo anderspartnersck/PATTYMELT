@@ -177,7 +177,7 @@
       if (!badge(ctx, sk, t, cx + 7.5, y + 7.5, 15)) { ctx.fillStyle = TIER_COL[t]; ctx.fillRect(cx + 2, y + 2, 11, 11); }
       ctx.font = '800 10px "Saira Condensed","Arial Narrow",sans-serif';   // (1116) fit the chip even where the condensed face isn't loaded
       const lw = ctx.measureText(META[c].name).width, fs = lw > 40 ? Math.max(7, Math.floor(10 * 40 / lw * 10) / 10) : 10;
-      txt(META[c].name, cx + 16, y + 12, fs, META[c].col, "left", 800); cx += 62;
+      txt(META[c].name, cx + 16, y + 12, fs, META[c].col, "left", 800, 41); cx += 62;   // (1118) maxWidth: a page's legibility floor can't spill it
     }
     if (opts.chipsOnly) return;                                // (1116) tight HUDs (TAG TEAM header) show only the chips
     // the WASTE BIN (second row): one tossed patty per waste, the cost in red (show it, don't bury it)
