@@ -42,9 +42,21 @@ addEventListener("resize", fit); fit();
 // portrait); ▲▼◄► OK BACK send the same keys as the keyboard. Taps on the menu still work as before. Touch only.
 if (globalThis.PMTouch && PMTouch.on) {
   removeEventListener("resize", fit);
+  // PORTRAIT: a 16:9 menu fit to a phone's width draws its type at ~4-7 CSS px (unreadable), so the front door asks for the
+  // phone to be turned: the menu sits at the top (still live, still tappable), a TURN YOUR PHONE card fills the middle,
+  // and the pad stays under it for anyone who won't. The game pages themselves play in portrait.
+  const hint = document.createElement("div"); hint.id = "pmTurn";
+  hint.innerHTML = '<div style="font-size:54px;line-height:1">&#x21bb;</div><b>TURN YOUR PHONE</b><span>the menu reads best sideways —<br>the games play either way</span>';
+  hint.style.cssText = "position:fixed;display:none;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;" +
+    "color:#f3e6c8;font:600 15px 'Saira Condensed','Arial Narrow',sans-serif;letter-spacing:.08em;pointer-events:none;z-index:5";
+  hint.querySelector("b").style.cssText = "font-size:26px;letter-spacing:.14em;color:#ffd23f";
+  document.body.appendChild(hint);
   PMTouch.init({ pads: [], ctx: () => "menu", tapEnter: false, pause: false, fit: (A) => {
-    const k = Math.min(A.w / W, A.h / H); stage.style.left = (A.x + A.w / 2) + "px"; stage.style.top = (A.y + A.h / 2) + "px";
-    stage.style.transformOrigin = "50% 50%"; stage.style.transform = `translate(-50%,-50%) scale(${k})`; } });
+    const por = A.h > A.w * 1.1, k = Math.min(A.w / W, A.h / H), sh = H * k;
+    stage.style.left = (A.x + A.w / 2) + "px"; stage.style.top = (por ? A.y + 8 + sh / 2 : A.y + A.h / 2) + "px";
+    stage.style.transformOrigin = "50% 50%"; stage.style.transform = `translate(-50%,-50%) scale(${k})`;
+    hint.style.display = por ? "flex" : "none";
+    if (por) Object.assign(hint.style, { left: A.x + "px", width: A.w + "px", top: (A.y + 8 + sh) + "px", height: Math.max(0, A.h - 8 - sh) + "px" }); } });
 }
 if (globalThis.PMHiDPI) PMHiDPI.setup(cv, W, H);   // (1112 art pass) device-res backing store; the stage still scales the 1280×720 layout
 const FX = PMCine._fx, NEON = PMCine.NEON;
