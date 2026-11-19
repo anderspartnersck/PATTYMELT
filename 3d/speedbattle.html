@@ -34,6 +34,7 @@
 <script src="sprites.js"></script>
 <script src="lib/audio.js"></script>
 <script src="../assets/art3d/stages/stages.manifest.js"></script>
+<script src="lib/foodpaint.js?v=1"></script>
 <script src="lib/stages3d.js"></script>
 <script src="../assets/art3d/props/props.manifest.js"></script>
 <script src="lib/props.js?v=2"></script>
@@ -195,7 +196,10 @@ function otxt(s, x, y, sz, c, al = "center", w = 900, lw = 6) {
 const _done = { stage: S.DONE, item: PM.Item.BURGER, cook: 0, step: 2 };
 function burger(x, y, w, grade) {
   const at = STAGES && PMStages.atlas && PMStages.atlas(), spr = at && PMStages.data && PMStages.data.food.sprites["grill.DONE"];
-  if (spr) { const k = w / spr.w; ctx.drawImage(at, spr.sx, spr.sy, spr.w, spr.h, x - spr.ax * k, y - spr.ay * k, spr.w * k, spr.h * k); }
+  const PF = globalThis.PMFoodPaint && PMFoodPaint.on() ? PMFoodPaint : null;   // (1118) Joe's painted burger by default; ?food3d=1 = the render
+  if (PF && !burger._l) { burger._l = 1; PF.load("../assets/sprites/"); }
+  if (PF && PF.draw(ctx, "grill.DONE", { x: x - w / 2, y: y - w * 0.62, w, h: w * 0.72 }, {})) {}
+  else if (spr) { const k = w / spr.w; ctx.drawImage(at, spr.sx, spr.sy, spr.w, spr.h, x - spr.ax * k, y - spr.ay * k, spr.w * k, spr.h * k); }
   else PMDrawItem(ctx, _done, x, y, w * 0.42, PM, 0);
   if (grade === "PERFECT") {                                     // a PERFECT burger carries a gold glint on the tower
     ctx.save(); ctx.globalAlpha = 0.85; ctx.strokeStyle = COL.gold; ctx.lineWidth = 2.5;

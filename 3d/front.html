@@ -29,6 +29,7 @@
 <script src="lib/cine.js?v=2"></script>
 <script src="lib/scoring.js?v=3"></script>
 <script src="../assets/art3d/stages/stages.manifest.js"></script>
+<script src="lib/foodpaint.js?v=1"></script>
 <script src="lib/stages3d.js?v=3"></script>
 <script>
 "use strict";
@@ -308,7 +309,11 @@ function drawHowTo(t) {
     ctx.fillStyle = i === 4 ? C.a : "rgba(20,10,24,.9)"; ctx.beginPath(); ctx.arc(0, 0, 70, 0, 7); ctx.fill(); ctx.strokeStyle = C.b; ctx.lineWidth = 4; ctx.stroke();
     const fk = ["grill.SEAR_A", "grill.SEAR_B", "grill.MELT_0", "grill.DONE", null][i], S3 = globalThis.PMStages && PMStages.data;   // (1110 r4) the real 3D food
     const sp = fk && S3 && S3.food.sprites[fk], at = sp && PMStages.atlas && PMStages.atlas();
-    if (sp && at) { ctx.save(); ctx.beginPath(); ctx.arc(0, 0, 66, 0, 7); ctx.clip(); const z = 1.15;
+    const PF = fk && globalThis.PMFoodPaint && PMFoodPaint.on() ? PMFoodPaint : null;   // (1118) Joe's paintings by default; ?food3d=1 = the render
+    if (PF && !drawHowTo._l) { drawHowTo._l = 1; PF.load("../assets/sprites/"); }
+    if (PF && (() => { ctx.save(); ctx.beginPath(); ctx.arc(0, 0, 66, 0, 7); ctx.clip(); const d = PF.draw(ctx, fk, { x: -52, y: -40, w: 104, h: 64 }, {}); ctx.restore(); return d; })())
+      FX.text(ctx, a, 0, 62, 20 * 600 / 720, "#fff", "center", "#000", 4);
+    else if (sp && at) { ctx.save(); ctx.beginPath(); ctx.arc(0, 0, 66, 0, 7); ctx.clip(); const z = 1.15;
       ctx.drawImage(at, sp.sx, sp.sy, sp.w, sp.h, -sp.ax * z, -sp.ay * z - 6, sp.w * z, sp.h * z); ctx.restore();
       FX.text(ctx, a, 0, 62, 20 * 600 / 720, "#fff", "center", "#000", 4); }
     else if (i === 4) { FX.drawCast(ctx, hero("billy", "serve"), 0, 58, 118, 1, 1, false, null); FX.text(ctx, a, 0, 62, 20 * 600 / 720, "#fff", "center", "#000", 4); }

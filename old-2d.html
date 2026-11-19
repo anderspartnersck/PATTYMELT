@@ -90,6 +90,7 @@
 <script src="lib/stations.js?v=1"></script>
 <script src="lib/playlog.js?v=1"></script>
 <script src="assets/art3d/stages/stages.manifest.js"></script>
+<script src="lib/foodpaint.js?v=1"></script>
 <script src="lib/stages3d.js?v=3"></script>
 <script>
 "use strict";
@@ -224,6 +225,26 @@ for (const [k, f] of [["cheese", "cheese-fresh"], ["bread", "bread"], ["rye", "b
   const im = new Image(); im.onload = () => { SPAT_FOOD_IMG[k] = im; }; im.src = "assets/sprites/grill/" + f + ".png";
 }
 const spatFood = (k) => SPAT_FOOD_IMG[k] || null;
+// THE PAINTED FOOD (Joe 1118, lib/foodpaint.js): every food key on the 3D line draws Joe's painting in the box the rendered
+// sprite would use (+ shadow / toon top-light / glow / steam). ?food3d=1 = the rendered 3D food, as before. A painting
+// that hasn't decoded yet falls back to the render for that frame.
+if (globalThis.PMFoodPaint) PMFoodPaint.load("assets/sprites/");
+const FOOD_KEY = /^(grill|flip|toaster|plating|plating_gc|to_pass|to_pass_gc)\./;
+function foodArt(key, ox, oy, a, p) {
+  if (globalThis.PMFoodPaint && PMFoodPaint.on() && FOOD_KEY.test(key) && !/\.spatula$/.test(key)) {
+    const sp = ART3D.m.sprites[key];
+    if (sp) { const nk = key.replace(/\.slot\d+$/, "").replace(/\.P\d$/, "").replace(/^(to_pass(?:_gc)?)\.\d\.\d$/, "$1");
+      if (PMFoodPaint.draw(ctx, nk, { x: ox + sp.x, y: oy + sp.y, w: sp.w, h: sp.h },
+        { a, school: SCHOOL, bread: p && p.bread, gc: !!(p && p.item === pm.Item.GRILLED_CHEESE) })) return true; }
+  }
+  return ART3D.draw(ctx, key, ox, oy, a);
+}
+// a finished dish at an arbitrary size (Billy's tray, a seat): the painting, else the rendered to_pass sprite
+function dishArt(sq, p, x, y, w, h, a) {
+  if (globalThis.PMFoodPaint && PMFoodPaint.on() && PMFoodPaint.draw(ctx, "to_pass", { x, y, w, h },
+    { a, school: SCHOOL, bread: p && p.bread, gc: !!(p && p.item === pm.Item.GRILLED_CHEESE) })) return;
+  if (sq) ctx.drawImage(ART3D.atl[sq.a], sq.sx, sq.sy, sq.sw || sq.w, sq.sh || sq.h, x, y, w, h);
+}
 for (const [k, f] of [["level", "spatula-level"], ["flip", "spatula-flip"], ["toast", "spatula-toast"]]) {
   const im = new Image(); im.onload = () => { SPAT_SPR[k] = im; }; im.src = "assets/sprites/grill/spatula/" + f + ".png";
 }
@@ -1080,7 +1101,7 @@ function swissOver3D(p, i, r) {
   ctx.save(); ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.beginPath();     // contact shadow (key light upper-left)
   ctx.ellipse(cx + 2, cy + sp.h * 0.22, sp.w * 0.52, sp.h * 0.2, 0, 0, 7); ctx.fill(); ctx.restore();
   PMSpat.drawSwiss(ctx, cx, cy, sp.w * 1.12, p, "draped");
-  if (p.bunned && !ART3D.draw(ctx, "grill.RYE_LID.slot" + i, r.x, r.y) && SPAT_FOOD_IMG.rye) {   // the rendered rye lid (1110 r3); 2D = fallback
+  if (p.bunned && !foodArt("grill.RYE_LID.slot" + i, r.x, r.y) && SPAT_FOOD_IMG.rye) {   // the rendered rye lid (1110 r3); 2D = fallback
     const w = sp.w * 0.95, h = w * SPAT_FOOD_IMG.rye.height / SPAT_FOOD_IMG.rye.width;
     ctx.drawImage(SPAT_FOOD_IMG.rye, cx - w / 2, cy - sp.h * 0.35 - h / 2, w, h); }
   return true;
@@ -1094,7 +1115,7 @@ function gcKey(key, p) { if (!p || p.item !== pm.Item.GRILLED_CHEESE) return key
   const k = key.replace(/^(plating|to_pass)\./, "$1_gc."); return ART3D.m.sprites[k] ? k : key; }
 function drawPlate3D(key, ox, oy, a, p) {
   key = gcKey(key, p); const sp = ART3D.m.sprites[key];
-  if (!isMeltPlate(p) || !sp) return ART3D.draw(ctx, key, ox, oy, a);
+  if (!isMeltPlate(p) || !sp) return foodArt(key, ox, oy, a, p);
   ctx.save(); if (a != null) ctx.globalAlpha = Math.max(0, Math.min(1, a));
   PMSpat.drawPlated(ctx, SCHOOL, ox + sp.x + sp.w / 2, oy + sp.y + sp.h * 0.58, sp.w * 1.05); ctx.restore(); return true;
 }
@@ -1238,11 +1259,11 @@ function drawKitchen3D() {
     const p = game.slots[i], c = slotXY(i), fa = flipAnim[i];
     if (fa != null && now - fa < FLIP_FRAMES * FLIP_HOLD_MS && p && p.stage === S.SEAR_B) {
       const f = Math.min(FLIP_FRAMES - 1, Math.floor((now - fa) / FLIP_HOLD_MS));
-      ART3D.draw(ctx, "flip." + f + ".slot" + i, r.x, r.y);   // (the baked .spatula frame is retired: the pair flips it)
+      foodArt("flip." + f + ".slot" + i, r.x, r.y);   // (the baked .spatula frame is retired: the pair flips it)
     } else if (p) {
       const k = grillKey3D(p, i), sw = swissOver3D(p, i, r);
       if (sw) {}                                                         // a melt's Swiss: Joe's draped ladder IS the item
-      else if (!k || !ART3D.draw(ctx, k, r.x, r.y)) PMDrawItem(ctx, p, c.x, c.y, 15, { ...pm, MELT_DONE:pm.melt_done(game) }, now / 1000);
+      else if (!k || !foodArt(k, r.x, r.y, null, p)) PMDrawItem(ctx, p, c.x, c.y, 15, { ...pm, MELT_DONE:pm.melt_done(game) }, now / 1000);
       if (PMSpat.onionsOn(p)) { const ps = ART3D.m.sprites["grill.SEAR_B.slot" + i], ow = ps ? ps.w * 0.82 : 28;   // sized to the rendered patty
         PMSpat.drawOnions(ctx, ps ? r.x + ps.x + ps.w / 2 : c.x, ps ? r.y + ps.y + ps.h * 0.36 : c.y - 4, ow, p, game, "top"); }   // raw ▸ soft ▸ golden ▸ burnt until the Swiss
     }
@@ -1254,7 +1275,7 @@ function drawKitchen3D() {
     txt("P2 ▸", r.x + Lc.slot[4].x, r.y + Lc.slot[4].y + 34, 11, "#6fb0e0", "center", 800);
   }
   for (let i = 0; i < n; i++) if (!game.slots[i] && now - (burntAnim[i] || -1e9) < 1200)   // the charred patty lingers, fading
-    ART3D.draw(ctx, "grill.BURNT.slot" + i, r.x, r.y, 1 - (now - burntAnim[i]) / 1200);
+    foodArt("grill.BURNT.slot" + i, r.x, r.y, 1 - (now - burntAnim[i]) / 1200);
   for (let j = grillPops.length - 1; j >= 0; j--) if (!drawPop(grillPops[j], 16)) grillPops.splice(j, 1);
   // ---- the cooks stand behind the counter at the line's left end; the counter layer then covers their legs ----
   if (!ART3D.m.cooks_behind_grill) cooksFg();
@@ -1267,7 +1288,7 @@ function drawKitchen3D() {
   for (let j = 0; j < T.length && j < BAYS.length; j++) {
     const q = BAYS[j], cx = r.x + q.x, cy = r.y + q.y; tcells.push({ x: cx, y: cy });
     const b = T[j]; if (!b || (STN && PMStations.hideBay(j))) continue;   // (the bun is still riding the pair)
-    if (!ART3D.draw(ctx, toastKey3D(b, j), r.x, r.y)) PMDrawItem(ctx, b.stage === undefined ? { ...b, stage: S.TOAST, item: pm.Item.GRILLED_CHEESE, step: 0 } : b, cx, cy, 15, { ...pm, MELT_DONE: pm.melt_done(game) }, now / 1000);
+    if (!foodArt(toastKey3D(b, j), r.x, r.y, null, b)) PMDrawItem(ctx, b.stage === undefined ? { ...b, stage: S.TOAST, item: pm.Item.GRILLED_CHEESE, step: 0 } : b, cx, cy, 15, { ...pm, MELT_DONE: pm.melt_done(game) }, now / 1000);
     if (b.stage === undefined) {
       const ready = b.cook >= pm.toast_ready(game), near = b.cook >= pm.toast_burn(game) - 6;
       if (ready) txt(near ? "BURNING!" : "READY", cx, cy - 22, 11, near ? COL.bad : COL.cheese, "center", 800);
@@ -1290,7 +1311,7 @@ function drawKitchen3D() {
   if (BR) for (const p of BR.plates) {
     const pk = p.k === 1 ? "P2" : "P1", age = BR.t - p.t0;
     if (p.state === "plating") { if (isMeltPlate(p)) drawPlate3D("to_pass." + p.k + ".0", r.x, r.y, age / 300, p);   // the melt settles in plated
-      else ART3D.draw(ctx, gcKey("plating." + Math.min(4, Math.floor(age / 300 * 5)) + "." + pk, p), r.x, r.y); }
+      else foodArt(gcKey("plating." + Math.min(4, Math.floor(age / 300 * 5)) + "." + pk, p), r.x, r.y, null, p); }
     else if (p.state === "slide") drawPlate3D("to_pass." + p.k + "." + Math.min(5, Math.floor((age - 300) / 300 * 6)), r.x, r.y, null, p);
     else if (p.state === "pass") { lit[p.k] = true; drawPlate3D("to_pass." + p.k + ".5", r.x - p.q * 15, r.y + p.q * 6, null, p); }
     else if (p.state === "returned") {
@@ -1713,10 +1734,10 @@ function drawDining() {
       const mx = f.mx == null ? f.x : f.mx, my = f.my == null ? f.y : f.my, bt = f.bt || 0;
       const pk = (f.pi === 1 ? "P2" : "P1");
       if (f.t < bt && art3d()) {               // ?art=3d PHASE 1 — the rendered build, one layer per step (plate·heel·patty·cheese·crown)
-        ART3D.draw(ctx, gcKey("plating." + Math.min(4, Math.floor(f.t / bt * 5)) + "." + pk, f), KIT.x, KIT.y);
+        foodArt(gcKey("plating." + Math.min(4, Math.floor(f.t / bt * 5)) + "." + pk, f), KIT.x, KIT.y, null, f);
       } else if (art3d() && (f.t - bt) / (f.life - bt) < 0.4) {   // ?art=3d PHASE 2a — the plate slides along the counter onto the pass shelf
         const u = ((f.t - bt) / (f.life - bt)) / 0.4;
-        ART3D.draw(ctx, gcKey("to_pass." + (f.pi === 1 ? 1 : 0) + "." + Math.min(5, Math.floor(u * 6)), f), KIT.x, KIT.y);
+        foodArt(gcKey("to_pass." + (f.pi === 1 ? 1 : 0) + "." + Math.min(5, Math.floor(u * 6)), f), KIT.x, KIT.y, null, f);
       } else if (f.t < bt) {                   // PHASE 1 — the order stacks bun▸patty▸cheese▸top bun at the counter
         const b = f.t / bt, bob = Math.sin(b * Math.PI) * 2;
         drawCarryPlate(f.x, f.y - bob, b, f.item);
@@ -1808,7 +1829,7 @@ function drawBilly3D() {
       const im = PMSpat.topping(SCHOOL ? "plated-heroes" : "plated-diner");
       dishH = carryW * (im.height - 32) / (im.width - 32);
       PMSpat.drawPlated(ctx, SCHOOL, px, py - dishH / 2, carryW);
-    } else if (sq) ctx.drawImage(ART3D.atl[sq.a], sq.sx, sq.sy, sq.sw || sq.w, sq.sh || sq.h, px - carryW / 2, py - dishH, carryW, dishH);
+    } else dishArt(sq, p, px - carryW / 2, py - dishH, carryW, dishH);
     if (p.state === "rejected") txt("✗", px, py - dishH - 4, 12, COL.bad, "center", 800);
   });
   // plates handed off sit at their seats for a few seconds
@@ -1821,7 +1842,7 @@ function drawBilly3D() {
     const sq = ART3D.m.sprites[gcKey("to_pass.0.5", p)] || sp;
     ctx.globalAlpha = a; const sw = 22 * pop, sh = sw * sq.h / sq.w / pop;
     if (isMeltPlate(p)) PMSpat.drawPlated(ctx, SCHOOL, DIN.x + d[0], DIN.y + d[1] - sh * 0.2, sw);   // the melt at its seat
-    else ctx.drawImage(ART3D.atl[sq.a], sq.sx, sq.sy, sq.sw || sq.w, sq.sh || sq.h, DIN.x + d[0] - sw / 2, DIN.y + d[1] - sh * 0.7, sw, sh);
+    else dishArt(sq, p, DIN.x + d[0] - sw / 2, DIN.y + d[1] - sh * 0.7, sw, sh);
     ctx.globalAlpha = 1;
     if (BR.t - p.tServed < 700) txt("♥", DIN.x + d[0], DIN.y + d[1] - 16, 14, COL.cheese, "center", 800);
   }

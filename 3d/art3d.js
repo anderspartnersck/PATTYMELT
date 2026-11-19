@@ -36,7 +36,7 @@
     // (1117) THE 3D CAST overlay: the designed crew / students / patrons (3D PIPELINE/games/patty-melt/tools/cast1117_pack.py) ride in
     // cast3d/overlay.js as REPLACEMENT manifest keys (patron_atlases + patrons, staff.ladies, students.list), same frame format, so the
     // draw code is untouched. ?cast3d=0 (or no overlay file) = the shipped placeholders.
-    if (!globalThis.PMCast || PMCast.crowd3d) {
+    if (globalThis.PMCast && PMCast.crowd3d) {   // (1118) opt-in only: a page without lib/cast.js (cabinet.html) used to load the 3D crowd
       await new Promise((res) => { const sc = document.createElement("script"); sc.src = BASE + "cast3d/overlay.js";
         sc.onload = res; sc.onerror = res; document.head.appendChild(sc); });
       const ov = globalThis.CAST3D_OVERLAY; globalThis.CAST3D_OVERLAY = null;
