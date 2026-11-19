@@ -10,7 +10,7 @@
        ?mode=kids|family|arcade   ?items=full (FULL MENU recipes — legal on 2up/jailbreak)            -->
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>PATTY MELT — KITCHEN + DINING</title>
 <style>
   html,body{margin:0;height:100%;background:#140a08;overflow:hidden;font-family:"Saira Condensed","Arial Narrow",sans-serif;}
@@ -68,6 +68,7 @@
 </div></div>
 <script src="engine.js"></script>
 <script src="lib/hidpi.js?v=1"></script>
+<script src="lib/touchpad.js?v=1"></script>   <!-- X7 1119: the PHONE PAD (touch only; speaks keys; desktop unchanged) -->
 <script src="service.js"></script>
 <script src="lib/orders.js?v=1"></script>
 <script src="../assets/art3d/props/props.manifest.js"></script>
@@ -102,7 +103,7 @@ const needsBunItem = (it) => breadOn() ? !pm.TOASTER_ITEMS.has(it) : pm.TOAST_IT
 const BUN_ITEMS = { has: needsBunItem };
 PMOrders.init(pm);
 const Q = new URLSearchParams(location.search);
-const SCREENS = Q.get("screens") === "1" ? 1 : 2;
+const SCREENS = Q.get("screens") === "1" || (!Q.has("screens") && globalThis.PMTouch && PMTouch.on) ? 1 : 2;   // (X7) a phone with no ?screens= gets the one-screen kitchen (dining strip below)
 const MODE = Q.get("mode") || "family";
 const ITEMS = (Q.get("items") || "").toLowerCase() === "full" ? pm.ITEMS_FULL_MENU : null;
 // MELTDOME (?battle or ?mode=meltdome): the FRIENDLY grill-off — the SAME shared grill + one Billy + one diner
@@ -2418,6 +2419,12 @@ addEventListener("keydown", (e) => {
   actionSfx();                                     // singing-spatula FLIP / cheese fwump / toast / HEY BILLY holler
   e.preventDefault();
 }, { passive: false });
+
+// (X7 1119) THE PHONE PAD — touch only (lib/touchpad.js); every button sends the key above, so the sim never knows
+if (globalThis.PMTouch && PMTouch.on) PMTouch.init({
+  pads: PLAYERS === 2 ? [{ left: "a", right: "d", flip: "f", top: "c", toast: "x", billy: "v" }, { left: "j", right: "l", flip: "i", top: "k", toast: ".", billy: "m" }]
+                      : [{ left: "a", right: "d", flip: "f", top: "c", toast: "x", billy: "v" }],
+  ctx: () => (phase === "initials" || (phase === "play" && paused)) ? "menu" : "play" });
 
 // QA/attract pre-roll: ?warm=N runs N sim steps synchronously so a screenshot shows a live room
 // (headless rAF virtual-time barely advances the accumulator). Mirrors cookoff.html's ?warm.

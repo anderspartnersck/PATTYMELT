@@ -14,7 +14,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>PATTY MELT — SPEED BATTLE</title>
 <style>
   html,body { margin:0; height:100%; background:#140806; overflow:hidden; }
@@ -31,6 +31,7 @@
 <div id="frame"><div id="wrap"><canvas id="screen" width="1280" height="720"></canvas></div></div>
 <script src="engine.js"></script>
 <script src="lib/hidpi.js?v=1"></script>
+<script src="lib/touchpad.js?v=1"></script>   <!-- X7 1119: the PHONE PAD (touch only; speaks keys; desktop unchanged) -->
 <script src="sprites.js"></script>
 <script src="lib/audio.js"></script>
 <script src="../assets/art3d/stages/stages.manifest.js"></script>
@@ -470,6 +471,10 @@ if (warm > 0 || Q.has("sd")) {
 }
 if (Q.has("over")) { endRound(Q.get("over") === "2" ? 1 : 0, Q.has("sd")); if (wins[0] >= need() || wins[1] >= need()) { phase = "matchover"; overT = 200; } }
 if (DEMO && phase === "setup") rematch();
+// (X7 1119) THE PHONE PAD — the setup card is a menu (▲▼◄► OK); P2's pad shows once P2 is a person (P2 on the setup card)
+if (globalThis.PMTouch && PMTouch.on) PMTouch.init({ pads: () => p2Human ? [{ left: "a", right: "d", flip: "f", top: "c", billy: "v" }, { left: "j", right: "l", flip: "i", top: "k", billy: "m" }]
+                                                    : [{ left: "a", right: "d", flip: "f", top: "c", billy: "v" }],
+  ctx: () => (phase === "setup" || PAUSE.open) ? "menu" : "play" });
 globalThis.SPEED = { get phase() { return phase; }, get sides() { return sides; }, get wins() { return wins; }, points, step, rematch, nextRound };
 requestAnimationFrame(frame);
 </script>

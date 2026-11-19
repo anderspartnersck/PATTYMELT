@@ -8,7 +8,7 @@
      Keys: ◄ ► ▲ ▼ / WASD move · SPACE / ENTER / F select · ESC back · S sound. Any pad works the same.       -->
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>PATTY MELT — 3D EDITION</title>
 <style>
   html,body{margin:0;height:100%;background:#07040a;overflow:hidden;font-family:"Saira Condensed","Arial Narrow",sans-serif;}
@@ -22,6 +22,7 @@
 <div id="stage"><canvas id="cv" width="1280" height="720"></canvas><iframe id="demo" title="live demo" tabindex="-1"></iframe></div>
 <script src="engine.js"></script>
 <script src="lib/hidpi.js?v=1"></script>
+<script src="lib/touchpad.js?v=1"></script>   <!-- X7 1119: the PHONE PAD (touch only; speaks keys; desktop unchanged) -->
 <script src="lib/signs.js?v=1"></script>
 <script src="lib/audio.js?v=1"></script>
 <script src="lib/ghost.js?v=1"></script>
@@ -37,6 +38,14 @@ const Q = new URLSearchParams(location.search);
 const W = 1280, H = 720, cv = document.getElementById("cv"), ctx = cv.getContext("2d"), stage = document.getElementById("stage"), demoEl = document.getElementById("demo");
 function fit() { const k = Math.min(innerWidth / W, innerHeight / H); stage.style.transformOrigin = "50% 50%"; stage.style.transform = `translate(-50%,-50%) scale(${k})`; }
 addEventListener("resize", fit); fit();
+// (X7 1119) THE PHONE PAD: the stage fits the rect the pad leaves free (frame columns in landscape, the pad under it in
+// portrait); ▲▼◄► OK BACK send the same keys as the keyboard. Taps on the menu still work as before. Touch only.
+if (globalThis.PMTouch && PMTouch.on) {
+  removeEventListener("resize", fit);
+  PMTouch.init({ pads: [], ctx: () => "menu", tapEnter: false, pause: false, fit: (A) => {
+    const k = Math.min(A.w / W, A.h / H); stage.style.left = (A.x + A.w / 2) + "px"; stage.style.top = (A.y + A.h / 2) + "px";
+    stage.style.transformOrigin = "50% 50%"; stage.style.transform = `translate(-50%,-50%) scale(${k})`; } });
+}
 if (globalThis.PMHiDPI) PMHiDPI.setup(cv, W, H);   // (1112 art pass) device-res backing store; the stage still scales the 1280×720 layout
 const FX = PMCine._fx, NEON = PMCine.NEON;
 const COLS = { diner: { a: "#c8302a", b: "#ffd23f", deep: "#3a0c08", cream: "#f3e6c8" }, school: { a: "#1f3a63", b: "#f2c230", deep: "#0b1830", cream: "#f3e6c8" } };
@@ -98,8 +107,11 @@ function launchUrl(i = sel) {
     for (const [k, v] of Object.entries(m.q)) p.set(k, v);
     if (DEMANDS[dem][0]) p.set("mode", DEMANDS[dem][0]);
     if (m.id === "speed") p.set("secs", LENGTHS[len][2]);
+    if (Q.get("touch")) p.set("touch", Q.get("touch"));   // (X7) carry a forced ?touch= into the side page
     p.set("label", m.name); p.set("sel", selStr(i)); return m.page + "?" + p.toString(); }
-  const sc = SCREENS[scr][0] || String(m.screens); p.set("screens", m.battle ? "2" : sc);
+  // (X7) on a phone "BEST FOR THE MODE" = one screen (the kitchen with the dining strip below fits a phone; two side by side don't)
+  const sc = SCREENS[scr][0] || (globalThis.PMTouch && PMTouch.on ? "1" : String(m.screens)); p.set("screens", m.battle ? "2" : sc);
+  if (Q.get("touch")) p.set("touch", Q.get("touch"));
   if (skin() === "school") p.set("skin", "school");
   for (const [k, v] of Object.entries(m.q)) p.set(k, v);
   if (DEMANDS[dem][0] && !m.battle) p.set("mode", DEMANDS[dem][0]);

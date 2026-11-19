@@ -5,7 +5,7 @@
      WAIT meter, fresh hands). One engine.js 1P game (parity-proven), score carries; the board's the team's. -->
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>PATTY MELT — HANDOFF</title>
 <style>
   html,body{margin:0;height:100%;background:#140a08;overflow:hidden;font-family:"Saira Condensed","Arial Narrow",sans-serif;}
@@ -28,6 +28,7 @@
 </div></div>
 <script src="engine.js"></script>
 <script src="lib/hidpi.js?v=1"></script>
+<script src="lib/touchpad.js?v=1"></script>   <!-- X7 1119: the PHONE PAD (touch only; speaks keys; desktop unchanged) -->
 <script src="sprites.js"></script>
 <script src="service.js"></script>
 <script src="assets/art3d/stages/stages.manifest.js"></script>
@@ -240,6 +241,10 @@ addEventListener("keydown", (e) => {
   else return;
   e.preventDefault();
 }, { passive: false });
+
+// (X7 1119) THE PHONE PAD — one spatula pair, so one pad (+ TAG); touch only, the buttons send the keys above
+if (globalThis.PMTouch && PMTouch.on) PMTouch.init({ pads: [{ left: "a", right: "d", flip: "f", top: "c", toast: "x", billy: "v", tag: "h" }],
+  ctx: () => (PAUSE && PAUSE.open) ? "menu" : "play" });
 
 const WARM = parseInt(Q.get("warm") || "0", 10);
 for (let i = 0; i < WARM && !(game.over || game.won); i++) step();

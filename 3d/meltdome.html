@@ -7,7 +7,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>PATTY MELT — MELTDOME</title>
 <style>
   :root { --gingham:#b5352b; --cream:#f3e6c8; --cheese:#ffd23f; }
@@ -35,6 +35,7 @@
 </div></div>
 <script src="engine.js"></script>
 <script src="lib/hidpi.js?v=1"></script>
+<script src="lib/touchpad.js?v=1"></script>   <!-- X7 1119: the PHONE PAD (touch only; speaks keys; desktop unchanged) -->
 <script src="sprites.js"></script>
 <script src="lib/audio.js"></script>
 <script src="../assets/art3d/stages/stages.manifest.js"></script>
@@ -331,6 +332,10 @@ addEventListener("keydown", (e) => {
   if (P1[k]) { act(sides[0], P1[k]); e.preventDefault(); }
   else if (P2[k]) { act(sides[1], P2[k]); e.preventDefault(); }
 });
+
+// (X7 1119) THE PHONE PAD — one phone, two cooks (touch only; the buttons send the keys above)
+if (globalThis.PMTouch && PMTouch.on) PMTouch.init({ pads: [{ left: "a", right: "d", flip: "f", top: "c", billy: "v" }, { left: "j", right: "l", flip: "i", top: "k", billy: "m" }],
+  ctx: () => PAUSE.open ? "menu" : "play" });
 
 // QA/demo hook: ?warm=<ticks> pre-runs the autopilot race so a screenshot shows mid-action.
 const warm = parseInt(Q.get("warm") || "0", 10);
