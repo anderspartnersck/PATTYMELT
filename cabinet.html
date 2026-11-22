@@ -1777,7 +1777,8 @@ function renderPlay(s, isDemo = false) {
   // (Billy's CHARACTER art now stands at the PASS — drawBillyPass(), keyed off this same billyState
   // so the figure and the meter can't disagree. The meter bar + word above stay the precise readout.)
   // pile-up + metrics
-  txt(`PILE  ${"●".repeat(s.pile)}${"·".repeat(Math.max(0,s.cfg.pile_max - s.pile))}`, W - 28, 88, 16, COL.amber, "right", 600);
+  // (1121 UI audit) PILE moved down a row: the emblem chips (PMScore.drawHud at y 72, right) sat on top of it
+  txt(`PILE  ${"●".repeat(s.pile)}${"·".repeat(Math.max(0,s.cfg.pile_max - s.pile))}`, W - 28, 114, 16, COL.amber, "right", 600);
   const mult = pm.combo_mult(s.combo);
   const wait = pm.live_wait(s);
   txt(`${th.slung} ${s.served}    COMBO ${s.combo} (x${mult})    WAIT ${wait.toFixed(1)}s    SENT BACK ${s.sent_back}`,
@@ -1866,7 +1867,7 @@ function renderPlay(s, isDemo = false) {
   // event callout sticker (UH-OH / OOPS / FOCUS BILLY) — pops over the grill on fails / neglect
   const co = calloutFor(s);
   if (co) drawCallout(co, W*0.5, gy + 30, s.flash_t > 0 ? 1 + 0.12 * (s.flash_t / pm.TPS) : 1);
-  if (s.flash) txt(s.flash, W/2, gy + gh + 64, 18, COL.cheese, "center", 700);
+  if (s.flash && !s.won) txt(s.flash, W/2, gy + gh + 64, 18, COL.cheese, "center", 700);   // (1121) the clear line owns this row
   if (!s.over) { drawDinerStrip(s, pattyBustWidth(s) + 6, chrissyBustWidth(s) + 6); drawCookBusts(s); }   // house inset for the cook(s), then the cook(s) in front
   if (s.won) { txt(`✦ ${th.clear} ✦`, W/2, gy + gh + 36, 24, COL.good, "center", 800);
     txt("PERFECT GRILLING — NICELY DONE!", W/2, gy + gh + 64, 16, COL.cheese, "center", 600); }

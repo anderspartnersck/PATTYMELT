@@ -40,21 +40,55 @@
   #pmPad{position:fixed;inset:0;pointer-events:none;z-index:80;font-family:"Saira Condensed","Arial Narrow",sans-serif}
   #pmPad .zone{position:absolute;display:grid;gap:8px;pointer-events:none;box-sizing:border-box;padding:8px}
   #pmPad .zone.flip180{transform:rotate(180deg)}
-  #pmPad button{pointer-events:auto;touch-action:none;border:0;border-radius:16px;margin:0;padding:0 4px;min-width:0;min-height:0;
-    font:800 15px/1.05 "Saira Condensed","Arial Narrow",sans-serif;letter-spacing:.06em;color:#fff3d5;
-    background:linear-gradient(180deg,rgba(181,53,43,.92),rgba(122,31,24,.92));box-shadow:0 3px 0 #3a0c08,inset 0 1px 0 rgba(255,255,255,.25);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;text-shadow:0 1px 0 #000}
-  #pmPad button small{font-size:10px;font-weight:700;opacity:.8;letter-spacing:.08em}
-  #pmPad button.dir{font-size:30px;background:linear-gradient(180deg,rgba(60,32,24,.92),rgba(30,14,10,.92));box-shadow:0 3px 0 #000,inset 0 1px 0 rgba(255,255,255,.16)}
-  #pmPad button.billy{font-size:19px;background:linear-gradient(180deg,#ffd23f,#e0a32a);color:#2a1206;text-shadow:none;box-shadow:0 3px 0 #7a4a08}
-  #pmPad button.billy small{color:#5a2a08}
-  #pmPad button.ok{background:linear-gradient(180deg,#ffd23f,#e0a32a);color:#2a1206;text-shadow:none;font-size:19px}
-  #pmPad button.on,#pmPad button:active{transform:translateY(2px);filter:brightness(1.25);box-shadow:0 1px 0 #000}
-  #pmPad .p2 button{background:linear-gradient(180deg,rgba(47,95,160,.92),rgba(24,52,96,.92));box-shadow:0 3px 0 #0b1830}
-  #pmPad .p2 button.dir{background:linear-gradient(180deg,rgba(30,40,60,.92),rgba(12,18,30,.92))}
-  #pmPad .p2 button.billy{background:linear-gradient(180deg,#9fd0ff,#6fb0e0);color:#0b1830}
+  /* (1119) THE CAB DECK — Joe 1119: "back to the more arcade cab menu style for all selectables". Every pad control is a
+     cell of Patty's own control panel (assets/cab/PANEL FINAL 1 up DINER.png · panel-2up-heroes.png): a dark star-field
+     deck (HEROES: navy + blue gingham) in a neon double pinstripe with corner rivets, the panel's DOMED buttons cut from it
+     (tools/cut_pad_art.py → assets/pad/), its gold block arrows, and the label in the panel's gold condensed caps under the
+     button. Pressed = the lit ON layer (bloom). Hit areas are the whole cell, as before. */
+  #pmPad{--deck:#0d0907;--rim1:#c8302a;--rim2:#f0a020;--ink:#f6c040;--plate:#120b08;--rivet:#a88a58}
+  #pmPad.heroes{--deck:#0c1a3a;--rim1:#e8d9b4;--rim2:#d9a521;--ink:#f2c230;--plate:#0b1830;--rivet:#d8c9a0}
+  #pmPad button{pointer-events:auto;touch-action:none;border:0;margin:0;padding:4px 2px;min-width:0;min-height:0;position:relative;
+    border-radius:6px;font:800 15px/1 "Saira Condensed","Arial Narrow",sans-serif;letter-spacing:.07em;color:var(--ink);
+    background:
+      radial-gradient(circle at 7px 7px,var(--rivet) 0 2px,transparent 2.6px),radial-gradient(circle at calc(100% - 7px) 7px,var(--rivet) 0 2px,transparent 2.6px),
+      radial-gradient(circle at 7px calc(100% - 7px),var(--rivet) 0 2px,transparent 2.6px),radial-gradient(circle at calc(100% - 7px) calc(100% - 7px),var(--rivet) 0 2px,transparent 2.6px),
+      radial-gradient(ellipse at 50% 45%,rgba(255,255,255,.05),transparent 70%),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Cg fill='%23d9a521' fill-opacity='.55'%3E%3Cpath d='M9 6l1.2 2.6 2.8.3-2.1 1.9.6 2.8L9 12.2 6.5 13.6l.6-2.8L5 8.9l2.8-.3z'/%3E%3Cpath d='M44 30l.8 1.8 2 .2-1.5 1.3.4 2L44 34.3l-1.7 1 .4-2-1.5-1.3 2-.2z'/%3E%3Cpath d='M22 48l.6 1.3 1.4.2-1 .9.3 1.4-1.3-.7-1.3.7.3-1.4-1-.9 1.4-.2z'/%3E%3C/g%3E%3C/svg%3E"),
+      var(--deck);
+    box-shadow:inset 0 0 0 2px var(--rim1),inset 0 0 0 4px #000,inset 0 0 0 5px var(--rim2),inset 0 0 22px 6px rgba(0,0,0,.85),0 2px 0 #000;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;text-shadow:0 2px 0 #000,0 0 6px #000;container-type:inline-size}
+  #pmPad.heroes button{background:
+      radial-gradient(circle at 7px 7px,var(--rivet) 0 2px,transparent 2.6px),radial-gradient(circle at calc(100% - 7px) 7px,var(--rivet) 0 2px,transparent 2.6px),
+      radial-gradient(circle at 7px calc(100% - 7px),var(--rivet) 0 2px,transparent 2.6px),radial-gradient(circle at calc(100% - 7px) calc(100% - 7px),var(--rivet) 0 2px,transparent 2.6px),
+      radial-gradient(ellipse at 50% 50%,rgba(12,26,58,.15),rgba(12,26,58,.75) 90%),
+      repeating-linear-gradient(0deg,rgba(28,62,128,.55) 0 9px,transparent 9px 18px),repeating-linear-gradient(90deg,rgba(28,62,128,.55) 0 9px,transparent 9px 18px),#c9c2ad}
+  #pmPad button .cap{display:block;width:min(78%,calc(100% - 10px));flex:1 1 auto;max-height:64%;min-height:24px;
+    background:center/contain no-repeat;filter:drop-shadow(0 4px 3px rgba(0,0,0,.7))}
+  #pmPad button .t{display:block;padding:2px 7px 1px;background:var(--plate);border-radius:3px;box-shadow:0 0 0 1px var(--rim2),0 1px 0 #000;white-space:nowrap;font-size:clamp(7px,13cqw,17px);max-width:calc(100% - 8px);box-sizing:border-box;padding-inline:clamp(2px,5cqw,7px)}   /* (1121) TOPPING spilled a 50px portrait cell */
+  #pmPad button small{display:block;font-size:clamp(6px,7.5cqw,10px);font-weight:700;letter-spacing:.1em;color:#f3e6c8;opacity:.75;white-space:normal;line-height:1.05}   /* (1121) PASS THE SPATULA ran off a portrait cell */
+  #pmPad .flip .cap{background-image:url(../assets/pad/btn-orange.png)}
+  #pmPad .top .cap{background-image:url(../assets/pad/btn-yellow.png)}
+  #pmPad .toast .cap{background-image:url(../assets/pad/btn-orange.png);filter:sepia(.55) hue-rotate(-12deg) saturate(.8) brightness(.78) drop-shadow(0 4px 3px rgba(0,0,0,.7))}
+  #pmPad .tag .cap,#pmPad .billy .cap{background-image:url(../assets/pad/btn-cream.png)}
+  #pmPad .ok .cap{background-image:url(../assets/pad/btn-yellow.png)}
+  #pmPad .back .cap{background-image:url(../assets/pad/btn-orange.png);filter:hue-rotate(-28deg) saturate(1.25) brightness(.85) drop-shadow(0 4px 3px rgba(0,0,0,.7))}
+  #pmPad .billy .t{font-size:clamp(9px,10cqw,20px);color:#fff1d6}   /* (1121) the 12px floor spilled HEY BILLY! out of a one-column cell */
+  #pmPad .ok .t{font-size:clamp(12px,14cqw,20px)}
+  #pmPad button.dir .cap{width:min(90%,120px);max-height:60%;background-image:url(../assets/pad/arrow-r.png)}
+  #pmPad button.dir.l .cap{background-image:url(../assets/pad/arrow-l.png)}
+  #pmPad button.dir.u .cap{transform:rotate(-90deg)}
+  #pmPad button.dir.d .cap{transform:rotate(90deg)}
+  #pmPad button.dir.u .cap,#pmPad button.dir.d .cap{max-height:none;width:min(52%,64px);height:min(84%,110px)}
+  #pmPad button.on,#pmPad button:active{transform:translateY(1px)}
+  #pmPad button.on .cap,#pmPad button:active .cap{filter:brightness(1.35) saturate(1.15) drop-shadow(0 0 10px rgba(255,214,120,.95)) drop-shadow(0 2px 2px rgba(0,0,0,.7));transform-origin:50% 60%;scale:.96}
+  #pmPad .p2{--rim1:#6fb0e0;--rivet:#9fd0ff}
+  #pmPad .p2 .billy .cap{filter:hue-rotate(180deg) saturate(.6) drop-shadow(0 4px 3px rgba(0,0,0,.7))}
   #pmPad .chips{position:absolute;display:flex;gap:6px;pointer-events:none}
-  #pmPad .chips button{width:44px;height:44px;border-radius:50%;font-size:17px;background:rgba(20,10,8,.78);box-shadow:0 0 0 2px rgba(255,210,63,.55)}
+  #pmPad .chips button{width:46px;height:46px;border-radius:50%;padding:0;font-size:16px;color:#fff1d6;
+    background:radial-gradient(circle at 38% 32%,#ff8a70,#c8302a 45%,#6a120c 78%,#1a0504 100%);
+    box-shadow:0 0 0 3px #111,0 0 0 5px var(--rim2),0 3px 0 4px #000;text-shadow:0 1px 0 #3a0c08}
+  #pmPad.heroes .chips button{background:radial-gradient(circle at 38% 32%,#8fb6ff,#1f3a63 50%,#0b1830 85%)}
+  #pmPad .chips button.on,#pmPad .chips button:active{filter:brightness(1.3)}
   #pmPad .lbl{position:absolute;font:800 10px "Saira Condensed",sans-serif;letter-spacing:.16em;color:rgba(255,243,213,.6);pointer-events:none}
   `;
   document.head.appendChild(css);
@@ -76,6 +110,10 @@
     b.addEventListener("lostpointercapture", up); b.addEventListener("contextmenu", (e) => e.preventDefault());
   }
   const mk = (cls, html, key, repeat) => { const b = document.createElement("button"); b.className = cls; b.innerHTML = html; b.type = "button"; if (key) bindBtn(b, key, repeat); return b; };
+  // a deck cell: the domed button (or arrow) + its label plate; aria-label keeps the plain name (and PMTouch.state's text)
+  const cell = (cls, label, sub, key, repeat) => { const b = mk(cls, '<i class="cap"></i>' + (label ? '<span class="t">' + label + (sub ? "<small>" + sub + "</small>" : "") + "</span>" : ""), key, repeat);
+    b.setAttribute("aria-label", label || cls); return b; };
+  const arrow = (d, key) => { const b = cell("dir " + d, "", "", key, true); b.setAttribute("aria-label", { l: "◄", r: "►", u: "▲", d: "▼" }[d]); return b; };
 
   // safe-area insets as px (env() is CSS-only)
   function insets() {
@@ -91,12 +129,12 @@
   function cookButtons(k, p2) {
     const pre = p2 ? "" : "";
     const acts = [["flip", "FLIP"], ["top", "TOPPING"], ["toast", "BREAD"], ["tag", "TAG"]].filter(([id]) => k[id])
-      .map(([id, l]) => mk("", pre + l + (id === "toast" ? "<small>GRAB · TOAST</small>" : id === "tag" ? "<small>PASS THE SPATULA</small>" : ""), k[id]));
-    return { L: mk("dir", "◄", k.left, true), R: mk("dir", "►", k.right, true), acts, billy: mk("billy", "HEY BILLY!<small>EXPO</small>", k.billy) };
+      .map(([id, l]) => cell(id, pre + l, id === "toast" ? "GRAB · TOAST" : id === "tag" ? "PASS THE SPATULA" : "", k[id]));
+    return { L: arrow("l", k.left), R: arrow("r", k.right), acts, billy: cell("billy", "HEY BILLY!", "", k.billy) };
   }
   function menuButtons() {
-    return { up: mk("dir", "▲", "ArrowUp", true), down: mk("dir", "▼", "ArrowDown", true), L: mk("dir", "◄", "ArrowLeft", true), R: mk("dir", "►", "ArrowRight", true),
-      ok: mk("ok", "OK", "Enter"), back: mk("", "BACK", "Escape") };
+    return { up: arrow("u", "ArrowUp"), down: arrow("d", "ArrowDown"), L: arrow("l", "ArrowLeft"), R: arrow("r", "ArrowRight"),
+      ok: cell("ok", "OK", "", "Enter"), back: cell("back", "BACK", "", "Escape") };
   }
 
   function layout() {
@@ -121,12 +159,15 @@
         z.style.gridTemplateColumns = "1fr 1fr"; z.style.gridAutoRows = "1fr"; z.append(c.L, c.R, ...c.acts, c.billy);
         if (c.acts.length % 2) c.billy.style.gridColumn = "auto"; else c.billy.style.gridColumn = "span 2"; });
          }
-      else { const c = cookButtons(pads[0]), mv = hand === "right" ? zr : zl, ac = hand === "right" ? zl : zr;
+      else { const c = cookButtons(pads[0]), mv = hand === "right" ? zr : zl, ac = hand === "right" ? zl : zr;   // (chips → the top of the ◄ ► column)
         mv.style.gridTemplate = "1fr 1fr / 1fr"; mv.append(c.L, c.R);
         ac.style.gridTemplateColumns = "1fr 1fr"; ac.style.gridAutoRows = "1fr"; ac.append(...c.acts, c.billy); c.billy.style.gridColumn = "span 2";
         if (c.acts.length % 2) c.acts[c.acts.length - 1].style.gridColumn = "span 2";
         mv.style.top = (ins.t + 56) + "px"; mv.style.height = (H - ins.t - ins.b - 56) + "px"; chipsAt = { x: parseFloat(mv.style.left) + 8, y: ins.t + 6 };
-        c.L.style.fontSize = c.R.style.fontSize = "40px"; }
+      }
+      // (1121 UI audit) every other landscape context (menus, two cooks): the corner chips sat INSIDE the game, on its title /
+      // HUD (II over THE KITCHEN, ♪ over SPEED BATTLE). They take the top of the left column instead, like the 1P layout.
+      if (!chipsAt) { zl.style.top = (ins.t + 56) + "px"; zl.style.height = (H - ins.t - ins.b - 56) + "px"; chipsAt = { x: ins.l + 8, y: ins.t + 6 }; }
     } else {                                           // ---- PORTRAIT: game on top, pad underneath (P2 on top, turned) ----
       const padH = Math.round(Math.min(Math.max(190, H * 0.3), 300));
       const top = two ? padH : 0;
@@ -172,11 +213,14 @@
   }
 
   API.area = () => A;
-  API.state = () => ({ on: true, ctx: lastCtx, hand, area: A, buttons: el ? [...el.querySelectorAll("button")].map((b) => b.textContent) : [] });
+  API.state = () => ({ on: true, ctx: lastCtx, hand, area: A, buttons: el ? [...el.querySelectorAll("button")].map((b) => b.getAttribute("aria-label") || b.textContent) : [] });
   API.init = (c) => {
     cfg = Object.assign(cfg, c || {});
     document.body.classList.add("pmtouch");
     el = document.createElement("div"); el.id = "pmPad"; document.body.appendChild(el);
+    // the deck follows the edition: HEROES = the navy/gingham 2UP HEROES panel, else the DINER 1UP panel (pages may pass skin)
+    const sk = (cfg.skin || Q.get("skin") || Q.get("theme") || Q.get("cab") || "").toLowerCase();
+    if (/school|heroes/.test(sk) || /heroes/.test(location.pathname)) el.classList.add("heroes");
     lastSig = ""; layout();
     addEventListener("resize", () => { lastSig = ""; layout(); });
     setInterval(layout, 200);                         // the context (play / menu) follows the page's state

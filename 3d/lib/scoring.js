@@ -128,7 +128,8 @@
         ctx.save(); ctx.textAlign = "center";
         for (const c of cols) {
           let base = c.y;
-          for (const r of o.avoid || []) if (c.x > r[0] - 40 && c.x < r[0] + r[2] + 40 && base > r[1] - 6 && base - (Math.min(MAX, c.list.length)) * LH < r[1] + r[3]) base = r[1] + r[3] + 24 + Math.min(MAX, c.list.length) * LH;
+          for (const r of o.avoid || []) if (c.x > r[0] - 40 && c.x < r[0] + r[2] + 40 && base > r[1] - 6 && base - (Math.min(MAX, c.list.length)) * LH < r[1] + r[3])
+            base = r[4] === "up" ? r[1] - 6 : r[1] + r[3] + 24 + Math.min(MAX, c.list.length) * LH;   // (1121) "up" = lift the column above it (the HUD chips sit at the bottom)
           if (o.top != null) base = Math.max(base, o.top + 14 + Math.min(MAX, c.list.length) * LH);
           const L = c.list.length;
           let acc = 0;                                  // px above the anchor, newest first (a coalesced pop is ~2 lines tall)
@@ -244,7 +245,7 @@
     const b = breakdown(g), sk = skinOf(g), cw = Math.min(560, W - 40), ch = 300, x0 = (W - cw) / 2, y0 = Math.max(10, (H - ch) / 2);
     ctx.fillStyle = "rgba(12,7,5,.92)"; ctx.fillRect(x0, y0, cw, ch);
     ctx.strokeStyle = "#e0a92e"; ctx.lineWidth = 2; ctx.strokeRect(x0 + 0.5, y0 + 0.5, cw - 1, ch - 1);
-    txt(opts.title || "SHIFT CLEAR", x0 + 18, y0 + 30, 22, "#7ad17a", "left", 800);
+    txt(opts.title || "SHIFT CLEAR", x0 + 18, y0 + 30, 22, "#7ad17a", "left", 800, cw - 150);   // (1121) clear of the GRADE column (a phone's legibility floor ran it in)
     txt("GRADE", x0 + cw - 92, y0 + 26, 12, "#a89a80", "center", 800);
     txt(b.grade, x0 + cw - 92, y0 + 66, 44, b.grade[0] === "A" ? "#ffd23f" : b.grade === "B" ? "#c9d2da" : "#e0a92e", "center", 900);
     const g5 = b.grades;

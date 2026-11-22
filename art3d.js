@@ -45,6 +45,16 @@
         else ART.m[k] = v;
       }
     }
+    // (1119) LOOK 1119 (opt-in, kitchen.html ?look=1119 sets PM_LOOK): the same plates RE-LIT to the shading rule
+    // (3D PIPELINE games/patty-melt/blender/look1119.py), same cameras + anchors, rendered at 2x. look1119/look.manifest.js
+    // swaps only bg / fg / dining_bg and says the plate scale; no file = the shipped plates. Pages that crop plates in
+    // 640-px source coords (cabinet.html) never set PM_LOOK.
+    if (globalThis.PM_LOOK === "1119") {
+      await new Promise((res) => { const sc = document.createElement("script"); sc.src = BASE + "look1119/look.manifest.js";
+        sc.onload = res; sc.onerror = res; document.head.appendChild(sc); });
+      const L = globalThis.PM_LOOK1119; globalThis.PM_LOOK1119 = null;
+      if (L && L.bg && L.bg.empty) { ART.m = Object.assign({}, ART.m, L); ART.look = "1119"; }
+    }
     const m = ART.m, jobs = [];
     let done = 0; const tick = (p) => p.then((v) => { done++; ART.progress = done / jobs.length; return v; });
     for (const [k, f] of Object.entries(m.bg)) jobs.push(tick(loadImg(f)).then((im) => { ART.img["bg_" + k] = im; }));

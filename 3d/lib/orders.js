@@ -173,7 +173,7 @@
     ctx.strokeStyle = "#f3ead6"; ctx.lineWidth = 2; rr(ctx, x + 1.5, y + 1.5, w - 3, h - 3, 4); ctx.stroke();   // white outer rule
     ctx.strokeStyle = call.bread ? BREAD_COL[call.bread] : "#f2c14e"; ctx.lineWidth = 1.2;  // + an inner rule in the bread's colour
     rr(ctx, x + 5, y + 5, w - 10, h - 10, 3); ctx.stroke();
-    T(ctx, shown, x + 16, y + 24, 19, "#f7f0e2", "left", 800);
+    T(ctx, shown, x + 16, y + 24, 19, "#f7f0e2", "left", 800, w - 34);   // (1121 UI audit) squeeze, never spill past the window (2-screen kitchen)
     if (shown.length >= n && ((age / 260) | 0) % 2 === 0) {                                // done typing: the blinking ▼
       ctx.fillStyle = "#f2c14e"; ctx.beginPath(); const tx = x + w - 15, ty = y + h - 13;
       ctx.moveTo(tx - 5, ty - 4); ctx.lineTo(tx + 5, ty - 4); ctx.lineTo(tx, ty + 2); ctx.closePath(); ctx.fill();
