@@ -2368,8 +2368,9 @@ function drawPause() {
 // ---------- FIRST-TIME TEACHING PROMPTS — each one once a session, never blocking; H dismisses, pause menu → TIPS OFF ----------
 // They read engine state only (the RDY flag, a sent-back, a waiting plate, a melt with no bun …) and fire the FIRST time
 // the situation happens for a human player. Off in the QA rigs, the demo and the attract.
-const TIP_KEY = "pmTipsSeen.v1", TIPS_OFF_KEY = "pmTipsOff.v1";
-let tipNow = null; const _tipSeen = new Set((() => { try { return JSON.parse(sessionStorage.getItem(TIP_KEY)) || []; } catch (e) { return []; } })());
+// CK-4002 (1125 default, Joe can overrule): "seen" lives IN MEMORY only -- a plain web visit stores nothing, so the tips show again on reload.
+const TIPS_OFF_KEY = "pmTipsOff.v1";
+let tipNow = null; const _tipSeen = new Set();
 function tipsOn() { if (SERVICE_PRACTICE || SHELL === "demo" || Q.get("tips") === "off") return false; try { return localStorage.getItem(TIPS_OFF_KEY) !== "1"; } catch (e) { return true; } }
 function setTipsOn(v) { try { localStorage.setItem(TIPS_OFF_KEY, v ? "0" : "1"); } catch (e) {} if (!v) tipNow = null; }
 const TIPS = {
@@ -2382,7 +2383,7 @@ const TIPS = {
   burnt:  ["BURNT — IT'S TOSSED", "Left too long. Watch the clock on each item."],
 };
 function tipShow(id) { if (!tipsOn() || _tipSeen.has(id) || tipNow) return;
-  _tipSeen.add(id); try { sessionStorage.setItem(TIP_KEY, JSON.stringify([..._tipSeen])); } catch (e) {}
+  _tipSeen.add(id);
   tipNow = { id, t0: performance.now() }; }
 function tipPressed(verb) { if (!tipNow) return; const id = tipNow.id;   // doing the thing the tip asked = the tip is done
   if ((id === "rdy" && verb === "flip") || (id === "top" && verb === "top") || (id === "bun" && verb === "toast") || ((id === "billy" || id === "coop") && verb === "billy"))
