@@ -25,7 +25,12 @@
     "chrissy-plate": "chrissy-plate.png",
     "chrissy-press": "chrissy-press.png",
     "chrissy-cheese-b": "chrissy-cheese-b.png",
-    "chrissy-cheese-c": "chrissy-cheese-c.png"
+    "chrissy-cheese-c": "chrissy-cheese-c.png",
+    "patty-back-1125": "patty-back-1125.png",
+    "patty-back34-1125": "patty-back34-1125.png",
+    "chrissy-back-1125": "chrissy-back-1125.png",
+    "chrissy-back34-1125b": "chrissy-back34-1125b.png",
+    "chrissy-back34-1125c": "chrissy-back34-1125c.png"
    },
    "skipped": {
     "patty-idle-ONESPATULA": "one hand empty: breaks the two-spatula rule",
@@ -46,7 +51,9 @@
     "chrissy-cheese": "chrissy-1117-cheese.png",
     "billy-slack": "diner/paintover/billy-frustrated.png",
     "billy-serve": "billy-1117-present.png",
-    "billy-turn": "billy-1117-stop.png"
+    "billy-turn": "billy-1117-stop.png",
+    "patty-cheese": "patty-cheese.png",
+    "chrissy-point": "chrissy-1117-point.png"
    },
    "extras": {
     "patty-dash": "patty-dash.png",
@@ -60,12 +67,18 @@
     "billy-1117-holdL": "billy-1117-holdL.png",
     "billy-1117-fistL": "billy-1117-fistL.png",
     "billy-1117-upbeat": "billy-1117-upbeat.png",
-    "billy-1117-service": "billy-1117-service.png"
+    "billy-1117-service": "billy-1117-service.png",
+    "patty-flip-alt": "patty-flip-alt.png",
+    "patty-back-1125": "patty-back-1125.png",
+    "patty-back34-1125": "patty-back34-1125.png",
+    "patty-back34-1125b": "patty-back34-1125b.png",
+    "chrissy-back34-1125": "chrissy-back34-1125.png"
    },
    "skipped": {
     "patty-cook-alt": "future skin, Joe still working on it",
     "patty-back": "3/4 back view, arms down: not usable for the rear cooks"
    }
   }
- }
+ },
+ "note_1125": "1125: ChatGPT hair fixes (HEROES Patty cheese/cheer, DINER Chrissy cheer/point), new DINER Patty cheer + cheese, back / 3/4-back views filed (tools/cast1125.py)"
 }

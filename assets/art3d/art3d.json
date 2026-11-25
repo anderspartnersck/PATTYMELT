@@ -2965,7 +2965,7 @@
    "serve": "cast/pattyJ-serve.webp",
    "cheer": "cast/pattyJ-cheer.webp",
    "flip": "cast/pattyJ-flip.webp",
-   "cheese": "cast/pattyJ-flip.webp"
+   "cheese": "cast/pattyJ-cheese.webp"
   },
   "chrissy": {
    "idle": "cast/chrissyJ-idle.webp",
@@ -2984,9 +2984,7 @@
     "cast/billyD-walk-2.webp",
     "cast/billyD-walk-3.webp",
     "cast/billyD-walk-4.webp",
-    "cast/billyD-walk-5.webp",
-    "cast/billyD-walk-6.webp",
-    "cast/billyD-walk-7.webp"
+    "cast/billyD-walk-5.webp"
    ],
    "run": [
     "cast/billyD-run-0.webp",
@@ -13580,7 +13578,45 @@
    0.17,
    0.61
   ],
-  "src": "Joe 1111 teen Cougars Billy (renders/cast3d/heroesT/billy)"
+  "trays": {
+   "billyD-serve.webp": [
+    0.225,
+    0.639
+   ],
+   "billyD-walk-0.webp": [
+    0.147,
+    0.559
+   ],
+   "billyD-walk-1.webp": [
+    0.137,
+    0.545
+   ],
+   "billyD-walk-2.webp": [
+    0.135,
+    0.548
+   ],
+   "billyD-walk-3.webp": [
+    0.15,
+    0.531
+   ],
+   "billyD-walk-4.webp": [
+    0.16,
+    0.529
+   ],
+   "billyD-walk-5.webp": [
+    0.164,
+    0.549
+   ],
+   "billyD-run-0.webp": [
+    0.1,
+    0.589
+   ],
+   "billyD-run-1.webp": [
+    0.1,
+    0.589
+   ]
+  },
+  "src": "ChatGPT painterly teen Billy, DINER, 1125 (renders/cast3d/dinerT/billy; tools/cast1125.py)"
  },
  "cast_art": {
   "src": "Joe 1111/1112 paintings, cut clean (3D PIPELINE/games/patty-melt/tools/joe_cast.py)",
@@ -13593,7 +13629,8 @@
     "idle": "patty-idle",
     "flip": "patty-flip",
     "cheer": "patty-cheer",
-    "serve": "patty-ready"
+    "serve": "patty-ready",
+    "cheese": "patty-cheese"
    },
    "chrissy": {
     "idle": "chrissy-1117-idle",

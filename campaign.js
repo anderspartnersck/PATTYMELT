@@ -200,6 +200,8 @@
       const q = new URLSearchParams(location.search);
       if (q.get("tables") === "1") g.cfg.tables = true;
       if (q.get("lamp") === "1") g.cfg.lamp = true;
+      // 1125 REAL DELIVERY prototype (default OFF; docs/DELIVER-1125.md): ?deliver=1 = Billy's tray of 6, ?deliver=N = tray N
+      { const dv = +(q.get("deliver") || 0); if (dv > 0) g.cfg.deliver = dv === 1 ? 6 : Math.floor(dv); }
     }
     Object.defineProperty(g, "bumped", { configurable: true, enumerable: false,       // (presentation) THE LATE BUMP label
       get() { return this.service && this.service.day && this.service.day.bumped && sh.day && sh.day.bump ? sh.day.bump.label : null; } });

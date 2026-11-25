@@ -67,6 +67,8 @@
   // 1124 pc TEMPO PROTOTYPE (opt-in cfg.tables / cfg.lamp, PM-4003; docs/TEMPO-1124.md §4) — mirrors src/patty_melt.py.
   const TABLE_SIZES = [2, 3, 2, 4], TABLE_JOIN = 60, BELL_SPREAD = 30, CLEAN_SPREAD = 60,   /* Joe 1124: bell 3 s / clean 6 s (was 15/40) */ BELL_PTS = 75, CLEAN_PTS = 25,
         PASS_CAP = 4, LAMP_HOLD = 40;
+  // 1125 REAL DELIVERY (opt-in cfg.deliver = Billy's tray size, PROTOTYPE) — mirrors src/patty_melt.py exactly
+  const DLV_SEAT_T = [4, 5, 6, 7, 8, 9, 10, 12, 14, 16], DLV_HOP = 2, DLV_DROP = 3, DLV_IDLE = 7;
   // SHIFTS ON A GAME CLOCK (Joe 1112, docs/SHIFTS-AND-BATTLE-1112.md) — opt-in `tpm` in the day spec. Mirrors Python:
   // (t1 - t0) restaurant minutes x tpm ticks; a FLOW of [m0, m1, gap, kind(, n(, bag))] (n 0 = a stream until m1,
   // n > 0 = a burst of n); the shift ends at the close (survive = won); `bump` = THE LATE BUMP inside the shift.
@@ -402,6 +404,7 @@
     next.wait = Math.max(0, s.wait - WAIT_RELIEF);
     if (s.cfg.tables) next.cfg.tables = true;       // 1124 pc: the opt-in tempo flags ride the carry
     if (s.cfg.lamp) next.cfg.lamp = true;
+    if (s.cfg.deliver) next.cfg.deliver = s.cfg.deliver;   // 1125 deliver rides the carry
     return next;
   }
 
@@ -932,7 +935,30 @@
       }
     }
   }
+  function _dlv_seat(s, p) { const t = _ticket(s, p); return t ? t.seat : SEAT_CYCLE[p.born % 10]; }
+  function _dlv_go(s) { const d = s.dlv; d.state = "run"; d.t = DLV_SEAT_T[_dlv_seat(s, d.tray[0])]; }
+  function _dlv_tick(s) {            // 1125 deliver: Billy out on the floor — true while he's away from the pass
+    const d = s.dlv;
+    if (d.state === "pass") return false;
+    d.t -= 1;
+    if (d.t > 0) return true;
+    if (d.state === "back") { d.state = "pass"; d.idle = 0; return false; }
+    const p = d.tray.shift(), seat = _dlv_seat(s, p);   // LANDED: the plate is on the table -> NOW it's served
+    _do_serve(s, p, null);
+    if (d.tray.length) d.t = DLV_DROP + Math.abs(DLV_SEAT_T[_dlv_seat(s, d.tray[0])] - DLV_SEAT_T[seat]) + DLV_HOP;
+    else { d.state = "back"; d.t = DLV_DROP + DLV_SEAT_T[seat]; }
+    return true;
+  }
+  function _serve_or_pick(s, p, at) {   // the serve beat: instant (today) or (cfg.deliver) onto Billy's tray
+    const t = _ticket(s, p);
+    if (s.cfg.deliver && !(t && t.togo)) { s.dlv.tray.push(p); s.dlv.idle = 0; return; }
+    _do_serve(s, p, at); _bag_beat(s, p);
+  }
   function _billy_tick(s) {
+    if (s.cfg.deliver) {
+      if (!s.dlv) s.dlv = { tray: [], state: "pass", t: 0, idle: 0 };
+      if (_dlv_tick(s)) { s.billy = Math.max(0.0, s.billy - s.cfg.billy_drift); return; }
+    }
     if (s.billy_turn_t > 0) {                 // 2P: mid-swing — serves NOBODY (the cost)
       s.billy_turn_t -= 1;
       if (s.billy_turn_t === 0) s.billy_facing = s.billy_turn_to;
@@ -940,6 +966,10 @@
       return;
     }
     s.billy = Math.max(0.0, s.billy - s.cfg.billy_drift);
+    if (s.cfg.deliver && s.dlv.tray.length) {
+      s.dlv.idle += 1;
+      if (s.billy < s.cfg.billy_serve_min || s.dlv.tray.length >= s.cfg.deliver || s.dlv.idle >= DLV_IDLE) { _dlv_go(s); return; }
+    }
     if (s.billy < s.cfg.billy_serve_min) return;
     s.billy_t -= 1;
     if (s.billy_t > 0) return;
@@ -954,13 +984,13 @@
       const p = s.slots[i];
       if (!_servable(p)) continue;                 // skip empties, unfinished, and un-bunned melts (they jam)
       if (s.cfg.tables && _table_of(s, p)) continue;   // 1124 pc: a table plate never goes out alone
-      s.slots[i] = null; _do_serve(s, p, ["grill", i]); _bag_beat(s, p); return;
+      s.slots[i] = null; _serve_or_pick(s, p, ["grill", i]); return;
     }
     for (let ti = 0; ti < s.toaster.length; ti++) {   // then a finished GRILLED CHEESE off the toaster (shared)
       const e = s.toaster[ti];
       if (!_servable(e)) continue;
       if (s.cfg.tables && _table_of(s, e)) continue;
-      s.toaster[ti] = null; _do_serve(s, e, ["toaster", ti]); _bag_beat(s, e); return;
+      s.toaster[ti] = null; _serve_or_pick(s, e, ["toaster", ti]); return;
     }
   }
   function _bag_beat(s, p) {         // THE DAY: a take-out is bagged onto the pickup shelf — a quicker beat (no table walk)
@@ -1043,6 +1073,7 @@
     let done = s.slots.filter((x) => x && x.stage === Stage.DONE).length;
     const pile = s.cfg.pile_max ? (s.pile / s.cfg.pile_max) : 0.0;
     if (s.passq && s.passq.length) done += s.passq.length;   // 1124 pc: a plate waiting on THE PASS still jams the line
+    if (s.dlv) done += s.dlv.tray.length;                     // 1125 deliver: a plate on Billy's tray isn't served yet
     const n = s.slots.length || 1;               // hardening: never divide by zero on a degenerate grill
     return (occ / n) * 0.5 + pile * 0.3 + (done / n) * 0.2;
   }

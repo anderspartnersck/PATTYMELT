@@ -270,7 +270,7 @@ function foodArt(key, ox, oy, a, p) {
 // a finished dish at an arbitrary size (Billy's tray, a seat): the painting, else the rendered to_pass sprite
 function dishArt(sq, p, x, y, w, h, a) {
   if (globalThis.PMFoodPaint && PMFoodPaint.on() && PMFoodPaint.draw(ctx, "to_pass", { x, y, w, h },
-    { a, school: SCHOOL, bread: p && p.bread, gc: !!(p && p.item === pm.Item.GRILLED_CHEESE) })) return;
+    { a, school: SCHOOL, bread: p && p.bread, gc: !!(p && p.item === pm.Item.GRILLED_CHEESE), item: p && p.item })) return;   // (1125) the order's own build
   if (sq) ctx.drawImage(ART3D.atl[sq.a], sq.sx, sq.sy, sq.sw || sq.w, sq.sh || sq.h, x, y, w, h);
 }
 for (const [k, f] of [["level", "spatula-level"], ["flip", "spatula-flip"], ["toast", "spatula-toast"]]) {
@@ -1875,6 +1875,50 @@ function drawBillyVec(x, y0, T) {                                           // f
 }
 // ?art=3d BILLY — drawn from billy_run.js: his real position on the aisle routes, walk frames stride-locked to the
 // distance he covers (no sliding feet), the pose of what he's doing, and exactly the plates on his tray.
+// (1125) per-frame tray anchor: billy_art.trays[<frame file>] = [forward, up] × his height (tools/cast1125.py measures the painted
+// tray in each frame), so the plates he carries sit ON the tray in every step; frames without one use billy_art.tray.
+function billyTray(BA, im) {
+  if (!BA || !BA.trays || !im || !im.src) return null;
+  const m = /([^/?#]+?)(?:\.f\d+)?\.webp(?:[?#].*)?$/.exec(im.src); return m ? BA.trays[m[1] + ".webp"] || null : null;
+}
+// THE PLATE TOWER (1125, Joe: Scooby-Doo sandwich style; RENDER-ONLY, ?stack=0 = the flat two-row carry). More than one plate
+// on his tray stacks up: each plate on the last, a little offset and crooked (fixed per plate id), the tower swaying on a spring
+// driven by his step (more sway the taller it is; at full run speed a big lean back). The NEXT plate to go (tray[0]) rides on
+// top, so at each table the top plate hops off to its seat (the landing pop) and the tower shrinks. Cap 6 drawn; past that
+// the top one teeters. Engine timing untouched: this only reads BR.trayPlates().
+const STACK = Q.get("stack") !== "0", STACK_CAP = 6, HOP_MS = 300;
+const _stackTop = new Map();                                   // plate id → where it last sat on the tower (its hop start)
+let _swX = 0, _swV = 0, _stackTopY = 1e9;                    // _stackTopY: the tower's top this frame (his label rides above it)
+function billyStack(tp, x, y, h, face, TR, carryW, sp, b, dt) {
+  _stackTopY = 1e9;
+  const k = Math.min(0.05, dt / 1000), moving = b.mode === "walk", fast = moving && b.v >= BillyRun.RUN_V;
+  const step = moving ? Math.sin(b.phase / (h * 0.55) * Math.PI * 2) : 0;          // one push per stride
+  const target = moving ? -face * (fast ? 0.55 : 0.18) : 0;                         // leans back against the way he goes
+  _swV += ((target - _swX) * 38 + step * (fast ? 9 : 5) - _swV * 4.2) * k; _swX += _swV * k;
+  _swX = Math.max(-1.2, Math.min(1.2, _swX));
+  let cx = x + face * h * TR[0], cy = y - h * TR[1];
+  const drinks = globalThis.PMScore ? tp.filter((p) => p.drink) : [];                // glasses ride flat on the tray, beside the tower
+  drinks.forEach((p, i) => PMScore.drawGlass(ctx, cx + face * carryW * (0.45 + 0.3 * i), cy, p.drink, 1, carryW / 18));
+  const order = tp.filter((p) => !drinks.includes(p)).reverse(), n = Math.min(order.length, STACK_CAP);   // tray[0] (next to deliver) on top
+  const draw = order.slice(order.length - n);
+  if (drinks.length) cx -= face * carryW * 0.12;
+  draw.forEach((p, i) => {
+    const sq = ART3D.m.sprites[gcKey("to_pass.0.5", p)] || sp, dishH = sq ? carryW * sq.h / sq.w : carryW * 0.5;
+    const hsh = ((p.id * 2654435761) >>> 0) / 4294967296;                               // per plate: fixed crook + offset
+    const t = i / Math.max(1, STACK_CAP - 1), tee = order.length > STACK_CAP && i === n - 1 ? 3 : 1;
+    const sway = _swX * carryW * 0.9 * t * (0.6 + 0.4 * n / STACK_CAP) * tee;
+    const px = cx + (hsh - 0.5) * carryW * 0.22 + sway, rot = (hsh - 0.5) * 0.16 + _swX * 0.12 * t * tee;
+    ctx.save(); ctx.translate(px, cy); ctx.rotate(rot);
+    if (isMeltPlate(p)) { const im = PMSpat.topping(SCHOOL ? "plated-heroes" : "plated-diner"); const dh = carryW * (im.height - 32) / (im.width - 32); PMSpat.drawPlated(ctx, SCHOOL, 0, -dh / 2, carryW); }
+    else dishArt(sq, p, -carryW / 2, -dishH, carryW, dishH);
+    if (p.state === "rejected") txt("✗", 0, -dishH - 4, 12, COL.bad, "center", 800);
+    ctx.restore();
+    _stackTop.set(p.id, [px, cy - dishH * 0.5]);
+    cy -= dishH * (isMeltPlate(p) ? 0.62 : 0.5);                                       // the next plate sits on this one
+    _stackTopY = Math.min(_stackTopY, cy - dishH * 0.5);
+  });
+  if (_stackTop.size > 64) for (const id of _stackTop.keys()) { if (!BR.plates.some((p) => p.id === id && p.state !== "cleared")) _stackTop.delete(id); }
+}
 function drawBilly3D() {
   const now = performance.now(), dt = _br_last ? Math.min(100, now - _br_last) : 16; _br_last = now;
   if (!paused) BR.update(game, dt);
@@ -1893,6 +1937,7 @@ function drawBilly3D() {
   // THE JUICE (render-only): a step bounce while he runs, a squash-and-spring whenever his job changes (pass ▸ run ▸ hand-off)
   const jb = globalThis.PMCine ? PMCine.squash("billy", b.mode, 0.13) : { sx: 1, sy: 1 };
   const hop = b.mode === "walk" && globalThis.PMCine ? PMCine.bob(b.phase / (h * 0.55) * Math.PI * 3, h * 0.035) : 0;
+  const TRF = billyTray(BA, im);   // (1125) this frame's painted tray (billy_art.trays), read before the flap swaps the image
   if (im && im.width && b.mode !== "walk" && PMCast.flapOf) im = PMCast.flapOf(im, now);   // (1117) standing Billy: towel + curls sway
   if (im && im.width) { const w = h * im.width / im.height; ctx.save(); ctx.translate(x, y - hop); ctx.scale(face * jb.sx, jb.sy * (1 + hop / h * 0.6)); ctx.drawImage(im, -w / 2, -h, w, h); ctx.restore(); }
   // the tray: exactly the plates he picked up, in order (a refused plate rides back marked)
@@ -1900,11 +1945,14 @@ function drawBilly3D() {
   // Keep dishes readable as Billy recedes. A full tray uses two rows of
   // three, rather than squeezing six plates into a 9px-spaced line.
   const carryW = Math.max(24, Math.min(32, h * 0.3)), cols = Math.min(3, tp.length), rows = Math.ceil(tp.length / (cols || 1));
-  tp.forEach((p, i) => {
+  const TRB = TRF || (BA && BA.tray) || [0.22, 0.52];
+  _stackTopY = 1e9;
+  if (STACK && tp.length) billyStack(tp, x, y - hop, h, face, TRB, carryW, sp, b, dt);   // (1125) the plate TOWER
+  else tp.forEach((p, i) => {
     const row = Math.floor(i / 3), col = i % 3, rowCount = Math.min(3, tp.length - row * 3);
-    const TR = (BA && BA.tray) || [0.22, 0.52];   // where the painted tray sits, × his height from his feet
+    const TR = TRF || (BA && BA.tray) || [0.22, 0.52];   // where the painted tray sits, × his height from his feet
     const px = x + face * h * TR[0] + face * (col - (rowCount - 1) / 2) * carryW * 0.72;
-    const py = y - h * TR[1] - (rows - 1 - row) * carryW * 0.4;
+    const py = y - hop - h * TR[1] - (rows - 1 - row) * carryW * 0.4;   // (1125 r2) rides his step hop with the tray
     const sq = ART3D.m.sprites[gcKey("to_pass.0.5", p)] || sp;   // (a grilled cheese rides as its own plate)
     let dishH = sq ? carryW * sq.h / sq.w : carryW * 0.5;
     if (p.drink && globalThis.PMScore) { PMScore.drawGlass(ctx, px, py, p.drink, 1, carryW / 18); return; }   // 1112: a DRINK on his tray (placeholder glass)
@@ -1924,8 +1972,10 @@ function drawBilly3D() {
     const land = BR.t - p.tServed, pop = land < 420 ? 1 + 0.35 * Math.exp(-land / 110) * Math.cos(land / 40) : 1;   // the plate LANDS (squash-pop)
     const sq = ART3D.m.sprites[gcKey("to_pass.0.5", p)] || sp;
     ctx.globalAlpha = a; const sw = 22 * pop, sh = sw * sq.h / sq.w / pop;
-    if (isMeltPlate(p)) PMSpat.drawPlated(ctx, SCHOOL, DIN.x + d[0], DIN.y + d[1] - sh * 0.2, sw);   // the melt at its seat
-    else dishArt(sq, p, DIN.x + d[0] - sw / 2, DIN.y + d[1] - sh * 0.7, sw, sh);
+    let hx = DIN.x + d[0], hy = DIN.y + d[1];                 // (1125 stack) it HOPS off the top of the tower to its seat
+    const from = _stackTop.get(p.id); if (from && land < HOP_MS) { const u = land / HOP_MS; hx = from[0] + (hx - from[0]) * u; hy = from[1] + (hy - from[1]) * u - Math.sin(Math.PI * u) * 26; }
+    if (isMeltPlate(p)) PMSpat.drawPlated(ctx, SCHOOL, hx, hy - sh * 0.2, sw);   // the melt at its seat
+    else dishArt(sq, p, hx - sw / 2, hy - sh * 0.7, sw, sh);
     ctx.globalAlpha = 1;
     if (BR.t - p.tServed < 700) txt("♥", DIN.x + d[0], DIN.y + d[1] - 16, 14, COL.cheese, "center", 800);
   }
@@ -1937,7 +1987,7 @@ function drawBilly3D() {
   else if (b.mode === "walk") { label = tp.length ? "running " + tp.length : (onDuty ? "…coming!" : "…"); lc = tp.length ? COL.good : COL.amber; }
   else { label = "BILLY: slacking"; lc = COL.dim; }
   ctx.font = '800 ' + qz(12) + 'px "Saira Condensed","Arial Narrow",sans-serif';
-  const lw = ctx.measureText(label).width + 10, ly = Math.max(DIN.y + 2, y - h - 16), lx = Math.min(DIN.x + DIN.w - lw / 2 - 2, Math.max(DIN.x + lw / 2 + 2, x));   // (1125) the bubble stays inside the room, above his head
+  const lw = ctx.measureText(label).width + 10, ly = Math.max(DIN.y + 2, Math.min(y - h - 16, _stackTopY - 18)), lx = Math.min(DIN.x + DIN.w - lw / 2 - 2, Math.max(DIN.x + lw / 2 + 2, x));   // (1125) the bubble stays inside the room, above his head
   ctx.fillStyle = "rgba(10,6,4,0.72)"; ctx.fillRect(lx - lw / 2, ly, lw, 16); txt(label, lx, ly + 12, 12, lc, "center", 800);
   const af = game.billy / pm.BILLY_FULL;
   ctx.fillStyle = "#241c12"; ctx.fillRect(x - 20, y + 5, 40, 4); ctx.fillStyle = af > game.cfg.billy_serve_min / pm.BILLY_FULL ? COL.good : COL.amber; ctx.fillRect(x - 20, y + 5, 40 * af, 4);

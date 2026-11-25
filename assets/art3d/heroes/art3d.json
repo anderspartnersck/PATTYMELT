@@ -2994,9 +2994,7 @@
     "cast/billyT-walk-2.webp",
     "cast/billyT-walk-3.webp",
     "cast/billyT-walk-4.webp",
-    "cast/billyT-walk-5.webp",
-    "cast/billyT-walk-6.webp",
-    "cast/billyT-walk-7.webp"
+    "cast/billyT-walk-5.webp"
    ],
    "run": [
     "cast/billyT-run-0.webp",
@@ -5246,7 +5244,45 @@
    0.17,
    0.61
   ],
-  "src": "Joe 1111 teen Cougars Billy (renders/cast3d/heroesT/billy)"
+  "trays": {
+   "billyT-serve.webp": [
+    0.297,
+    0.584
+   ],
+   "billyT-walk-0.webp": [
+    0.164,
+    0.581
+   ],
+   "billyT-walk-1.webp": [
+    0.146,
+    0.582
+   ],
+   "billyT-walk-2.webp": [
+    0.15,
+    0.58
+   ],
+   "billyT-walk-3.webp": [
+    0.138,
+    0.57
+   ],
+   "billyT-walk-4.webp": [
+    0.134,
+    0.57
+   ],
+   "billyT-walk-5.webp": [
+    0.119,
+    0.559
+   ],
+   "billyT-run-0.webp": [
+    0.09,
+    0.582
+   ],
+   "billyT-run-1.webp": [
+    0.09,
+    0.582
+   ]
+  },
+  "src": "ChatGPT painterly teen Cougars Billy, 1125 (renders/cast3d/heroesT/billy; tools/cast1125.py)"
  },
  "cast_art": {
   "src": "Joe 1111/1112 paintings, cut clean (3D PIPELINE/games/patty-melt/tools/joe_cast.py)",
