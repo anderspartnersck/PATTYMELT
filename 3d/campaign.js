@@ -195,7 +195,7 @@
       if (q) { g.cfg.orders = q; g.orders_left = q; }
     }
     // 1124 pc TEMPO PROTOTYPE (PM-4003), URL flags, default OFF: ?tables=1 = GROUP LANDING (tables of 2-4 land together at
-    // THE PASS), ?lamp=1 = HEAT LAMP (a plate waiting to be run loses a grade step every 4 s). Engine-only: no render yet.
+    // THE PASS), ?lamp=1 = HEAT LAMP (a plate waiting to be run loses a grade step every 4 s). GROUP LANDING renders in kitchen.html via lib/tables.js (1124 pc, Order 28A prep).
     if (profile === "service" && typeof location !== "undefined" && location.search) {
       const q = new URLSearchParams(location.search);
       if (q.get("tables") === "1") g.cfg.tables = true;

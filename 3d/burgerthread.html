@@ -3,6 +3,7 @@
 <main><header><img class="brand" src="../assets/sprites/ui/burgerthread-badge.png" alt="BURGERTHREAD"><h1>BURGERTHREAD</h1><p><strong>A fictional review site inside PATTY MELT.</strong> These are ratings from your actual in-game orders on this browser. No accounts, online posts or network requests.</p></header>
 <p id="summary" role="status">Loading local reviews…</p><p>Your shift remains in its game tab. Opening this page from the service desk pauses it; return there and choose <strong>Resume shift</strong>.</p><button id="refresh" type="button">Refresh reviews</button><section id="reviews" aria-label="Recent customer reviews"></section>
 <footer><small>All-order rating totals and up to 200 recent reviews are kept locally. Clearing browser storage removes them. Practice, bots, attract reels and MeltDome do not post ratings. This is not a real restaurant review service.</small></footer></main>
+<script src="lib/nostore.js?v=1"></script>   <!-- 1125: a plain web visit stores nothing (in-memory storage on web hosts) -->
 <script src="service.js"></script><script>
 (function(){'use strict';function paint(){let storage=null;try{storage=localStorage;}catch(_){}const store=PMService.createStore(storage),s=store.summary(),list=document.getElementById('reviews');
  document.getElementById('summary').textContent=s.count?'CUSTOMER RATING: '+s.average.toFixed(1)+' / 5 · '+s.count+' local customer ratings · showing latest '+s.recentCount:'No customer reviews yet. Complete real orders during a shift.';

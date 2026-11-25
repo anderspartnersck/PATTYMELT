@@ -20,6 +20,7 @@
 </head>
 <body>
 <div id="stage"><canvas id="cv" width="1280" height="720"></canvas><iframe id="demo" title="live demo" tabindex="-1"></iframe></div>
+<script src="lib/nostore.js?v=1"></script>   <!-- 1125: a plain web visit stores nothing (in-memory storage on web hosts) -->
 <script src="engine.js"></script>
 <script src="lib/hidpi.js?v=1"></script>
 <script src="lib/touchpad.js?v=1"></script>   <!-- X7 1119: the PHONE PAD (touch only; speaks keys; desktop unchanged) -->
@@ -153,7 +154,7 @@ function launch() { audio.ui("lock"); audio.scene("launch"); state = "launch"; t
 // ---------- the state machine ----------
 const now = () => performance.now();
 let state = "splash", t0 = now(), idleT = now(), results = null, leaving = false;
-if (Q.get("results")) { try { results = JSON.parse(Q.get("results")); state = "results"; } catch (e) {} }
+if (Q.get("results")) { try { results = JSON.parse(Q.get("results")); state = "results"; if (results && results.skin) ed = results.skin === "school" ? 0 : 1; } catch (e) {} }   // (1125) a DINER result showed the cafeteria behind it
 else if (Q.has("attract")) state = "attract";
 else if (Q.has("menu") || Q.get("sel")) state = "menu";
 let att = { i: 0, t: now() };
@@ -195,7 +196,7 @@ addEventListener("keydown", (e) => {
 });
 cv.addEventListener("pointerdown", (e) => { const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height;
   if (state === "menu") { for (let i = 0; i < MODES.length; i++) { const ry = 150 + i * 58; if (x > 60 && x < 560 && y > ry && y < ry + 56) { if (sel === i && row === 0) return act("ok"); sel = i; row = 0; audio.ui("move"); return; } }
-    for (let r2 = 1; r2 < 4; r2++) { const ry = 560 + (r2 - 1) * 40; if (x > 620 && x < 1220 && y > ry - 26 && y < ry + 10) { row = r2; return act(x > 920 ? "right" : "left"); } } return; }
+    for (let r2 = 1; r2 < NROWS; r2++) { const ry = 516 + (r2 - 1) * 40; if (x > 614 && x < 1226 && y > ry - 26 && y < ry + 10) { row = r2; return act(x > 920 ? "right" : "left"); } } return; }   // (1125) the hit rows sat 44 px below the drawn rows, and LENGTH had none
   if (state === "results") return act(x < W / 2 ? "ok" : "alt");
   act("ok"); });
 const padPrev = [];
@@ -212,28 +213,45 @@ function pollPads() {
 
 // ---------- drawing ----------
 function T(s, x, y, px, fill, al = "center", lw = 0, maxW = 0) { ctx.save(); FX.text(ctx, s, x, y, px * 600 / 720, fill, al, "#000", lw, maxW); ctx.restore(); }
+// (1125 PERF, QA-1125: the front door ran 20 fps) the backdrop plates are BAKED: the painting(s), the re-lettered signs, the
+// gradients, the vignette and the title halftone go into ONE offscreen canvas at the backing-store resolution, so a frame
+// costs one full-screen drawImage (+ one solid dim fill) instead of 2 images + signs + 2-3 full-screen gradients + ~1600
+// halftone dots. The slow Ken Burns push is applied to the baked plate. Re-baked for its first 3 s (late images / fonts).
+const _plates = new Map();
+function bakedPlate(key, paint) {
+  const SS = cv._pmSS || 1, n = performance.now(); let e = _plates.get(key);
+  if (!e) { const c = document.createElement("canvas"); c.width = Math.round(W * SS); c.height = Math.round(H * SS); e = { c, t0: n, last: -1e9 }; _plates.set(key, e); }
+  if (n - e.t0 < 3000 ? n - e.last > 500 : e.last < 0) { const g = e.c.getContext("2d"); g.setTransform(SS, 0, 0, SS, 0, 0); g.clearRect(0, 0, W, H);
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high"; paint(g); e.last = n; }
+  return e.c;
+}
 function bgPlate(t, dim = 0.55) {   // the 3D kitchen at rest, slow Ken Burns
   const C = COLS[skin()], im = skin() === "school" ? ART.bgH : ART.bgD, im2 = skin() === "school" ? ART.dinH : ART.dinD;
-  ctx.fillStyle = C.deep; ctx.fillRect(0, 0, W, H);
+  const plate = bakedPlate("bg|" + skin() + "|" + ok(im) + ok(im2), (g) => {
+    g.fillStyle = C.deep; g.fillRect(0, 0, W, H);
+    if (ok(im)) g.drawImage(im, -4, 0, W / 2 + 8, H);
+    if (ok(im2)) { const r = im2.naturalWidth / im2.naturalHeight, hh = H, ww = Math.max(W / 2, hh * r); g.drawImage(im2, W * 0.75 - ww / 2, 0, ww, hh); }
+    const vg = g.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, W * 0.75); vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,.7)");
+    g.fillStyle = vg; g.fillRect(0, 0, W, H); });
   const k = 1.08 + 0.05 * Math.sin(t / 9000);
-  if (ok(im)) { ctx.save(); ctx.translate(W * 0.25, H / 2); ctx.scale(k, k); ctx.drawImage(im, -W * 0.25 - 4, -H / 2, W / 2 + 8, H); ctx.restore(); }
-  if (ok(im2)) { ctx.save(); ctx.translate(W * 0.75, H / 2); ctx.scale(k, k); const r = im2.naturalWidth / im2.naturalHeight, hh = H, ww = Math.max(W / 2, hh * r);
-    ctx.drawImage(im2, -ww / 2, -hh / 2, ww, hh); ctx.restore(); }
+  ctx.fillStyle = C.deep; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.imageSmoothingQuality = "low"; ctx.translate(W / 2, H / 2); ctx.scale(k, k); ctx.drawImage(plate, -W / 2, -H / 2, W, H); ctx.restore();   // bilinear: a ≤13% push needs no high-quality resample
   ctx.fillStyle = `rgba(8,4,14,${dim})`; ctx.fillRect(0, 0, W, H);
-  const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, W * 0.75); vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,.7)");
-  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
 }
 function titlePlate(t, dim = 0.32) {   // (1110 r4) the title shot IN the 3D kitchen, full bleed, slow push; else bgPlate
   const im = skin() === "school" ? ART.titleH : ART.titleD;
   if (!ok(im)) return bgPlate(t, 0.5);
+  const C = COLS[skin()];
+  const plate = bakedPlate("title|" + skin() + "|" + dim + "|" + !!globalThis.PMSigns, (g) => {
+    g.drawImage(im, 0, 0, W, H);
+    if (skin() === "school" && globalThis.PMSigns) PMSigns.draw(g, "heroes_title", { x: 0, y: 0, w: W, h: H });   // (1112) re-lettered plates
+    const lg = g.createLinearGradient(0, 0, W, 0); lg.addColorStop(0, `rgba(8,4,14,${dim + 0.35})`); lg.addColorStop(0.45, `rgba(8,4,14,${dim})`); lg.addColorStop(1, `rgba(8,4,14,${dim * 0.6})`);
+    g.fillStyle = lg; g.fillRect(0, 0, W, H);
+    const vg = g.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, W * 0.75); vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,.6)");
+    g.fillStyle = vg; g.fillRect(0, 0, W, H);
+    FX.halftone(g, 0, H * 0.42, W, H * 0.44, C.b, 0.06, 16); });   // (was drawn over the speed lines every frame)
   const k = 1.04 + 0.04 * Math.sin(t / 9000), dx = 18 * Math.sin(t / 13000);
-  ctx.save(); ctx.translate(W / 2 + dx, H / 2); ctx.scale(k, k); ctx.drawImage(im, -W / 2, -H / 2, W, H);
-  if (skin() === "school" && globalThis.PMSigns) PMSigns.draw(ctx, "heroes_title", { x: -W / 2, y: -H / 2, w: W, h: H });   // (1112) re-lettered plates
-  ctx.restore();
-  const g = ctx.createLinearGradient(0, 0, W, 0); g.addColorStop(0, `rgba(8,4,14,${dim + 0.35})`); g.addColorStop(0.45, `rgba(8,4,14,${dim})`); g.addColorStop(1, `rgba(8,4,14,${dim * 0.6})`);
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, W * 0.75); vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,.6)");
-  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.imageSmoothingQuality = "low"; ctx.translate(W / 2 + dx, H / 2); ctx.scale(k, k); ctx.drawImage(plate, -W / 2, -H / 2, W, H); ctx.restore();
 }
 // (1121 UI audit) maxH: the logo never pushes the edition line down into PRESS START (they overlapped on the title)
 let _logoGlow = null;   // (1121 perf budget) the DINER logo's glow, baked once instead of a shadowBlur every frame
@@ -268,20 +286,23 @@ function drawTitle(t, attractMode = false) {
   titlePlate(t);
   FX.speedLines(ctx, W * 0.3, H * 0.58, H * 0.2, W * 0.9, 56, t, [NEON.pink, NEON.cyan, NEON.violet, C.b], 0.20, 2);
   FX.slashBand(ctx, H * 0.63, H * 0.42, H * 0.05, 1, "rgba(0,0,0,0.0)", C.b);
-  FX.halftone(ctx, 0, H * 0.42, W, H * 0.44, C.b, 0.06, 16);
-  { const bw = 560, by = H * 0.6 - 34, bh = H * 0.74 - by, g = ctx.createLinearGradient(W * 0.56 - bw / 2, 0, W * 0.56 + bw / 2, 0);   // (1112) a dark band
+  // (1125, Joe: "watch for billy spacing") THE TITLE COMPOSITION: the text column moved up (PRESS START 0.50 · EDITION 0.565 ·
+  // safety 0.61) so BILLY gets his own spot under it — feet in frame, nothing touching him, the safety line beside his head
+  // height, not on it. The logo is capped narrower so its right end clears Chrissy's hairnet; Chrissy stands a touch further right.
+  const yPS = 0.5, yEd = 0.565, ySafe = 0.61;
+  { const bw = 560, by = H * yPS - 34, bh = H * (ySafe + 0.03) - by, g = ctx.createLinearGradient(W * 0.56 - bw / 2, 0, W * 0.56 + bw / 2, 0);   // (1112) a dark band
     g.addColorStop(0, "rgba(6,4,12,0)"); g.addColorStop(0.18, "rgba(6,4,12,.62)"); g.addColorStop(0.82, "rgba(6,4,12,.62)"); g.addColorStop(1, "rgba(6,4,12,0)");
     ctx.fillStyle = g; ctx.fillRect(W * 0.56 - bw / 2, by, bw, bh); }   // (under the cast) so the menu lines never sit on busy kitchen art
   const s1 = FX.squashAt(300, t, 0.2), s2 = FX.squashAt(600, t, 0.2), s3 = FX.squashAt(900, t, 0.2);
   const pIn = FX.outBack(FX.seg(t, 0, 380)), cIn = FX.outBack(FX.seg(t, 250, 650)), bIn = FX.outBack(FX.seg(t, 600, 1000));
-  FX.drawCast(ctx, hero("chrissy", "cheer"), W * 0.79 + (1 - cIn) * W * 0.5, H * 1.01, H * 0.7, s2[1], s2[0] * PMCine.breathe("c"), true, P2, 0.95);
-  FX.drawCast(ctx, hero("billy", "serve"), W * 0.6, H * 1.02 + (1 - bIn) * H * 0.5, H * 0.42, s3[1], s3[0], true, null);
+  FX.drawCast(ctx, hero("chrissy", "cheer"), W * 0.83 + (1 - cIn) * W * 0.5, H * 1.0, H * 0.68, s2[1], s2[0] * PMCine.breathe("c"), true, P2, 0.95);
+  FX.drawCast(ctx, hero("billy", "serve"), W * 0.56, H * 0.985 + (1 - bIn) * H * 0.5, H * 0.31, s3[1], s3[0], true, null);
   FX.drawCast(ctx, heroH("patty", "cheer"), W * 0.2 - (1 - pIn) * W * 0.5, H * 1.01, H * 0.88, s1[1], s1[0] * PMCine.breathe("p"), false, C.b);
-  const lh = logo(W * 0.56, H * 0.06, skin() === "school" ? 560 : 600, H * 0.6 - 62 - 30 - H * 0.06);   // edition line baseline ≤ PRESS START top − 30
-  T(skin() === "school" ? "THE 3D EDITION · THE CAFETERIA" : "THE 3D EDITION · THE DINER", W * 0.56, H * 0.06 + lh + 30, 26, C.cream, "center", 5);
-  if (blink(t)) T(attractMode ? "INSERT 25¢ · PRESS START" : "PRESS  START", W * 0.56, H * 0.6, 44, C.b, "center", 8);
-  T("◄ ►  EDITION: " + EDITIONS[ed][1] + "  ◄ ►", W * 0.56, H * 0.67, 18, C.cream, "center", 4);
-  T(QUIET ? "✋✗ spatulas only" : "two spatulas · no hands on the food · it's all about food safety", W * 0.56, H * 0.72, QUIET ? 12 : 15, "rgba(243,230,200,.8)", "center", 3);
+  const lh = logo(W * 0.53, H * 0.05, skin() === "school" ? 470 : 500, H * yPS - 62 - 30 - H * 0.05);   // edition line baseline ≤ PRESS START top − 30
+  T(skin() === "school" ? "THE 3D EDITION · THE CAFETERIA" : "THE 3D EDITION · THE DINER", W * 0.56, H * 0.05 + lh + 30, 26, C.cream, "center", 5);
+  if (blink(t)) T(attractMode ? "INSERT 25¢ · PRESS START" : "PRESS  START", W * 0.56, H * yPS, 44, C.b, "center", 8);
+  T("◄ ►  EDITION: " + EDITIONS[ed][1] + "  ◄ ►", W * 0.56, H * yEd, 18, C.cream, "center", 4);
+  T(QUIET ? "✋✗ spatulas only" : "two spatulas · no hands on the food · it's all about food safety", W * 0.56, H * ySafe, QUIET ? 12 : 15, "rgba(243,230,200,.8)", "center", 3);
   T("for Christine & Phillip Coleman", W - 16, H - 14, 14, "rgba(243,230,200,.7)", "right", 3);
   T("Created by Joseph Coleman, Claude, ChatGPT, and Blender · Castle Killscreen · Anders & Partners", 16, H - 14, 12, "rgba(243,230,200,.45)", "left", 2);
 }

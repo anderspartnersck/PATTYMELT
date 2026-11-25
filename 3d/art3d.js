@@ -13,16 +13,23 @@
   function make() {
   const ART = { ready: false, failed: false, progress: 0, m: null, img: {}, atl: [], cast: {}, patronAtl: [] };
   let BASE = "../assets/art3d/";
+  // (1125) RETRY: one dropped request on GitHub Pages used to fail the WHOLE 3D set (ready = bg_empty && every atlas) and
+  // the shift then played on the old 2D render path forever (Joe's 1125 DINER screenshot). Every image now gets 3 tries,
+  // the retries cache-busted, before it counts as missing.
+  function tryLoad(url, tries) {
+    return new Promise((res) => { const im = new Image();
+      im.onerror = () => { if (tries > 1) setTimeout(() => tryLoad(url, tries - 1).then(res), 350 * (4 - tries)); else res(null); };
+      im.onload = () => { (im.decode ? im.decode().catch(() => {}) : Promise.resolve()).then(() => res(im)); };
+      im.src = tries < 3 ? url + (url.includes("?") ? "&" : "?") + "r=" + tries : url; });
+  }
   function loadImg(src) {
     // decode() up front: the first draw of a big WebP otherwise decodes on the render thread (a 400+ ms hitch mid-shift)
-    return new Promise((res) => { const im = new Image(); im.onerror = () => res(null);
-      im.onload = () => { (im.decode ? im.decode().catch(() => {}) : Promise.resolve()).then(() => res(im)); }; im.src = BASE + src; });
+    return tryLoad(BASE + src, 3);
   }
   // cast frames route through the ONE cast table (lib/cast.js — ?cast=ink tries the inked set first, falls back per image)
   function loadCast(f) {
     const chain = globalThis.PMCast ? PMCast.art3dChain(BASE, f) : [BASE + f];
-    return chain.reduce((p, url) => p.then((im) => im || new Promise((res) => { const i = new Image(); i.onerror = () => res(null);
-      i.onload = () => { (i.decode ? i.decode().catch(() => {}) : Promise.resolve()).then(() => res(i)); }; i.src = url; })), Promise.resolve(null));
+    return chain.reduce((p, url, k) => p.then((im) => im || tryLoad(url, k === chain.length - 1 ? 3 : 1)), Promise.resolve(null));   // (1125) the last link retries
   }
   ART.load = function (base) { const p = _queue.then(() => ART._load(base)); _queue = p.catch(() => {}); return p; };
   ART._load = async function (base) {
@@ -70,8 +77,14 @@
       }
     }
     await Promise.all(jobs);
-    ART.ready = !!(ART.img.bg_empty && ART.atl.every(Boolean));
-    ART.failed = !ART.ready;
+    // (1125) 3D ONLY: a piece that still won't load after its retries is LOGGED and left out — the set stays 3D (the old
+    // rule failed the whole set over one missing atlas and the page dropped to the retired 2D kitchen).
+    ART.missing = [];
+    for (const k of Object.keys(m.bg)) if (!ART.img["bg_" + k]) ART.missing.push("bg." + k);
+    m.atlases.forEach((f, i) => { if (!ART.atl[i]) ART.missing.push(f); });
+    if (!ART.img.bg_empty) ART.img.bg_empty = Object.keys(m.bg).map((k) => ART.img["bg_" + k]).find(Boolean) || null;
+    if (ART.missing.length && typeof console !== "undefined") console.warn("ART3D: missing after retries (drawn without them):", ART.missing.join(", "));
+    ART.ready = true; ART.failed = false;
     return ART;
   };
   ART.has = (key) => !!(ART.m && ART.m.sprites[key]);

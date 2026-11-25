@@ -40,6 +40,11 @@
     fascia(c, w, h) {                    // paint the baked words out of a dark counter front: a feathered patch, no visible plate
       const g = c.createLinearGradient(0, 0, w, 0); g.addColorStop(0, "rgba(8,9,14,0)"); g.addColorStop(0.12, "rgba(8,9,14,1)");
       g.addColorStop(0.88, "rgba(8,9,14,1)"); g.addColorStop(1, "rgba(8,9,14,0)"); c.fillStyle = g; c.fillRect(0, 0, w, h); },
+    glassTop(c, w, h) {                  // (1125) the pie case's glass top: paints out the DINER neon's mirrored reflection (it read as a stray word)
+      const g = c.createLinearGradient(0, 0, 0, h); g.addColorStop(0, "rgba(58,44,36,0)"); g.addColorStop(0.25, "rgba(58,44,36,.96)");
+      g.addColorStop(0.75, "rgba(46,36,30,.96)"); g.addColorStop(1, "rgba(46,36,30,0)"); c.fillStyle = g; c.fillRect(0, 0, w, h);
+      const e = c.createLinearGradient(0, 0, w, 0); e.addColorStop(0, "rgba(0,0,0,1)"); e.addColorStop(0.1, "rgba(0,0,0,0)"); e.addColorStop(0.9, "rgba(0,0,0,0)"); e.addColorStop(1, "rgba(0,0,0,1)");
+      c.globalCompositeOperation = "destination-out"; c.fillStyle = e; c.fillRect(0, 0, w, h); c.globalCompositeOperation = "source-over"; },
     fasciaLt(c, w, h) {                  // the same on the cafeteria line's lighter navy front
       const g = c.createLinearGradient(0, 0, w, 0); g.addColorStop(0, "rgba(20,23,34,0)"); g.addColorStop(0.1, "rgba(20,23,34,1)");
       g.addColorStop(0.9, "rgba(20,23,34,1)"); g.addColorStop(1, "rgba(20,23,34,0)"); c.fillStyle = g; c.fillRect(0, 0, w, h); },
@@ -89,6 +94,7 @@
     diner_dining: {
       clock: { x: 441.5, y: 52.5, r: 21, frame: [416, 29, 51, 47] },   // the clock hangs where the old "ColaMan" tin sign was
       signs: [
+        { id: "neon-reflection", quad: [[112, 57], [162, 57], [162, 69], [112, 69]], plate: "glassTop", lines: [] },
         { id: "specials", quad: [[213, 17], [304, 17], [304, 101], [213, 101]], plate: "chalk",
           lines: [["Today's Special", 0.24, 0.15, CHALKY, F.script, { weight: 700 }],
                   ["PATTY MELT", 0.46, 0.17, CHALK, F.chalk, { weight: 700 }],
@@ -111,7 +117,7 @@
         { id: "melt-master", quad: [[501, 251], [601, 251], [601, 268], [501, 268]], plate: "navy",
           lines: [["MELT MASTER", 0.7, 0.52, GOLD, F.gold, { weight: 700 }]] },
         { id: "miss-patty", quad: [[121, 275], [231, 275], [231, 290], [121, 290]], plate: "navy",
-          lines: [["MISS PATTY", 0.72, 0.56, GOLD, F.gold, { weight: 700 }]] },
+          lines: [["BUN SELECTION", 0.72, 0.56, GOLD, F.gold, { weight: 700 }]] },   // (1125) the plate over the bun pans names them (the bread chips sat on "MISS PATTY")
         { id: "miss-chrissy", quad: [[409, 275], [521, 275], [521, 290], [409, 290]], plate: "navy",
           lines: [["MISS CHRISSY", 0.72, 0.56, GOLD, F.gold, { weight: 700 }]] },
         // the window ledge between the two pick-up trays: it points at them (the old plate read "SERVICE WINDOW")

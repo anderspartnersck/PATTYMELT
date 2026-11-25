@@ -19,7 +19,7 @@
                repeating-linear-gradient(90deg,rgba(181,53,43,.9) 0 22px,rgba(181,53,43,.5) 22px 44px),#7a1f18;}
   body.school #frame{background:repeating-linear-gradient(0deg,rgba(58,92,150,.9) 0 22px,rgba(58,92,150,.5) 22px 44px),
                repeating-linear-gradient(90deg,rgba(58,92,150,.9) 0 22px,rgba(58,92,150,.5) 22px 44px),#1f3a63;}  /* HEROES blue gingham */
-  #wrap{position:relative;width:96vw;max-width:1280px;border:14px solid #2a1410;border-radius:10px;
+  #wrap{position:relative;width:min(96vw,calc((100dvh - 65px)*var(--pm-screen-aspect,2.13)));max-width:1280px;border:14px solid #2a1410;border-radius:10px;
     box-shadow:0 0 0 6px #0a0504,0 18px 60px #000;}
   canvas{display:block;width:100%;height:100%;image-rendering:pixelated;background:#0a0806;border-radius:4px;}
   #tag{position:absolute;bottom:-2.5em;width:100%;text-align:center;color:#f3e6c8;font-weight:600;
@@ -80,6 +80,7 @@
   <div id="cab"><img id="cabart" alt=""><img id="cabflame" alt=""><canvas id="screen"></canvas></div>
   <div id="tag">◄ ► move (grill + toaster) · F flip · C cheese · X bread / toast · SPACE = EXPO (HEY BILLY!) · CO-OP: G/U handoff · T/O drop · R restart · S sound</div>
 </div></div>
+<script src="lib/nostore.js?v=1"></script>   <!-- 1125: a plain web visit stores nothing (in-memory storage on web hosts) -->
 <script src="engine.js"></script>
 <script src="lib/hidpi.js?v=1"></script>
 <script src="lib/touchpad.js?v=1"></script>   <!-- X7 1119: the PHONE PAD (touch only; speaks keys; desktop unchanged) -->
@@ -90,6 +91,7 @@
 <script src="lib/scoring.js?v=3"></script>
 <script src="campaign.js"></script>
 <script src="lib/day.js?v=2"></script>
+<script src="lib/tables.js?v=2"></script>
 <script src="lib/signs.js?v=1"></script>
 <script src="sprites.js"></script>
 <script src="lib/cast.js?v=4"></script>
@@ -160,7 +162,7 @@ document.title = CAB_NAME + (BUILD ? " — " + BUILD : "") + " · JAILBREAK";
 let heroBg = null;
 // ?art=3d never shows this backdrop (the 3D school kitchen IS the room), and decoding + drawing the 6400×4267 PNG was the
 // ~400 ms first frame Joe's HEROES profile caught — so under ?art=3d it is not loaded at all.
-if (SCHOOL && (Q.get("art") || "").toLowerCase() !== "3d") { heroBg = new Image(); heroBg.src = "../assets/sprites/grill/bg-heroes-kitchen.png"; }
+if (false) { heroBg = new Image(); heroBg.src = "../assets/sprites/grill/bg-heroes-kitchen.png"; }
 // TODO(next session): HEROES polish — (1) tune school GRILL SIZES per edition (cafeteria = bigger line?
 //   the 1up arcade rule keeps school burger-only; 2up heroes can vary) — placeholder uses ?grill default 6.
 //   (2) real student/lunch-lady sprites for the cafeteria regulars + a lunch-TRAY vessel under items
@@ -191,12 +193,17 @@ if (FRAME) {
 }
 
 // the two view rects (layout-driven so one render serves both cabs)
+// (1125) WINDOW FIT: the frame letterboxes to BOTH the window's width and height. The CSS sizes #wrap from
+// --pm-screen-aspect, which was never set: every layout used the 2-screen default (2.13), so the ONE-SCREEN game (1.2)
+// came in as wide as the window and its dining strip ran off the bottom of an unmaximized window.
+try { document.documentElement.style.setProperty("--pm-screen-aspect", String(W / H)); } catch (e) {}
 const KIT = SCREENS === 2 ? { x:0, y:0, w:640, h:H } : { x:0, y:0, w:W, h:372 };
 const DIN = SCREENS === 2 ? { x:640, y:0, w:640, h:H } : { x:0, y:372, w:W, h:H-372 };
 // ---------- ?art=3d — THE 3D KITCHEN ART (render-only, behind a toggle; default stays the painted 2D art) ----------
 // Built by the 3D PIPELINE (assets/art3d/, see art3d.js). Every draw reads engine state; nothing here writes it, so
 // web/engine.js + parity never see it. 2-screen diner kitchen, 6-slot grill only — anything else falls back to 2D.
-const ART3D_ON = (Q.get("art") || "").toLowerCase() === "3d";   // diner, HEROES (pass 3), co-op + the MeltDome battle (pass 4)
+const ART3D_ON = true;   // (1125, Joe: "2d versions can be sent to the hall of combustion") THE LIVE GAME IS 3D ONLY; the 2D kitchen lives in ENGINE MUSEUM/PATTY MELT — THE 2D KITCHEN (2026-11-25). ?art= is ignored.
+const _ART_Q = (Q.get("art") || "").toLowerCase();   // diner, HEROES (pass 3), co-op + the MeltDome battle (pass 4)
 if (Q.get("look") === "1119") globalThis.PM_LOOK = "1119";   // (1119) re-lit 2x plates + the cast lit to match (opt-in; art3d.js)
 if (ART3D_ON && globalThis.ART3D) ART3D.load(SCHOOL ? "../assets/art3d/heroes/" : "../assets/art3d/");
 if (ART3D_ON && globalThis.PMStages) PMStages.load("../assets/art3d/stages/");   // FREEZER / BASEMENT bonus plates (drawMini, 1280 + 720)
@@ -534,7 +541,7 @@ addEventListener("pagehide", event => { if (!event.persisted) serviceUI.finish(g
 // Human input only: QA rigs / the demo / the attract bot never log. Pause menu → SAVE PLAYTEST LOG. ?playlog=off.
 // On the web (http/https) it is OFF unless ?playlog=on — a plain visit stores nothing (studio rule, 1125).
 const PLOG = (globalThis.PMPlaylog && !SERVICE_PRACTICE && SHELL !== "demo")
-  ? PMPlaylog.create(pm, { skin: SKIN, players: PLAYERS, battle: BATTLE, art: (Q.get("art") || "2d"), mode: MODE_OVR || "", label: Q.get("label") || "" }) : null;
+  ? PMPlaylog.create(pm, { skin: SKIN, players: PLAYERS, battle: BATTLE, art: "3d", mode: MODE_OVR || "", label: Q.get("label") || "" }) : null;
 function plogStart(kind) { if (PLOG && game) PLOG.shiftStart({ n: BATTLE ? 0 : shift().n, name: BATTLE ? "MELTDOME" : shift().name, kind, tick: game.ticks }); }
 function plogEnd(outcome, extra) { if (PLOG && game) PLOG.shiftEnd(game, outcome, extra); }
 function act(verb, pi, fn) {      // every HUMAN cook input goes through here: the engine call, observed by the log
@@ -605,7 +612,9 @@ function buildBattle() {        // the shared-grill grill-off: one grill, one Bi
 }
 let BR = null;                                    // ?art=3d: Billy's run + the pass (billy_run.js)
 function seatedCount(g) { return Math.max(1, Math.round(2 + pm.buried_index(g) * (SEATS.length - 2))); }
-function newBillyRun() { BR = (ART3D_ON && globalThis.ART3D && ART3D.ready && ART3D.m.billy) ? BillyRun.create(ART3D.m.billy, { toastItems: BUN_ITEMS, seated: seatedCount, seatOf: PMService.seatOf }) : null; }
+// (1125) the painted DINER room (no 3D dining_bg yet) walks Billy on its real aisles (billy_run.js dinerAisles); the 3D rooms use their own routes
+const billyGeo = () => (!SCHOOL && !ART3D.m.dining_bg && ART3D.m.billy.seats.length === 10 && Q.get("aisles") !== "old") ? BillyRun.dinerAisles(ART3D.m.billy) : ART3D.m.billy;
+function newBillyRun() { BR = (ART3D_ON && globalThis.ART3D && ART3D.ready && ART3D.m.billy) ? BillyRun.create(billyGeo(), { toastItems: BUN_ITEMS, seated: seatedCount, seatOf: PMService.seatOf }) : null; }
 function reset(profile = SERVICE_PRACTICE && !Q.has("svc") ? "legacy" : "service") {   // ?svc = QA: practice/demo on the REAL service rules (still never posts/banks)
   serviceUI.finish(game, {excluded:SERVICE_PRACTICE || BATTLE});
   game = BATTLE ? buildBattle() : CAMP.build(pm, MODE_OVR ? Object.assign({}, shift(), { mode: MODE_OVR }) : shift(), PLAYERS, SKIN, ITEMS, profile, profile === "service" && Q.get("bread") !== "off",
@@ -972,7 +981,7 @@ function diningClock() {   // (1112) THE DAY's wall clock hangs on a clean wall 
   return set && globalThis.PMSigns ? PMSigns.anchor(set, "clock", DIN) : null; }
 function doorXY()    { return { x: DIN.x + 0.93 * DIN.w, y: DIN.y + 0.80 * DIN.h }; }   // the entry (walk-ins/outs)
 function takeoutXY() { return { x: DIN.x + 0.855 * DIN.w, y: DIN.y + 0.58 * DIN.h }; }  // TAKE-OUT PICK-UP rack
-function tablePoint(i) { return seatXY(i); }   // FX land on the real seats now
+function tablePoint(i) { const p = seatXY(i), m = !p.stool && seatSpot(i); return m ? { x: m.x, y: p.y, stool: false } : p; }   // FX land on the real seats (3D diner booths: the measured table x, PM-5306)
 function spawnServeFX(gone) {                 // the order BUILDS at the assembly (bun▸patty▸cheese▸top bun), then rides ASSEMBLY → PASS → ITS table
   const item = gone && gone.item, seat = gone ? PMService.seatOf(gone.key) : game.served;
   const tk = game.service && gone && game.service.tickets.find((x) => x.id === gone.key);   // THE DAY: take-out rides to the PICK-UP shelf
@@ -1012,7 +1021,7 @@ function cookPrompt(p) {
   return { ready: p.cook >= pm.sear_ready(p), hot: burnAt < pm.NEVER_BURN && p.cook >= burnAt - 6, label, key };
 }
 // Draw the RDY ring + prompt over an item at (cx,cy); labelY = where the text sits. Shared grill + toaster.
-function drawCookPrompt(p, cx, cy, rad, labelY, mw = 0) {   // mw (1121): the slot pitch, so two ready neighbours' labels never touch
+function drawCookPrompt(p, cx, cy, rad, labelY, mw = 0, short = false) {   // mw (1121): the slot pitch, so two ready neighbours' labels never touch
   const cp = cookPrompt(p);
   const nowReady = !!(cp && cp.ready), nowHot = !!(cp && cp.hot);   // audio seams — fire once entering ready / near-burn
   if (sfxLive()) { if (nowReady && p._wasReady === false) audio.ready(); if (nowHot && p._wasHot === false) audio.warn(); }
@@ -1021,7 +1030,10 @@ function drawCookPrompt(p, cx, cy, rad, labelY, mw = 0) {   // mw (1121): the sl
   const now = performance.now(), pulse = 0.5 + 0.5 * Math.sin(now / (cp.hot ? 90 : 200)), col = cp.hot ? COL.bad : COL.good;
   ctx.save(); ctx.globalAlpha = 0.30 + 0.5 * pulse; ctx.strokeStyle = col; ctx.lineWidth = 3;
   ctx.beginPath(); ctx.ellipse(cx, cy, rad * 1.25, rad * 0.62, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
-  txt((cp.hot ? "▸ " + cp.label + "!" : "▸ " + cp.label + " (" + cp.key + ")"), cx, labelY, 13, col, "center", 800, mw);
+  const s = short ? (cp.hot ? cp.label + "!" : cp.label + " " + cp.key) : (cp.hot ? "▸ " + cp.label + "!" : "▸ " + cp.label + " (" + cp.key + ")");
+  if (short) { ctx.font = "800 " + txtSize(qz(12)) + 'px "Saira Condensed","Arial Narrow",sans-serif'; const tw = Math.min(mw || 1e9, ctx.measureText(s).width) + 8;
+    ctx.fillStyle = "rgba(8,6,10,.72)"; ctx.fillRect(cx - tw / 2, labelY - 12, tw, 15); }   // a dark chip: readable over the flat-top + the blades
+  txt(s, cx, labelY, short ? 12 : 13, col, "center", 800, mw);
 }
 // The bun-join "snap" — the litmus moment ("landing the bun as the melt finishes") made legible.
 function drawJoinFX(p, cx, cy, rad, labelY) {
@@ -1284,7 +1296,7 @@ function breadPans3D(r) {
 function drawKitchen3D() {
   pmark(null);
   const r = KIT, pad = 22, Lc = ART3D.m.loc, now = performance.now();
-  ctx.drawImage(ART3D.img["bg_" + grillMood3D(pm.buried_index(game))] || ART3D.img.bg_empty, r.x, r.y, r.w, r.h);
+  { const bg = ART3D.img["bg_" + grillMood3D(pm.buried_index(game))] || ART3D.img.bg_empty; if (bg) ctx.drawImage(bg, r.x, r.y, r.w, r.h); else { ctx.fillStyle = "#1a1512"; ctx.fillRect(r.x, r.y, r.w, r.h); } }
   if (!SCHOOL && globalThis.PMSigns) PMSigns.draw(ctx, "diner_kitchen", r);   // (1112) the set's signs, re-lettered crisp (lib/signs.js)
   pmark('bg');
   drawKitchenHUD(r, pad);
@@ -1389,7 +1401,8 @@ function drawKitchen3D() {
     const d = Math.abs(slotXY(i).x - slotXY(j).x); if (d > 8 && (!pitch || d < pitch)) pitch = d; }
   for (let i = 0; i < n; i++) {
     const p = game.slots[i]; if (!p) continue; const c = slotXY(i), q = Lc.prompt[i];
-    drawCookPrompt(p, c.x, c.y, 15, r.y + q.y, pitch ? pitch - 6 : 0);
+    const tight = pitch && pitch < 64;   // (1125) the DINER grill pitch is 39 px: labels alternate two rows and drop the key, so they never touch
+    drawCookPrompt(p, c.x, c.y, 15, r.y + q.y - (tight && i % 2 ? 15 : 0), tight ? pitch * 1.7 : pitch ? pitch - 6 : 0, tight);
     drawJoinFX(p, c.x, c.y, 15, r.y + q.y);
     if (game.service && p.orderId != null) {         // ORDERS (1111): whose patty, what it goes on — the ticket's seat in its bread's colour
       PMOrders.chip(ctx, p, c.x, c.y + 27, { noBread: true });
@@ -1426,7 +1439,7 @@ function drawKitchen3D() {
 // across her face. There the HUD packs into two short rows + a thin bar above y≈52 and the cooks stand HERO_COOK_DROP
 // lower (the flat-top's foreground still cuts them at the waist), so nothing overlaps.
 const HERO_COOK_DROP = 14;
-function heroHudCompact() { return SCHOOL && art3d() && !!(ART3D.m && ART3D.m.cooks_behind_grill); }   // both screen counts (one-screen had the same head-in-the-HUD)
+function heroHudCompact() { return art3d(); }   // (1125 parity) BOTH skins: the compact HUD (the DINER kept a full header + an empty WEEDS band)   // both screen counts (one-screen had the same head-in-the-HUD)
 function drawKitchenHUD(r, pad) {
   if (_skipHUD) return;
   if (heroHudCompact()) return drawKitchenHUDCompact(r, pad);
@@ -1734,7 +1747,12 @@ function drawPatrons3D(seated, wf, open) {
 }
 // THE TABLE MAP — a number plaque on every seat (B1-B6 counter, T1-T4 booths). Dim = empty, cream = waiting on an
 // order, gold pulse = its order is UP on the pass (that's where Billy's headed). Render-only.
+// (1125 PM-5306) the 3D diner room ships measured tag spots (art3d.json dining_spots.seat_tags, room px): the old SEATS
+// fractions / patron heads put T2's plaque ~40 px off its table. HEROES has no dining_spots and keeps the head anchor.
+function seatSpot(i) { const st = art3d() && ART3D.m.dining_spots && ART3D.m.dining_spots.seat_tags, q = st && st[PMService.seatTag(i % SEATS.length)];
+  return q ? { x: DIN.x + q[0] * DIN.w / 640, y: DIN.y + q[1] * DIN.h / 600 } : null; }
 function seatTagXY(i) {
+  const m = seatSpot(i); if (m) return m;
   if (art3d() && ART3D.m.patrons) { const q = ART3D.m.patrons.find((s) => s.seat === i); if (q) return { x: DIN.x + q.head.x, y: DIN.y + q.head.y - 30 }; }
   const p = seatXY(i); return { x: p.x, y: p.y - (p.stool ? 36 : 40) }; }
 function drawSeatTags(open) {
@@ -1742,19 +1760,19 @@ function drawSeatTags(open) {
   for (let i = 0; i < SEATS.length; i++) {
     const q = seatTagXY(i), tag = PMService.seatTag(i), up = ready.has(i), on = open.has(i);
     const w = 26, h = 16;
-    ctx.save(); ctx.globalAlpha = up ? 1 : on ? 0.95 : 0.45;
-    ctx.fillStyle = up ? "rgba(242,193,78," + (0.75 + 0.25 * pulse).toFixed(2) + ")" : on ? COL.cream : "rgba(30,20,14,.75)";
+    ctx.save(); ctx.globalAlpha = up ? 1 : on ? 0.95 : 0.85;   // (1125) an empty seat's tag stays legible (the dim 45 % read as "faded T4")
+    ctx.fillStyle = up ? "rgba(242,193,78," + (0.75 + 0.25 * pulse).toFixed(2) + ")" : on ? COL.cream : "rgba(24,16,12,.88)";
     ctx.strokeStyle = up ? "#7a3b10" : "rgba(40,20,12,.8)"; ctx.lineWidth = up ? 2 : 1;
     ctx.beginPath(); ctx.roundRect ? ctx.roundRect(q.x - w / 2, q.y - h / 2, w, h, 4) : ctx.rect(q.x - w / 2, q.y - h / 2, w, h); ctx.fill(); ctx.stroke();
     ctx.restore();
-    txt(tag, q.x, q.y + 5, 13, up || on ? "#2B2B2B" : "rgba(243,230,200,.8)", "center", 800);
+    txt(tag, q.x, q.y + 5, 13, up || on ? "#2B2B2B" : "rgba(243,230,200,.92)", "center", 800);
   } }
 // ---------- THE DINING ROOM (front of house — the buried-index made literal) ----------
 function drawDining() {
   const r = DIN;
   // THE ROOM — real painted dining room (diner-room.png). Fills the panel; vector fallback if absent.
-  if (art3d() && ART3D.img.dining) { ctx.drawImage(ART3D.img.dining, r.x, r.y, r.w, r.h);   // HEROES: the 3D cafeteria
-    if (globalThis.PMSigns) PMSigns.draw(ctx, "heroes_dining", r); }
+  if (art3d() && ART3D.img.dining) { ctx.drawImage(ART3D.img.dining, r.x, r.y, r.w, r.h);   // the 3D room: cafeteria (HEROES) / diner (1125 Order 53 C)
+    if (globalThis.PMSigns) PMSigns.draw(ctx, SCHOOL ? "heroes_dining" : "diner_dining", r); }
   else if (DINING_BG.complete && DINING_BG.naturalWidth) {
     ctx.drawImage(DINING_BG, r.x, r.y, r.w, r.h);
     if (!SCHOOL && globalThis.PMSigns) PMSigns.draw(ctx, "diner_dining", r);   // (1112) crisp signs; the COUGARS valance is the diner's own now
@@ -1860,7 +1878,7 @@ function drawBillyVec(x, y0, T) {                                           // f
 function drawBilly3D() {
   const now = performance.now(), dt = _br_last ? Math.min(100, now - _br_last) : 16; _br_last = now;
   if (!paused) BR.update(game, dt);
-  const b = BR.billy, G = BR.geo, A = (SCHOOL && (Q.get("billy") || "") === "heroes" && ART3D.cast.billyH) || ART3D.cast.billy || {};   // ?billy=heroes = the HEROES outfit PROPOSAL
+  const b = BR.billy, G = BR.geo, A = ART3D.cast.billy || {};   // (1125) the ?billy=heroes kid proposal (billyH) is retired
   const x = DIN.x + b.x, y = DIN.y + b.y;
   const hk = G.h_pass + (b.y - G.y_pass) * (G.h_slack - G.h_pass) / ((G.y_slack - G.y_pass) || 1);
   const h = Math.max(40, hk) * (ART3D.m.billy_scale || BILLY_3D_SCALE);
@@ -1919,8 +1937,8 @@ function drawBilly3D() {
   else if (b.mode === "walk") { label = tp.length ? "running " + tp.length : (onDuty ? "…coming!" : "…"); lc = tp.length ? COL.good : COL.amber; }
   else { label = "BILLY: slacking"; lc = COL.dim; }
   ctx.font = '800 ' + qz(12) + 'px "Saira Condensed","Arial Narrow",sans-serif';
-  const lw = ctx.measureText(label).width + 10, ly = y - h - 16;
-  ctx.fillStyle = "rgba(10,6,4,0.66)"; ctx.fillRect(x - lw / 2, ly, lw, 16); txt(label, x, ly + 12, 12, lc, "center", 800);
+  const lw = ctx.measureText(label).width + 10, ly = Math.max(DIN.y + 2, y - h - 16), lx = Math.min(DIN.x + DIN.w - lw / 2 - 2, Math.max(DIN.x + lw / 2 + 2, x));   // (1125) the bubble stays inside the room, above his head
+  ctx.fillStyle = "rgba(10,6,4,0.72)"; ctx.fillRect(lx - lw / 2, ly, lw, 16); txt(label, lx, ly + 12, 12, lc, "center", 800);
   const af = game.billy / pm.BILLY_FULL;
   ctx.fillStyle = "#241c12"; ctx.fillRect(x - 20, y + 5, 40, 4); ctx.fillStyle = af > game.cfg.billy_serve_min / pm.BILLY_FULL ? COL.good : COL.amber; ctx.fillRect(x - 20, y + 5, 40 * af, 4);
 }
@@ -2020,8 +2038,12 @@ function prewarm3D() {
 // them into an offscreen 1280×600 exactly as the 2-screen cab does (same atlases, same locations.json pixels), then
 // blits a uniform-scale CROP of each panel into its one-screen rect: the kitchen band (grill → counter) and the dining
 // band (booths + Billy's aisle). The HUD is drawn on top at the one-screen rect.
+// (1125) THE RAIL STRIP: the order printer + ticket rail get their own dark strip across the top of the dining band, and the
+// room crop sits UNDER it (it used to be drawn over the room: it covered GAME DAY / GO CATS / TODAY'S LUNCH / FAST·HOT·HEROES
+// in HEROES and the counter in the DINER). The crops start where each room's signs + seats read whole.
+const RAIL_STRIP = 80;
 const ONE_CROP = { kit: { x: 0, y: SCHOOL ? 62 : 140, w: 640, h: Math.round(640 * 372 / 720) },   // HEROES: the flat-top sits higher in frame
-                   din: { x: 0, y: SCHOOL ? 150 : 236, w: 640, h: Math.round(640 * (600 - 372) / 720) } };
+                   din: { x: 0, y: SCHOOL ? 128 : 150, w: 640, h: Math.round(640 * (600 - 372 - RAIL_STRIP) / 720) } };
 let _off = null, _skipHUD = false;
 function render3DOneScreen() {
   if (!_off) { _off = document.createElement("canvas"); _off.width = Math.round(1280 * SSK); _off.height = Math.round(600 * SSK); }
@@ -2033,8 +2055,14 @@ function render3DOneScreen() {
   try { ctx.fillStyle = "#0a0806"; ctx.fillRect(0, 0, 1280, 600); drawKitchen(); drawDining(); drawBilly(); }
   finally { ctx.restore(); _skipHUD = false; ctx = real; Object.assign(KIT, k0); Object.assign(DIN, d0); }
   const a = ONE_CROP.kit, b = ONE_CROP.din;
+  // (1125 PERF, QA-1125 shell kitchen 10–12 fps) the two band blits are a ~1.1× magnify: bilinear ("low") is exact enough here,
+  // and the "high" resample of two near-full-canvas copies was the whole frame budget (measured: 32 → 60 fps headless at 1920)
+  ctx.save(); ctx.imageSmoothingQuality = "low";
   ctx.drawImage(_off, a.x * SSK, a.y * SSK, a.w * SSK, a.h * SSK, KIT.x, KIT.y, KIT.w, KIT.h);
-  ctx.drawImage(_off, (640 + b.x) * SSK, b.y * SSK, b.w * SSK, b.h * SSK, DIN.x, DIN.y, DIN.w, DIN.h);
+  ctx.drawImage(_off, (640 + b.x) * SSK, b.y * SSK, b.w * SSK, b.h * SSK, DIN.x, DIN.y + RAIL_STRIP, DIN.w, DIN.h - RAIL_STRIP);
+  ctx.restore();
+  { const g = ctx.createLinearGradient(0, DIN.y, 0, DIN.y + RAIL_STRIP); g.addColorStop(0, "#1b120d"); g.addColorStop(1, "#120b08");   // the rail strip
+    ctx.fillStyle = g; ctx.fillRect(DIN.x, DIN.y, DIN.w, RAIL_STRIP); ctx.fillStyle = "rgba(0,0,0,.5)"; ctx.fillRect(DIN.x, DIN.y + RAIL_STRIP - 2, DIN.w, 2); }
   ctx.strokeStyle = "#2a1410"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, DIN.y); ctx.lineTo(W, DIN.y); ctx.stroke();
   drawKitchenHUD(KIT, 22);
 }
@@ -2080,6 +2108,8 @@ function render() {
   ctx.restore();
   if (phase === "play") drawScorePops();   // (1116 Q655) MELTDOME too: the PERFECT/GOOD pops ride over each cook's food (no shared emblem HUD in a battle)                       // 1112: +PERFECT / +ON TIME / +DRINK RUN / WASTE pop-ups
   if (!BATTLE && phase === "play" && globalThis.PMDay) PMDay.draw(ctx, pm, game, { DIN, txt, door: doorXY(), takeout: takeoutXY(), audio, live: sfxLive(), clockAt: diningClock(), spikeLabel: CAMP.spikeOf(shift(), SKIN) });   // THE DAY: clock · rush cue · pickup shelf                       // 1112: +PERFECT / +ON TIME / +DRINK RUN / WASTE pop-ups
+  if (!BATTLE && phase === "play" && game.cfg.tables && globalThis.PMTables)   // 1124 pc ?tables=1 GROUP LANDING: pass shelf · bell · steam · call stamps
+    PMTables.draw(ctx, game, SCREENS === 2 ? { x: KIT.w, y: passWinY().y1 + 4 } : { x: W / 2, y: DIN.y - 6 }, blink);
   if (!BATTLE && (phase === "play" || phase === "ready")) drawOrders();   // ORDERS (1111): printer + ticket rail + the call
   const _cb = cineBusy();
   if (BATTLE && phase === "play") drawBattleHUD();

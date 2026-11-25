@@ -47,12 +47,12 @@
     diner: {
       patty:   { dir: "chars/cast/", poses: ["idle", "serve", "cheer", "profile"] },
       chrissy: { dir: "chars/cast/", poses: ["idle", "cheer", "cheese", "flip", "serve", "run", "scrape"] },
-      billy:   { dir: "chars/", poses: ["serve", "turn", "slack", "walk-0", "walk-1", "walk-2", "walk-3", "walk-4", "walk-5"] },
+      billy:   { dir: "chars/", poses: [] },   // (1125, Joe: "that little kid billy needs to go away") the chibi kid is RETIRED (the legacy folder)
     },
     heroes: {
       patty:   { dir: "chars/", file: (p) => "patty-school-" + p + ".png", poses: ["idle", "serve", "cheer", "flip"] },
       chrissy: { dir: "chars/", file: (p) => "chrissy-school-" + p + ".png", poses: ["idle", "serve", "cheer", "flip"] },
-      billy:   { dir: "chars/", poses: ["serve", "turn", "slack", "walk-0", "walk-1", "walk-2", "walk-3", "walk-4", "walk-5"] },
+      billy:   { dir: "chars/", poses: [] },   // (1125) retired kid — Billy is the teen (Joe's paintings, cast_joe) only
     },
   };
   // JOE'S OWN PAINTINGS (1111 HEROES set, 1112 DINER Patty) — cut clean by 3D PIPELINE/games/patty-melt/tools/joe_cast.py
@@ -75,10 +75,16 @@
     const joe = (JOE[sd] && JOE[sd][who]) || [];
     for (const p of want) {
       if (joe.includes(p)) out.push(joeUrl(sd, who, p));
-      if (INK) out.push(inkUrl(skin, who, p));
+      if (INK && who !== "billy") out.push(inkUrl(skin, who, p));   // (1125) cast_ink's Billy is the retired kid
       if (rec.poses.includes(p)) out.push(ROOT + rec.dir + (rec.file ? rec.file(p) : who + "-" + p + ".png"));
     }
+    // (1125) BILLY = the TEEN design only, Joe's teen paintings (cast_joe, hi-res) first, then the game's frames: billyD (diner, pink/white + paper hat) · billyT (HEROES,
+    // Cougars apron + hairnet). The chibi kid (the inked set's Billy, the yellow-cap proposal, the letterless cast frames, the old
+    // chars sheet) is retired to the legacy folder and no chain reaches it (tools/retired_gate.mjs).
+    if (who === "billy") for (const p of want) if (["serve", "slack", "turn"].includes(p))
+      out.push(ROOT + (sd === "heroes" ? "art3d/heroes/cast/billyT-" : "art3d/cast/billyD-") + p + ".webp");
     if (sd === "heroes") { const d = HERO.diner[who]; for (const p of want) if (d && d.poses.includes(p)) out.push(ROOT + d.dir + who + "-" + p + ".png"); }
+    if (who === "billy" && sd === "diner") for (const p of want) if (JOE.heroes.billy.includes(p)) out.push(joeUrl("heroes", "billy", p));   // stand-in: the teen, never the kid
     return out;
   }
   function art3dChain(base, file) {       // base "../assets/art3d/" or ".../art3d/heroes/", file "cast/patty-idle.webp"
@@ -86,7 +92,7 @@
     const name = String(file).split("/").pop(), sd3 = /heroes\/?$/.test(base) ? "heroes" : "diner";
     if (CAST3D_ON && CAST3D[sd3] && CAST3D[sd3].includes(name)) out.push(ROOT + "art3d/cast3d/" + sd3 + "/" + name);
     if (RIG_ON && CASTRIG[sd3] && CASTRIG[sd3].includes(name)) out.push(ROOT + "art3d/cast_rig/" + sd3 + "/" + name);
-    if (INK) { const name = String(file).split("/").pop(); out.push(ROOT + "art3d/cast_ink/" + (/heroes\/?$/.test(base) ? "heroes" : "diner") + "/" + name); }
+    if (INK && !/^billy/.test(name)) { const name = String(file).split("/").pop(); out.push(ROOT + "art3d/cast_ink/" + (/heroes\/?$/.test(base) ? "heroes" : "diner") + "/" + name); }
     out.push(base + file); return out;
   }
   function img(chain, onload) {

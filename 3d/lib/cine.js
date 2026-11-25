@@ -75,11 +75,28 @@
     ctx.moveTo(-W * 0.2, cy - h / 2 + skew); ctx.lineTo(x1, cy - h / 2 - skew * (x1 / W)); ctx.lineTo(x1 - skew, cy + h / 2 - skew * (x1 / W)); ctx.lineTo(-W * 0.2, cy + h / 2 + skew); ctx.closePath();
     ctx.fillStyle = fill; ctx.fill(); if (edge) { ctx.strokeStyle = edge; ctx.lineWidth = F(4); ctx.stroke(); } ctx.restore();
   }
+  // (1125 PERF) the halftone + the cast glow are BAKED once per look into offscreen canvases (the front door drew ~1600 arcs
+  // and two 26-px shadowBlur cast pictures every frame: 20 fps in a real browser). Same pixels, one drawImage each.
+  const _bake = new Map();
+  function baked(key, w, h, paint) {
+    let c = _bake.get(key); if (c) return c;
+    if (typeof document === "undefined") return null;
+    c = document.createElement("canvas"); c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h)); paint(c.getContext("2d"));
+    if (_bake.size > 24) _bake.delete(_bake.keys().next().value); _bake.set(key, c); return c;
+  }
   function halftone(ctx, x, y, w, h, color, alpha, step = 12) {
-    ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
-    for (let yy = y; yy < y + h; yy += step) for (let xx = x + ((yy / step) % 2) * step / 2; xx < x + w; xx += step) {
-      const r = step * 0.32 * (0.4 + 0.6 * (xx - x) / w); ctx.beginPath(); ctx.arc(xx, yy, r, 0, 7); ctx.fill(); }
-    ctx.restore();
+    const K = 2, c = baked("ht|" + [w, h, color, step].join("|"), w * K, h * K, (g) => { g.scale(K, K); g.fillStyle = color;
+      for (let yy = 0; yy < h; yy += step) for (let xx = ((yy / step) % 2) * step / 2; xx < w; xx += step) {
+        const r = step * 0.32 * (0.4 + 0.6 * xx / w); g.beginPath(); g.arc(xx, yy, r, 0, 7); g.fill(); } });
+    if (!c) return; ctx.save(); ctx.globalAlpha *= alpha; ctx.drawImage(c, x, y, w, h); ctx.restore();
+  }
+  // a cast picture with its ink glow, baked at a height bucket (the shadow is in the bake, never per frame)
+  function glowed(im, glow, blur, h) {
+    const src = im.currentSrc || im.src, hb = Math.max(64, Math.ceil(h / 64) * 64), pad = Math.ceil(blur * 2.2 * hb / h) + 1;
+    const w = hb * im.naturalWidth / im.naturalHeight;
+    const c = baked("gl|" + src + "|" + glow + "|" + blur + "|" + hb, w + pad * 2, hb + pad * 2, (g) => {
+      if (blur) { g.shadowColor = glow; g.shadowBlur = blur * hb / h; } g.imageSmoothingQuality = "high"; g.drawImage(im, pad, pad, w, hb); });
+    return c ? { c, pad: pad * h / hb, w: (w + pad * 2) * h / hb, h: (hb + pad * 2) * h / hb } : null;
   }
   function flash(ctx, a, color = "#fff") { if (a <= 0) return; ctx.save(); ctx.globalAlpha = clamp(a, 0, 1); ctx.fillStyle = color; ctx.fillRect(0, 0, cfg.W, cfg.H); ctx.restore(); }
   function letterbox(ctx, u) { const h = cfg.H * 0.085 * u; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, cfg.W, h); ctx.fillRect(0, cfg.H - h, cfg.W, h); }
@@ -89,8 +106,12 @@
     if (mirror && /cast_joe\//.test(im.currentSrc || im.src)) mirror = false;   // (1112) Joe's paintings carry lettering (COUGARS, name tags): never flip
     const w = h * im.naturalWidth / im.naturalHeight;
     ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, footY); ctx.scale((mirror ? -1 : 1) * sx, sy);
-    if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = F(26); }
-    ctx.drawImage(im, -w / 2, -h, w, h); ctx.restore(); return true;
+    // (1125 PERF) every cast picture draws from a bake at its on-screen height bucket (≈1:1), so the per-frame draw is a cheap
+    // bilinear blit; a big painting resampled at "high" quality every frame was the front door's second-largest cost
+    const G = glowed(im, glow || "none", glow ? F(26) : 0, h * (ctx.getTransform ? Math.abs(ctx.getTransform().d) || 1 : 1));
+    if (G) { const k = 1 / (ctx.getTransform ? Math.abs(ctx.getTransform().d) || 1 : 1); ctx.imageSmoothingQuality = "low"; ctx.drawImage(G.c, -w / 2 - G.pad * k, -h - G.pad * k, G.w * k, G.h * k); }
+    else { if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = F(26); } ctx.drawImage(im, -w / 2, -h, w, h); }
+    ctx.restore(); return true;
   }
   function stamp(ctx, s, x, y, px, u, fill, stroke = "#140806", rot = -0.06) {   // a slammed-in title: overshoot scale
     if (u <= 0) return; let k = u < 1 ? 2.2 - 1.2 * outBack(u) : 1;
@@ -167,8 +188,11 @@
       const slide = (1 - outBack(inU)) * -bw * 0.4;
       if (ok(im)) {   // the anime close-up: the top of the picture (face + shoulders) fills the band
         const srcH = im.naturalHeight * 0.36, dh = bandH * 1.12, dw = im.naturalWidth * dh / srcH;
-        ctx.save(); ctx.translate(x0 + bw * 0.17 + slide, cy + bandH / 2); ctx.scale(sx, sy); ctx.shadowColor = base; ctx.shadowBlur = F(18);
-        ctx.drawImage(im, 0, 0, im.naturalWidth, srcH, -dw / 2, -dh, dw, dh); ctx.restore(); }
+        ctx.save(); ctx.translate(x0 + bw * 0.17 + slide, cy + bandH / 2); ctx.scale(sx, sy);
+        const bk = baked("cut|" + (im.currentSrc || im.src) + "|" + base + "|" + Math.round(dh), dw + F(18) * 5, dh + F(18) * 5, (g) => {   // (1125 PERF) baked glow
+          g.shadowColor = base; g.shadowBlur = F(18); g.drawImage(im, 0, 0, im.naturalWidth, srcH, F(18) * 2.5, F(18) * 2.5, dw, dh); });
+        if (bk) ctx.drawImage(bk, -dw / 2 - F(18) * 2.5, -dh - F(18) * 2.5); else ctx.drawImage(im, 0, 0, im.naturalWidth, srcH, -dw / 2, -dh, dw, dh);
+        ctx.restore(); }
       ctx.restore(); ctx.save(); ctx.globalAlpha = k;
       stamp(ctx, line, x0 + bw * 0.62, cy + F(10), opt.px || 30, seg(e, 90, 330), base === C.b ? C.b : base);
       ctx.restore();
