@@ -69,6 +69,10 @@
     .pm-service{display:none!important}
     body.pm-service-layout #frame,body.pm-service-layout #cab{right:0!important;bottom:0!important}
   }
+  /* ?quiet=1 (1124): smaller DOM text — the controls line + the receipts rail */
+  body.pm-quiet #tag{font-size:11px;opacity:.7}
+  body.pm-quiet .pm-service{font-size:12px!important}
+  body.pm-quiet .pm-service h2{font-size:15px!important}
 </style>
 </head>
 <body>
@@ -128,6 +132,11 @@ const MODE_OVR = ["kids", "family", "arcade"].includes(String(Q.get("mode") || "
 // ?shell=1 — launched from the FRONT DOOR (front.html): skip this page's own title, and hand the run's result back to
 // the shell's RESULTS screen at the end (Esc = back to the menu). ?shell=demo = the attract reel's live demo window.
 const SHELL = Q.get("shell") || "";
+// ?quiet=1 (1124, opt-in; default unchanged) — SMALLER TEXT overall (canvas txt() + the DOM rails) and the food-safety
+// banner becomes a small tag riding the spatulas. Presentation only; the engine and parity never see it.
+const QUIET = Q.get("quiet") === "1", TXT_K = QUIET ? 0.8 : 1;
+const qz = (px) => QUIET ? Math.max(9, Math.round(px * TXT_K)) : px;   // the one text-size knob
+if (QUIET) document.body.classList.add("pm-quiet");
 if (SHELL === "demo") { const st = document.createElement("style"); st.textContent = "[class*=pm-order],[class*=pm-service]:not(body),aside{display:none!important}#frame,#cab{position:fixed!important;inset:0!important;right:0!important;background:#000!important}#wrap{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:none!important;border:0!important;border-radius:0!important;box-shadow:none!important;aspect-ratio:auto!important}#tag{display:none}"; document.head.appendChild(st); }
 // HEROES (school cafeteria) skin — base wired. ?skin=school, or auto on the 2up HEROES frame.
 // (BATCH2 1116 B5) normalise: ?skin=heroes (the edition's name) = school; anything unknown = diner. A raw "heroes" reached
@@ -523,6 +532,7 @@ const serviceUI = PMService.mount({ pm, view:"kitchen", pause:value=>{ if (phase
 addEventListener("pagehide", event => { if (!event.persisted) serviceUI.finish(game, {excluded:SERVICE_PRACTICE || BATTLE}); });
 // ---------- THE PLAYTEST LOG (lib/playlog.js) — LOCAL ONLY: this browser's storage + a download you press for ----------
 // Human input only: QA rigs / the demo / the attract bot never log. Pause menu → SAVE PLAYTEST LOG. ?playlog=off.
+// On the web (http/https) it is OFF unless ?playlog=on — a plain visit stores nothing (studio rule, 1125).
 const PLOG = (globalThis.PMPlaylog && !SERVICE_PRACTICE && SHELL !== "demo")
   ? PMPlaylog.create(pm, { skin: SKIN, players: PLAYERS, battle: BATTLE, art: (Q.get("art") || "2d"), mode: MODE_OVR || "", label: Q.get("label") || "" }) : null;
 function plogStart(kind) { if (PLOG && game) PLOG.shiftStart({ n: BATTLE ? 0 : shift().n, name: BATTLE ? "MELTDOME" : shift().name, kind, tick: game.ticks }); }
@@ -687,7 +697,7 @@ const _opened = new Set();       // a shift's opening cutscene plays once per ru
 function toShell(res) {
   plogEnd("quit"); if (PLOG) PLOG.save();
   const r = Object.assign({ label: Q.get("label") || "", skin: SKIN }, res || { mode: BATTLE ? "battle" : "campaign", outcome: "quit", score: totalScore(), served: runServed + (game ? game.served : 0), shift: shift().n, shiftName: shift().name });
-  location.href = "front.html?results=" + encodeURIComponent(JSON.stringify(r)) + "&sel=" + encodeURIComponent(Q.get("sel") || "") + (Q.get("cast") ? "&cast=" + Q.get("cast") : "");
+  location.href = "front.html?results=" + encodeURIComponent(JSON.stringify(r)) + "&sel=" + encodeURIComponent(Q.get("sel") || "") + (Q.get("cast") ? "&cast=" + Q.get("cast") : "") + (QUIET ? "&quiet=1" : "");
 }
 reset("legacy");
 // skip straight to PLAY for the demo + QA rigs (screenshots, ?warm/?ticks/?fill); otherwise open on ATTRACT
@@ -981,7 +991,7 @@ function stepFX() { for (const f of fx) f.t++; fx = fx.filter((f) => f.t < f.lif
 let _txtFloor = 0;
 function txtSize(sz) { return _txtFloor > sz ? Math.min(sz * 1.35, _txtFloor) : sz; }
 function txt(s, x, y, sz, c, al = "left", w = 700, mw = 0) {   // mw: optional max width (squeezes, never spills)
-  sz = txtSize(sz); ctx.fillStyle = c; ctx.textAlign = al; ctx.textBaseline = "alphabetic";
+  sz = txtSize(qz(sz)); ctx.fillStyle = c; ctx.textAlign = al; ctx.textBaseline = "alphabetic";
   ctx.font = w + " " + sz + 'px "Saira Condensed","Arial Narrow",sans-serif'; if (mw) ctx.fillText(s, x, y, mw); else ctx.fillText(s, x, y); }
 function stageCol(p) { if (!p) return null;
   if (p.stage === S.SEAR_A) return COL.raw; if (p.stage === S.SEAR_B) return COL.seared;
@@ -1408,7 +1418,7 @@ function drawKitchen3D() {
     if (RG) { rst.grips = grips; clip(); drawRearBody(RG); ctx.restore(); }   // …then her back, over the hands + handle ends
     PMOrders.drawHeld(ctx, game, pi, g.x, g.y);                       // the bread riding her blades
   }
-  drawSafetyCard(r.x + r.w * 0.2, r.y + r.h * 0.18, r.w * 0.6, r.h * 0.4);   // shift open: NO HANDS ON THE FOOD
+  drawSafetyCard(r.x + r.w * 0.2, r.y + r.h * 0.18, r.w * 0.6, r.h * 0.4, spat[0]);   // shift open: NO HANDS ON THE FOOD
   pmark('spatulas');
 }
 
@@ -1527,7 +1537,7 @@ function drawKitchen() {
     PMSpat.drawPair(ctx, game, pi, { x: spat[pi].x, y: spat[pi].y, vx: spat[pi].vx }, { slotXY: spatXY, food: spatFood,
       h: bayRad * 1.3, foodW: bayRad * 2, selfFlip: true, filter: pi === 1 ? "hue-rotate(150deg) saturate(1.2)" : "",
       rim: pi === 0 ? "rgba(255,110,80,.9)" : "rgba(120,190,255,.9)" });
-  drawSafetyCard(GX, GY, GW, GH);                         // shift open: NO HANDS ON THE FOOD — it's all about food safety
+  drawSafetyCard(GX, GY, GW, GH, spat[0]);                // shift open: NO HANDS ON THE FOOD — it's all about food safety
   drawPlaters({ asmX0, asmX1, SLY, SLB, coop });           // Patty the plater (+ Chrissy in co-op) — acts on every serve
 }
 
@@ -1553,10 +1563,11 @@ const _safetySeen = new WeakMap();
 // (1121 UI audit) the kitchen pass only BOOKS the card; render() draws it once the whole scene is down. Drawn in place,
 // the food, the seat tags and the cooks painted over it (a T1 tag + a patty sat on NO HANDS ON THE FOOD).
 let _safetyAt = null;
-function drawSafetyCard(x, y, w, h) { _safetyAt = [x, y, w, h]; }
-function drawSafetyCardNow(x, y, w, h) {
+function drawSafetyCard(x, y, w, h, at) { _safetyAt = [x, y, w, h, at]; }
+function drawSafetyCardNow(x, y, w, h, at) {
   if (QA_STILL) return;
   if (!_safetySeen.has(game)) _safetySeen.set(game, performance.now());
+  if (QUIET) { drawSafetyTag(at || { x: x + w / 2, y: y + h / 2 }); return; }
   const k = (performance.now() - _safetySeen.get(game)) / 3600; if (k >= 1) return;
   const a = k < 0.1 ? k / 0.1 : k > 0.8 ? (1 - k) / 0.2 : 1, SF = PMSpat.SAFETY[SCHOOL ? "school" : "diner"];
   const bh = 84, by = y + (h - bh) / 2;
@@ -1566,6 +1577,19 @@ function drawSafetyCardNow(x, y, w, h) {
   txt("✋✗  " + SF[0], x + w / 2, by + 24, 18, COL.cream, "center", 800);
   txt(SF[1], x + w / 2, by + 46, 13, COL.cheese, "center", 700);
   txt(SF[2], x + w / 2, by + 70, 18, COL.good, "center", 800);
+  ctx.restore();
+}
+
+// ?quiet=1 — the same message as a small tag that rides P1's spatula pair for ~2.6 s (no banner over the grill)
+function drawSafetyTag(at) {
+  const k = (performance.now() - _safetySeen.get(game)) / 2600; if (k >= 1) return;
+  const a = (k < 0.12 ? k / 0.12 : k > 0.75 ? (1 - k) / 0.25 : 1) * 0.92, line = PMSpat.SAFETY_SHORT[SCHOOL ? "school" : "diner"];
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.font = '800 11px "Saira Condensed","Arial Narrow",sans-serif';
+  const tw = ctx.measureText(line).width + 22, tx = at.x - tw / 2, ty = at.y - 44;
+  ctx.fillStyle = "rgba(8,6,4,.72)"; ctx.fillRect(tx, ty, tw, 16);
+  ctx.fillStyle = COL.good; ctx.fillRect(tx, ty, 3, 16);                      // the food-safe green tick-bar
+  ctx.fillStyle = COL.cream; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillText(line, tx + 9, ty + 12);
   ctx.restore();
 }
 
@@ -1894,7 +1918,7 @@ function drawBilly3D() {
   else if (b.mode === "handoff") { label = "here you go!"; lc = COL.good; }
   else if (b.mode === "walk") { label = tp.length ? "running " + tp.length : (onDuty ? "…coming!" : "…"); lc = tp.length ? COL.good : COL.amber; }
   else { label = "BILLY: slacking"; lc = COL.dim; }
-  ctx.font = '800 12px "Saira Condensed","Arial Narrow",sans-serif';
+  ctx.font = '800 ' + qz(12) + 'px "Saira Condensed","Arial Narrow",sans-serif';
   const lw = ctx.measureText(label).width + 10, ly = y - h - 16;
   ctx.fillStyle = "rgba(10,6,4,0.66)"; ctx.fillRect(x - lw / 2, ly, lw, 16); txt(label, x, ly + 12, 12, lc, "center", 800);
   const af = game.billy / pm.BILLY_FULL;
@@ -1926,7 +1950,7 @@ function drawBilly() {
   else if (atPass) { label = coop ? ("EXPO ▸ " + (game.billy_facing === 0 ? "P1" : "P2")) : "BILLY: EXPO!"; lc = COL.good; }
   else if (crossing) { label = "…coming!"; lc = COL.amber; }
   else { label = "BILLY: " + L.bus; lc = COL.dim; }
-  ctx.font = '800 13px "Saira Condensed","Arial Narrow",sans-serif';   // dark chip behind the label so it reads over the room
+  ctx.font = '800 ' + qz(13) + 'px "Saira Condensed","Arial Narrow",sans-serif';   // dark chip behind the label so it reads over the room
   const lw = ctx.measureText(label).width + 12, ly = footY - h - 18;
   ctx.fillStyle = "rgba(10,6,4,0.66)"; ctx.fillRect(footX - lw / 2, ly, lw, 18);
   txt(label, footX, ly + 14, 13, lc, "center", 800);
@@ -2193,7 +2217,7 @@ function drawBattleHUD() {          // the MeltDome scoreboard: both cooks side 
   ctx.fillStyle = "#3b6fb8"; ctx.fillRect(tx, ty, tw, 5); ctx.fillStyle = "#c8302a"; ctx.fillRect(tx, ty, tw * (a + b ? split : 0.5), 5);
   const coop = game.players.length === 2, turning = coop && game.billy_turn_t > 0, face = turning ? game.billy_turn_to : game.billy_facing;   // who Billy serves
   const lbl = (turning ? "BILLY TURNING ▸ " : "BILLY ▸ ") + (face === 0 ? "PATTY" : "CHRISSY");
-  ctx.font = '800 13px "Saira Condensed","Arial Narrow",sans-serif'; const lw = ctx.measureText(lbl).width + 18;
+  ctx.font = '800 ' + qz(13) + 'px "Saira Condensed","Arial Narrow",sans-serif'; const lw = ctx.measureText(lbl).width + 18;
   ctx.fillStyle = face === 0 ? "rgba(200,48,42,.9)" : "rgba(59,111,184,.9)"; ctx.fillRect(cx - lw / 2, y0 + hh + 4, lw, 20);
   txt(lbl, cx, y0 + hh + 19, 13, turning ? COL.cheese : COL.cream, "center", 800);
 }

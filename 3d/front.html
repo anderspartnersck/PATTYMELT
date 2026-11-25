@@ -35,6 +35,7 @@
 <script>
 "use strict";
 const Q = new URLSearchParams(location.search);
+const QUIET = Q.get("quiet") === "1";   // ?quiet=1 (1124): smaller text + the short food-safety line; forwarded to the game
 const W = 1280, H = 720, cv = document.getElementById("cv"), ctx = cv.getContext("2d"), stage = document.getElementById("stage"), demoEl = document.getElementById("demo");
 function fit() { const k = Math.min(innerWidth / W, innerHeight / H); stage.style.transformOrigin = "50% 50%"; stage.style.transform = `translate(-50%,-50%) scale(${k})`; }
 addEventListener("resize", fit); fit();
@@ -142,6 +143,8 @@ function launchUrl(i = sel) {
   if (DEMANDS[dem][0] && !m.battle) p.set("mode", DEMANDS[dem][0]);
   if (LENGTHS[len][0] && !m.battle) p.set("length", LENGTHS[len][0]);
   if (PMCast.ink) p.set("cast", "ink");
+  if (QUIET) p.set("quiet", "1");
+  if (Q.get("playlog")) p.set("playlog", Q.get("playlog"));   // ?playlog=on (1125): opt-in playtest log on the web
   p.set("label", m.name); p.set("sel", selStr(i));
   return "kitchen.html?" + p.toString().replace("battle=&", "battle&").replace(/battle=$/, "battle");
 }
@@ -278,7 +281,7 @@ function drawTitle(t, attractMode = false) {
   T(skin() === "school" ? "THE 3D EDITION · THE CAFETERIA" : "THE 3D EDITION · THE DINER", W * 0.56, H * 0.06 + lh + 30, 26, C.cream, "center", 5);
   if (blink(t)) T(attractMode ? "INSERT 25¢ · PRESS START" : "PRESS  START", W * 0.56, H * 0.6, 44, C.b, "center", 8);
   T("◄ ►  EDITION: " + EDITIONS[ed][1] + "  ◄ ►", W * 0.56, H * 0.67, 18, C.cream, "center", 4);
-  T("two spatulas · no hands on the food · it's all about food safety", W * 0.56, H * 0.72, 15, "rgba(243,230,200,.8)", "center", 3);
+  T(QUIET ? "✋✗ spatulas only" : "two spatulas · no hands on the food · it's all about food safety", W * 0.56, H * 0.72, QUIET ? 12 : 15, "rgba(243,230,200,.8)", "center", 3);
   T("for Christine & Phillip Coleman", W - 16, H - 14, 14, "rgba(243,230,200,.7)", "right", 3);
   T("Created by Joseph Coleman, Claude, ChatGPT, and Blender · Castle Killscreen · Anders & Partners", 16, H - 14, 12, "rgba(243,230,200,.45)", "left", 2);
 }

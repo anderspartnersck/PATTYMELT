@@ -35,8 +35,9 @@
   const outBack = (u) => { const c = 1.70158; return 1 + (c + 1) * Math.pow(u - 1, 3) + c * Math.pow(u - 1, 2); };
   const seg = (t, a, b) => clamp((t - a) / (b - a), 0, 1);
   const col = () => SKIN_COL[cfg.skin === "school" || cfg.skin === "heroes" ? "heroes" : "diner"];
+  const QUIET = Q.get("quiet") === "1";                   // ?quiet=1 (1124): smaller cutscene text, short safety line
   const F = (px) => Math.round(px * cfg.H / 600);
-  function font(px, w = 900) { return w + " " + F(px) + 'px "Saira Condensed","Arial Narrow","Impact",sans-serif'; }
+  function font(px, w = 900) { return w + " " + F(QUIET ? px * 0.85 : px) + 'px "Saira Condensed","Arial Narrow","Impact",sans-serif'; }
   function text(ctx, s, x, y, px, fill, align = "center", stroke = "#000", lw = 0, maxW = 0) {
     ctx.font = font(px);
     if (maxW) { const w = ctx.measureText(s).width; if (w > maxW) { px = px * maxW / w; ctx.font = font(px); lw = lw * maxW / w; } } ctx.textAlign = align; ctx.textBaseline = "alphabetic";
@@ -213,7 +214,7 @@
         stamp(ctx, o.name || "SHIFT " + o.n, tx, H * 0.5, 64, seg(t2, 220, 520), C.b);
         const sub = seg(t2, 480, 760); if (sub > 0) { ctx.save(); ctx.globalAlpha = sub;
           text(ctx, o.wrinkle || "", tx, H * 0.59, 18, C.cream, "center", "#000", 4, tw);
-          text(ctx, coop ? "PATTY + CHRISSY — TWO SPATULAS EACH. FOOD SAFETY FIRST." : "PATTY — TWO SPATULAS. NO HANDS ON THE FOOD.", tx, H * 0.65, 15, C.b, "center", "#000", 4, tw); ctx.restore(); }
+          text(ctx, QUIET ? "✋✗ SPATULAS ONLY" : coop ? "PATTY + CHRISSY — TWO SPATULAS EACH. FOOD SAFETY FIRST." : "PATTY — TWO SPATULAS. NO HANDS ON THE FOOD.", tx, H * 0.65, QUIET ? 12 : 15, C.b, "center", "#000", 4, tw); ctx.restore(); }
         // beat 3 (the gag): Billy pops up late from the bottom-right corner, his line above his cap
         const bu = seg(t2, 1100, 1400); if (bu > 0) {
           const bh = H * (W < 1000 ? 0.3 : 0.4), by = H * 1.02 + (1 - outBack(bu)) * H * 0.4;

@@ -194,6 +194,10 @@ const ctx = cv.getContext("2d");
 const W = cv.width, H = cv.height;
 const hint = document.getElementById("hint");
 const mqT = document.getElementById("mq-t"), mqS = document.getElementById("mq-s");
+// ?quiet=1 (1124, opt-in; default unchanged) — SMALLER TEXT overall + the food-safety banner becomes a small tag on the
+// spatulas. Presentation only: the engine, parity and diag never see it.
+const QUIET = new URLSearchParams(location.search).get("quiet") === "1", TXT_K = QUIET ? 0.8 : 1;
+const qz = (px) => QUIET ? Math.max(9, Math.round(px * TXT_K)) : px;
 const COL = { steel:"#0c0a07", panel:"#15110d", amber:"#ffb43a", cream:"#f3e6c8",
   mustard:"#e0a92e", cheese:"#ffd23f", ketchup:"#d33a2b", good:"#7ad17a", bad:"#ff5a4d",
   raw:"#c98a5a", melt:"#ffd23f", done:"#e9a23b", grid:"#2a2018", glow:"#ff7a1a", dim:"#6b5a3a" };
@@ -260,6 +264,8 @@ const FLAVOR = {
              "NO HANDS ON THE FOOD · TWO SPATULAS, EVERY TRAY · IT'S ALL ABOUT FOOD SAFETY"],
   },
 };
+if (QUIET) for (const th of Object.values(FLAVOR))           // the long barker line → the short tag (?quiet=1)
+  th.barker = th.barker.map((l) => /FOOD SAFETY$/.test(l) ? "SPATULAS ONLY ✋✗" : l);
 const activeTheme = () => (scene === "play" && game) ? game.theme : menu.theme;
 const pick = (arr, periodMs) => arr[Math.floor(performance.now() / periodMs) % arr.length];
 // shift mood for the chatter: "rough" once the line backs up or the weeds climb, else "good"
@@ -1479,6 +1485,7 @@ function syncMarquee() {
 }
 
 function txt(s, x, y, size, col, align = "left", weight = 700) {
+  size = qz(size);
   ctx.fillStyle = col; ctx.textAlign = align; ctx.textBaseline = "alphabetic";
   ctx.font = `${weight} ${size}px "Saira Condensed","Arial Narrow",sans-serif`;
   ctx.fillText(s, x, y);
@@ -1550,8 +1557,9 @@ function renderAttract() {
     txt(R.rule, W/2, H*0.42 + 34, 15, COL.cream, "center", 400);
     txt("STICK + 3 BUTTONS:  FLIP · CHEESE · " + th.holler, W/2, H*0.42 + 64, 15, COL.amber, "center", 600);
     const SF = PMSpat.SAFETY[attractTheme] || PMSpat.SAFETY.diner;     // THE TWO-SPATULA MANDATE, told to the audience
-    txt(SF[0] + "  " + SF[1], W/2, H*0.42 + 100, 14, COL.cream, "center", 700);
-    txt(SF[2], W/2, H*0.42 + 122, 17, COL.good, "center", 800);
+    if (QUIET) txt(PMSpat.SAFETY_SHORT[attractTheme] || PMSpat.SAFETY_SHORT.diner, W/2, H*0.42 + 100, 13, COL.good, "center", 700);
+    else { txt(SF[0] + "  " + SF[1], W/2, H*0.42 + 100, 14, COL.cream, "center", 700);
+    txt(SF[2], W/2, H*0.42 + 122, 17, COL.good, "center", 800); }
   } else if (sc.id === "demo") {
     if (demo) {
       renderPlay(demo, true);
@@ -1713,9 +1721,10 @@ function springCursors(s, zones) {
 
 // THE FOOD-SAFETY CARD — every shift opens on it (live play AND the attract demo): two spatulas, no hands on the food.
 const _safetySeen = new WeakMap();
-function drawSafetyCard(s, gy, gh) {
+function drawSafetyCard(s, gy, gh, at) {
   if (QA_STILL) return;                                  // ?fill=melt stills: the card would cover the grill
   if (!_safetySeen.has(s)) _safetySeen.set(s, performance.now());
+  if (QUIET) { drawSafetyTag(s, at || { x: W / 2, y: gy + gh * 0.4 }); return; }
   const k = (performance.now() - _safetySeen.get(s)) / 3200; if (k >= 1) return;
   const a = k < 0.12 ? k / 0.12 : k > 0.8 ? (1 - k) / 0.2 : 1, SF = PMSpat.SAFETY[s.theme] || PMSpat.SAFETY.diner;
   const by = gy + gh * 0.30, bh = 86;
@@ -1729,6 +1738,19 @@ function drawSafetyCard(s, gy, gh) {
 }
 
 const cabFeed = globalThis.PMScore ? PMScore.createFeed() : null;   // (1116) the shift-points pop feed
+// ?quiet=1 — the mandate as one small tag riding P1's spatula pair for ~2.6 s (no banner over the grill)
+function drawSafetyTag(s, at) {
+  const k = (performance.now() - _safetySeen.get(s)) / 2600; if (k >= 1) return;
+  const a = (k < 0.12 ? k / 0.12 : k > 0.75 ? (1 - k) / 0.25 : 1) * 0.92, line = PMSpat.SAFETY_SHORT[s.theme] || PMSpat.SAFETY_SHORT.diner;
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.font = `800 10px "Saira Condensed","Arial Narrow",sans-serif`;
+  const tw = ctx.measureText(line).width + 18, tx = Math.max(4, Math.min(W - tw - 4, at.x - tw / 2)), ty = Math.min(H - 18, at.y + 26);   // under the slot: the cook prompt owns the space above
+  ctx.fillStyle = "rgba(8,6,4,.72)"; ctx.fillRect(tx, ty, tw, 14);
+  ctx.fillStyle = COL.good; ctx.fillRect(tx, ty, 3, 14);                       // the food-safe green tick-bar
+  ctx.fillStyle = COL.cream; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillText(line, tx + 8, ty + 10.5);
+  ctx.restore();
+}
+
 function renderPlay(s, isDemo = false) {
   const th = pm.THEMES[s.theme];
   asciiBackdrop(s);                       // ASCII pass: dim diner terminal behind everything
@@ -1851,7 +1873,7 @@ function renderPlay(s, isDemo = false) {
     cabFeed.draw(ctx, now, txt, { top: gy });
     PMScore.drawHud(ctx, s, W - 28 - 248, 72, txt, { chipsOnly: true });
   }
-  drawSafetyCard(s, gy, gh);              // shift open: NO HANDS ON THE FOOD — it's all about food safety
+  drawSafetyCard(s, gy, gh, spat[0] && { x: spat[0].x, y: spatXY(s.players[0].cursor).y });   // shift open: NO HANDS ON THE FOOD — it's all about food safety
   if (!isDemo) drawServeFx(zones);        // the HANDOFF beat: a patty flips off the spatula on a serve
 
   // mood line (row 5) — buried barking > BIG GRILL ENERGY > restless

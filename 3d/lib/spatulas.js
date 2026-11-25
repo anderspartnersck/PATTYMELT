@@ -84,6 +84,8 @@
     diner:  ["NO HANDS ON THE FOOD.", "TWO SPATULAS, EVERY ITEM.", "IT'S ALL ABOUT FOOD SAFETY."],
     school: ["NO HANDS ON THE FOOD.", "TWO SPATULAS, EVERY TRAY. LUNCH-LADY LAW.", "IT'S ALL ABOUT FOOD SAFETY."],
   };
+  // ?quiet=1 (1124): the same mandate as ONE short tag that rides the spatulas (the three-line card above stays the default)
+  const SAFETY_SHORT = { diner: "✋✗ SPATULAS ONLY", school: "✋✗ SPATULAS ONLY · LUNCH-LADY LAW" };
 
   const per = new WeakMap();                                       // state -> {prev, anim[pi], key}
   const now = () => performance.now();
@@ -345,6 +347,6 @@
          mk(M, 3, "MELT", 2), mk(M, 3, "MELT", 10)];
     for (let i = 0; i < g.slots.length; i++) g.slots[i] = rows[i % rows.length];
   }
-  global.PMSpat = { load, stageMelts, observe, hidden, drawPair, onionsOn, drawOnions, SAFETY, DUR, _force,
+  global.PMSpat = { load, stageMelts, observe, hidden, drawPair, onionsOn, drawOnions, SAFETY, SAFETY_SHORT, DUR, _force,
                     isMeltItem, onionStage, swissStage, drawSwiss, drawBin, drawPlated, topping };
 })(typeof globalThis !== "undefined" ? globalThis : this);

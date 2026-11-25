@@ -64,6 +64,9 @@
   const DAY_LULL_GAP = 150, DAY_RECOVER = 2.0, WASTE_SPIKE = 9.0, DAY_CUE = 60, DAY_TAIL = 150;
   const DAY_WAVES = ["seat", "togo", "rush", "spike"];
   const TAKEOUT_WINDOW = 240, TAKEOUT_BAG = 2, TAKEOUT_SPIKE = 4.0, BAG_BEAT = 2, BAR_ROUNDS = 2;
+  // 1124 pc TEMPO PROTOTYPE (opt-in cfg.tables / cfg.lamp, PM-4003; docs/TEMPO-1124.md §4) — mirrors src/patty_melt.py.
+  const TABLE_SIZES = [2, 3, 2, 4], TABLE_JOIN = 60, BELL_SPREAD = 15, CLEAN_SPREAD = 40, BELL_PTS = 75, CLEAN_PTS = 25,
+        PASS_CAP = 4, LAMP_HOLD = 40;
   // SHIFTS ON A GAME CLOCK (Joe 1112, docs/SHIFTS-AND-BATTLE-1112.md) — opt-in `tpm` in the day spec. Mirrors Python:
   // (t1 - t0) restaurant minutes x tpm ticks; a FLOW of [m0, m1, gap, kind(, n(, bag))] (n 0 = a stream until m1,
   // n > 0 = a burst of n); the shift ends at the close (survive = won); `bump` = THE LATE BUMP inside the shift.
@@ -397,6 +400,8 @@
     if (headcount != null) { next.cfg.orders = headcount; next.orders_left = headcount; }
     next.score = s.score + bonus;
     next.wait = Math.max(0, s.wait - WAIT_RELIEF);
+    if (s.cfg.tables) next.cfg.tables = true;       // 1124 pc: the opt-in tempo flags ride the carry
+    if (s.cfg.lamp) next.cfg.lamp = true;
     return next;
   }
 
@@ -452,6 +457,11 @@
       if (sip) ticket.sip = true;
       if (togo) ticket.drink = null;                 // take-out: no table, no drink run
       else if (s.cfg.drinks) Object.assign(ticket, { rounds, poured: 0, drinksOut: 0 });
+    }
+    if (s.cfg.tables) {                              // 1124 pc GROUP LANDING: seatings (or every ticket, without THE DAY)
+      if ((ticket.party === undefined ? "seat" : ticket.party) === "seat") _seat_table(s, ticket);
+      else if (s.service.tables && s.service.tables.length && s.service.tables[s.service.tables.length - 1].left > 0)
+        s.service.tables[s.service.tables.length - 1].left = 0;   // a walk-in / bag / bar order closes the open table
     }
     s.service.tickets.push(ticket);
     if (s.cfg.drinks) for (let r = 0; r < (ticket.drink ? rounds : 0); r++) s.service.drinks.queue.push(id);
@@ -559,7 +569,7 @@
   }
   function finalize_service(s) {
     if(!s.service||s.service.closed) return;
-    for(const p of s.slots.concat(s.toaster)) if(p) _record_waste(s,p,'discarded');
+    for(const p of _plates(s)) if(p) _record_waste(s,p,'discarded');
     const closing=!!(s.cfg.sched&&s.cfg.sched.clocked&&s.won);   // GAME CLOCK: still in flight when the doors closed
     for(const t of s.service.tickets){
       if(t.rating===null&&t.sip){ t.status='rejected'; t.rating=1; t.reason=closing?'Still at the bar at close':'Left the bar'; }   // (1116) no food review
@@ -569,7 +579,7 @@
   }
   function order_receipts(s) {
     if(!s.service) return [];
-    const active=s.slots.concat(s.toaster).filter(p=>p&&!isBun(p));
+    const active=_plates(s).filter(p=>p&&!isBun(p));
     return s.service.tickets.filter(t=>t.rating===null&&!t.sip).map(t=>{   // (1116) bar patrons have no kitchen receipt
       const p=active.find(p=>p.orderId===t.id), w=cook_window(s,p||{item:t.item,serviceScale:2});
       const at=s.slots.indexOf(p), ti=s.toaster.indexOf(p);
@@ -579,7 +589,7 @@
       return {...t,recipe:RECIPES[t.item].slice(),needsBun:needs,bunJoined:joined,
         bunReady:needs&&!joined&&buns.some(b=>b.cook>=toast_ready(s)&&b.cook<toast_burn(s)),
         bunToasting:needs&&!joined&&buns.some(b=>b.cook<toast_ready(s)),status:!p?'queued':p.stage===Stage.DONE?'ready':'cooking',
-        surface:p?(at>=0?'grill':'toaster'):null,slot:p?(at>=0?at:ti):null,nextAction,ageTicks:s.ticks-t.arrivedTick,
+        surface:p?(at>=0?'grill':ti>=0?'toaster':'pass'):null,slot:p?(at>=0?at:ti>=0?ti:s.passq.indexOf(p)):null,nextAction,ageTicks:s.ticks-t.arrivedTick,
         cookTicks:p?p.cook:0,remainingTicks:p?Math.max(0,(p.stage===Stage.MELT?w.meltDone:w.ready)-p.cook):0,
         ready:!!p&&(p.stage===Stage.DONE||p.cook>=w.ready),window:w};
     });
@@ -799,7 +809,12 @@
   const _servable = (p) => p !== null && !isBun(p) && p.stage === Stage.DONE && (!_needs_bun(p) || p.bunned);
   function _do_serve(s, p, at = null) {   // ring up by COOK GRADE (1112) + shift points — mirrors Python
     if (p.wrongBread) { _waste(s, p, "wrong_bread", "WRONG BREAD!", at); return; }
-    const g = p.grade || "GOOD";
+    let g = p.grade || "GOOD";
+    if (s.cfg.lamp && p.grade != null && p.up !== undefined) {   // 1124 pc HEAT LAMP: a plate that sat up loses grade steps
+      let steps = Math.floor((s.ticks - p.up) / LAMP_HOLD);
+      while (steps > 0 && (g === "PERFECT" || g === "GOOD")) { g = g === "PERFECT" ? "GOOD" : "OK"; steps -= 1; }
+      if (g !== p.grade) { p.grade = g; p.qual = Math.min(p.qual, g === "GOOD" ? GRADE_PERFECT - 1 : GRADE_GOOD - 1); _pop(s, "grill", "HEAT LAMP", 0, at); }
+    }
     const wait = s.ticks - p.born;
     s.wait_sum += wait; s.wait_max = Math.max(s.wait_max, wait);
     s.served += 1; s.orders_left = Math.max(0, s.orders_left - 1);
@@ -857,8 +872,68 @@
     }
     return false;
   }
+  // ---- 1124 pc TEMPO PROTOTYPE helpers (opt-in cfg.tables / cfg.lamp) — mirror src/patty_melt.py exactly ----
+  function _seat_table(s, t) {           // GROUP LANDING: seat t at the open table, or open the next one
+    if (!s.service.tables) s.service.tables = [];
+    const tb = s.service.tables;
+    let cur = tb.length ? tb[tb.length - 1] : null;
+    if (cur !== null && cur.left > 0 && s.ticks - cur.last > TABLE_JOIN) cur.left = 0;   // the wave ended: closed short
+    if (cur === null || cur.left === 0) {
+      const size = TABLE_SIZES[tb.length % TABLE_SIZES.length];
+      cur = { id: tb.length + 1, size, left: size, members: [], last: s.ticks, call: null, spread: null };
+      tb.push(cur);
+    }
+    cur.members.push(t.id); cur.left -= 1; cur.last = s.ticks; t.table = cur.id;
+  }
+  const _plates = (s) => s.slots.concat(s.toaster, s.passq && s.passq.length ? s.passq : []);
+  function _table_of(s, p) { const t = _ticket(s, p); return t ? (t.table === undefined ? null : t.table) : null; }
+  function _table_ready(s, tid) {        // can take no more guests AND every unsettled member has a servable plate up
+    const T = s.service.tables[tid - 1];
+    if (T.left > 0 && s.ticks - T.last <= TABLE_JOIN) return false;
+    const plates = _plates(s);
+    for (const mid of T.members) {
+      const t = s.service.tickets[mid - 1];
+      if (t.rating !== null) continue;
+      if (!plates.some((p) => _servable(p) && p.orderId === mid)) return false;
+    }
+    return true;
+  }
+  function _serve_table(s, tid) {        // Billy carries the whole table out in one beat; the landing is called
+    const T = s.service.tables[tid - 1], ups = [];
+    for (const mid of T.members) {
+      for (const [cont, kind] of [[s.slots, "grill"], [s.toaster, "toaster"], [s.passq || [], "pass"]]) {
+        const idx = cont.findIndex((p) => _servable(p) && p.orderId === mid);
+        if (idx < 0) continue;
+        const p = cont[idx];
+        if (kind === "pass") cont.splice(idx, 1); else cont[idx] = null;
+        ups.push(p.up);
+        _do_serve(s, p, kind !== "pass" ? [kind, idx] : null);
+        break;
+      }
+    }
+    if (ups.length >= 2) {
+      const spread = Math.max(...ups) - Math.min(...ups);
+      T.spread = spread;
+      if (spread <= BELL_SPREAD) { T.call = "BELL"; _say(s, "ON THE BELL!"); _pop(s, "service", "ON THE BELL", BELL_PTS * ups.length); }
+      else if (spread <= CLEAN_SPREAD) { T.call = "CLEAN"; _pop(s, "service", "CLEAN LANDING", CLEAN_PTS * ups.length); }
+      else { T.call = "RAGGED"; _break_combo(s); _pop(s, "service", "RAGGED", 0); }
+    }
+  }
+  function _pass_tick(s) {               // plates UP stamp; with tables, an un-ready table's plate moves to THE PASS
+    if (!(s.cfg.tables || s.cfg.lamp)) return;
+    if (!s.passq) s.passq = [];
+    for (const p of s.slots.concat(s.toaster)) if (_servable(p) && p.up === undefined) p.up = s.ticks;
+    if (!s.cfg.tables) return;
+    for (const cont of [s.slots, s.toaster]) {
+      for (let i = 0; i < cont.length; i++) {
+        if (s.passq.length >= PASS_CAP) return;
+        const p = cont[i];
+        if (_servable(p) && _table_of(s, p) && !_table_ready(s, _table_of(s, p))) { s.passq.push(p); cont[i] = null; }
+      }
+    }
+  }
   function _billy_tick(s) {
-    if (s.billy_turn_t > 0) {                  // 2P: mid-swing — serves NOBODY (the cost)
+    if (s.billy_turn_t > 0) {                 // 2P: mid-swing — serves NOBODY (the cost)
       s.billy_turn_t -= 1;
       if (s.billy_turn_t === 0) s.billy_facing = s.billy_turn_to;
       s.billy = Math.max(0.0, s.billy - s.cfg.billy_drift);
@@ -870,14 +945,21 @@
     if (s.billy_t > 0) return;
     s.billy_t = s.cfg.billy_interval;
     if (_run_drink(s)) { s.billy_t = Math.max(1, Math.floor(s.cfg.billy_interval / DRINK_BEAT)); return; }   // DRINKS first — a quick run (1/DRINK_BEAT beat)
+    if (s.cfg.tables) {                          // 1124 pc GROUP LANDING: a READY table goes out first, all together
+      const zone = Array.from(_billy_zone(s), (i) => s.slots[i]).concat(s.toaster, s.passq || []);
+      const hit = zone.find((p) => _servable(p) && _table_of(s, p) && _table_ready(s, _table_of(s, p)));
+      if (hit) { _serve_table(s, _table_of(s, hit)); return; }
+    }
     for (const i of _billy_zone(s)) {            // grill first
       const p = s.slots[i];
       if (!_servable(p)) continue;                 // skip empties, unfinished, and un-bunned melts (they jam)
+      if (s.cfg.tables && _table_of(s, p)) continue;   // 1124 pc: a table plate never goes out alone
       s.slots[i] = null; _do_serve(s, p, ["grill", i]); _bag_beat(s, p); return;
     }
     for (let ti = 0; ti < s.toaster.length; ti++) {   // then a finished GRILLED CHEESE off the toaster (shared)
       const e = s.toaster[ti];
       if (!_servable(e)) continue;
+      if (s.cfg.tables && _table_of(s, e)) continue;
       s.toaster[ti] = null; _do_serve(s, e, ["toaster", ti]); _bag_beat(s, e); return;
     }
   }
@@ -922,7 +1004,8 @@
     _cook_tick(s);
     _toaster_tick(s);       // buns advance / burn
     _assembly_tick(s);      // finished patties claim ready buns (auto-join)
-    _drink_tick(s);         // DRINKS: pour the rail / late drinks (no-op unless cfg.drinks)
+    _pass_tick(s);          // 1124 pc: plates UP + THE PASS (no-op unless cfg.tables / cfg.lamp)
+    _drink_tick(s);        // DRINKS: pour the rail / late drinks (no-op unless cfg.drinks)
     _day_tick(s);           // THE DAY: late take-out pickups (no-op unless cfg.sched)
     _billy_tick(s); _drop_tick(s); _place_from_pile_or_drop(s);
     // THE WEEDS: integrate buried pressure over COMFORT, spike on new fails, clamp 0..FULL. A burnt BUN
@@ -957,8 +1040,9 @@
   }
   function buried_index(s) {
     const occ = s.slots.filter((x) => x !== null).length;
-    const done = s.slots.filter((x) => x && x.stage === Stage.DONE).length;
+    let done = s.slots.filter((x) => x && x.stage === Stage.DONE).length;
     const pile = s.cfg.pile_max ? (s.pile / s.cfg.pile_max) : 0.0;
+    if (s.passq && s.passq.length) done += s.passq.length;   // 1124 pc: a plate waiting on THE PASS still jams the line
     const n = s.slots.length || 1;               // hardening: never divide by zero on a degenerate grill
     return (occ / n) * 0.5 + pile * 0.3 + (done / n) * 0.2;
   }

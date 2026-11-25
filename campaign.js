@@ -194,6 +194,13 @@
       const q = sh.day ? pm.new_game(sh.rnd || 1, sh.mode || "family", 1, "diner", 6, items, "service", false, false, plan.day).cfg.orders : sh.quota;
       if (q) { g.cfg.orders = q; g.orders_left = q; }
     }
+    // 1124 pc TEMPO PROTOTYPE (PM-4003), URL flags, default OFF: ?tables=1 = GROUP LANDING (tables of 2-4 land together at
+    // THE PASS), ?lamp=1 = HEAT LAMP (a plate waiting to be run loses a grade step every 4 s). Engine-only: no render yet.
+    if (profile === "service" && typeof location !== "undefined" && location.search) {
+      const q = new URLSearchParams(location.search);
+      if (q.get("tables") === "1") g.cfg.tables = true;
+      if (q.get("lamp") === "1") g.cfg.lamp = true;
+    }
     Object.defineProperty(g, "bumped", { configurable: true, enumerable: false,       // (presentation) THE LATE BUMP label
       get() { return this.service && this.service.day && this.service.day.bumped && sh.day && sh.day.bump ? sh.day.bump.label : null; } });
     return g;
