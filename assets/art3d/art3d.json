@@ -2998,19 +2998,6 @@
    "flip": "cast/chrissy-flip.webp",
    "cheese": "cast/chrissy-cheese.webp",
    "serve": "cast/chrissy-serve.webp"
-  },
-  "billyKid": {
-   "serve": "cast/billy-serve.webp",
-   "slack": "cast/billy-slack.webp",
-   "turn": "cast/billy-turn.webp",
-   "walk": [
-    "cast/billy-walk-0.webp",
-    "cast/billy-walk-1.webp",
-    "cast/billy-walk-2.webp",
-    "cast/billy-walk-3.webp",
-    "cast/billy-walk-4.webp",
-    "cast/billy-walk-5.webp"
-   ]
   }
  },
  "loc": {

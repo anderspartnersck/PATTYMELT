@@ -65,7 +65,7 @@
   const DAY_WAVES = ["seat", "togo", "rush", "spike"];
   const TAKEOUT_WINDOW = 240, TAKEOUT_BAG = 2, TAKEOUT_SPIKE = 4.0, BAG_BEAT = 2, BAR_ROUNDS = 2;
   // 1124 pc TEMPO PROTOTYPE (opt-in cfg.tables / cfg.lamp, PM-4003; docs/TEMPO-1124.md §4) — mirrors src/patty_melt.py.
-  const TABLE_SIZES = [2, 3, 2, 4], TABLE_JOIN = 60, BELL_SPREAD = 15, CLEAN_SPREAD = 40, BELL_PTS = 75, CLEAN_PTS = 25,
+  const TABLE_SIZES = [2, 3, 2, 4], TABLE_JOIN = 60, BELL_SPREAD = 30, CLEAN_SPREAD = 60,   /* Joe 1124: bell 3 s / clean 6 s (was 15/40) */ BELL_PTS = 75, CLEAN_PTS = 25,
         PASS_CAP = 4, LAMP_HOLD = 40;
   // SHIFTS ON A GAME CLOCK (Joe 1112, docs/SHIFTS-AND-BATTLE-1112.md) — opt-in `tpm` in the day spec. Mirrors Python:
   // (t1 - t0) restaurant minutes x tpm ticks; a FLOW of [m0, m1, gap, kind(, n(, bag))] (n 0 = a stream until m1,

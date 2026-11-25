@@ -145,6 +145,18 @@
     S.geo = geo;
     return S;
   }
-  const API = { create, RUN_V, SLACK_V, TRAY_MAX };
+  // (1125) THE DINER'S AISLES — the painted diner room's walking openings (docs/DINER-HEROES-PARITY-1125.md §C2). The exported
+  // routes ran off-panel (x −25 / −9 along the bottom-left) and cut through the back booths' benches to reach T1/T2. These keep
+  // Billy on real floor: the LEFT AISLE (x 80) is the trunk from the pass; the CROSS AISLE (y 258) runs between the stools and
+  // the back booths (B1–B6 from the floor side, T1/T2 at their open top ends); the BOTTOM AISLE (y 582) serves T3/T4 at their
+  // open bottom ends and holds his slack spot. Same contract: out = [pass, laneTop, lane, (stop.x, lane), stop]; drops unchanged.
+  function dinerAisles(geo) {
+    const P = geo.pass || geo.passBus[0], LT = [80, 440], C = [80, 258], D = [80, 582];
+    const seat = (i, lane, sx, sy) => ({ id: geo.seats[i].id, out: [P, LT, lane, [sx, lane[1]], [sx, sy]], drop: geo.seats[i].drop });
+    const stools = [118, 182, 246, 310, 374, 438].map((x, i) => seat(i, C, x, 254));
+    return Object.assign({}, geo, { slack: [250, 584], passBus: [P, LT, D, [200, 584], [250, 584]],
+      seats: stools.concat([seat(6, C, 218, 262), seat(7, C, 381, 262), seat(8, D, 200, 578), seat(9, D, 365, 578)]), aisles1125: true });
+  }
+  const API = { create, RUN_V, SLACK_V, TRAY_MAX, dinerAisles };
   if (typeof module !== "undefined" && module.exports) module.exports = API; else root.BillyRun = API;
 })(typeof globalThis !== "undefined" ? globalThis : this);

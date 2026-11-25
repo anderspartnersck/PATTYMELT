@@ -3003,32 +3003,6 @@
     "cast/billyT-run-1.webp"
    ]
   },
-  "billyH": {
-   "serve": "cast/billyH-serve.webp",
-   "slack": "cast/billyH-slack.webp",
-   "turn": "cast/billyH-turn.webp",
-   "walk": [
-    "cast/billyH-walk-0.webp",
-    "cast/billyH-walk-1.webp",
-    "cast/billyH-walk-2.webp",
-    "cast/billyH-walk-3.webp",
-    "cast/billyH-walk-4.webp",
-    "cast/billyH-walk-5.webp"
-   ]
-  },
-  "billyKid": {
-   "serve": "cast/billy-serve.webp",
-   "slack": "cast/billy-slack.webp",
-   "turn": "cast/billy-turn.webp",
-   "walk": [
-    "cast/billy-walk-0.webp",
-    "cast/billy-walk-1.webp",
-    "cast/billy-walk-2.webp",
-    "cast/billy-walk-3.webp",
-    "cast/billy-walk-4.webp",
-    "cast/billy-walk-5.webp"
-   ]
-  },
   "pattyRelief": {
    "idle": "cast/patty-idle.webp",
    "serve": "cast/patty-serve.webp"
