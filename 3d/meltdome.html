@@ -79,7 +79,7 @@ const CUTTHROAT = Q.get("cutthroat") === "1";
 // carries the result to the front door's RESULTS card. Off by default: the page behaves exactly as before.
 const SHELL = Q.get("shell") === "1";
 function toFront(r) { location.href = "front.html?" + (r ? "results=" + encodeURIComponent(JSON.stringify(r)) + "&" : "menu&") + "sel=" + encodeURIComponent(Q.get("sel") || ""); }
-function battleResult() { const [a, b] = sides, clean = (s) => Math.max(0, tot(s, "served") - tot(s, "sent_back"));
+function battleResult() { const [a, b] = sides, clean = (s) => tot(s, "served");   // (1125: SENT BACK removed, PM-4107)
   const tie = isTie();
   return { mode: "battle", label: Q.get("label") || "MELTDOME", skin: "diner", winner: tie ? -1 : sides.indexOf(winner), a: clean(a), b: clean(b), pa: a.g.score, pb: b.g.score }; }                            // the RPS sabotage layer — OFF by default (clean service race)
 const COL = { cream:"#f3e6c8", cheese:"#ffd23f", amber:"#e0a92e", good:"#7ad17a", bad:"#ff5a4d",
@@ -98,12 +98,12 @@ let gtick = 0;
 
 function makeSide(name, color) {
   return { g: PM.new_game(1, MODE, 1, "diner", GRILL), auto: true, name, color, dead: false, eightySixed: 0, aud: null,
-           carry: { served: 0, sent_back: 0, fails: 0 },   // (1116 playtest) the bell judges the WHOLE service: earlier ticket books' counts
+           carry: { served: 0, fails: 0 },   // (1116 playtest) the bell judges the WHOLE service: earlier ticket books' counts
            sab: 0, lastServed: 0, lastBilly: -99, primeT: 0, incoming: null, flash: "", flashT: 0,
            feed: globalThis.PMScore ? PMScore.createFeed() : null, slotXY: [] };   // (1116 Q655) PERFECT/GOOD pops + emblems per cook
 }
 let sides, matchOver, winner, winT;
-// (1116 playtest) advance_round starts a fresh ticket book (served/sent_back/fails back to 0, score carried), so every
+// (1116 playtest) advance_round starts a fresh ticket book (served/fails back to 0, score carried), so every
 // service stat the bell reads is the side's carry + the current book. Before this the report, the served tiebreak and
 // the front-door RESULTS showed only the LAST book (e.g. "6 clean" after 30 plates).
 const tot = (s, k) => s.carry[k] + s.g[k];
@@ -208,7 +208,7 @@ function drawSide(s, x0, w) {
   ctx.fillStyle = "#241c12"; ctx.fillRect(hl, 88, bw, 12);
   ctx.fillStyle = wf >= 0.78 ? COL.bad : wf >= 0.5 ? COL.amber : COL.good; ctx.fillRect(hl, 88, bw * wf, 12);
   // SERVICE scoreboard (the judged metric is SCORE above; these are the supporting stats)
-  const clean = Math.max(0, tot(s, "served") - tot(s, "sent_back"));
+  const clean = tot(s, "served");
   txt(`SERVED ${tot(s, "served")}  ·  CLEAN ${clean}  ·  BURNT/LOST ${tot(s, "fails")}` + (s.eightySixed ? `  ·  86×${s.eightySixed}` : ""),
       hl, 122, 13, COL.amber, "left", 600);
   if (CUTTHROAT) {                                  // the optional sabotage layer — charge + state
@@ -247,7 +247,7 @@ function drawSide(s, x0, w) {
   // danger wash — the side reddens as it nears burial (then it 86's & resets, it never dies)
   if (wf >= 0.9) { ctx.fillStyle = `rgba(180,20,12,${(0.10 + (wf - 0.9) * 2).toFixed(2)})`; ctx.fillRect(x0, 0, w, H); }
   // (1116 Q655) the shift-points emblem chips under each grill (GRILL · SERVICE · HUSTLE · NERVE, coloured by tier)
-  if (globalThis.PMScore) PMScore.drawHud(ctx, g, x0 + w / 2 - 123 + (x0 > 0 ? 17 : -17), gy + gh + 22, txt, { drinks: false });
+  if (globalThis.PMScore) PMScore.drawHud(ctx, g, x0 + w / 2 - 123 + (x0 > 0 ? 17 : -17), gy + gh + 22, txt);
 }
 function drawPops() {                              // (1116 Q655) PERFECT! / GOOD! / ON TIME … over each cook's own food
   const now = performance.now();
@@ -291,7 +291,7 @@ function render() {
     const tie = isTie();   // (1116) a dead heat is a draw, not a Patty win
     txt(tie ? "DEAD HEAT — A DRAW" : `${winner.name} WINS SERVICE`, MID, H / 2 - 20, 40, tie ? COL.cheese : winner.color, "center", 800);
     // the SERVICE REPORT — each side's numbers, Hell's-Kitchen style
-    const card = (s, x) => { const g = s.g, clean = Math.max(0, tot(s, "served") - tot(s, "sent_back"));
+    const card = (s, x) => { const g = s.g, clean = tot(s, "served");
       txt(s.name, x, H / 2 + 14, 16, s.color, "center", 800);
       txt(`SCORE ${g.score}`, x, H / 2 + 36, 14, COL.cream, "center", 700);
       txt(`${clean} clean · ${tot(s, "fails")} burnt/lost${s.eightySixed ? ` · 86×${s.eightySixed}` : ""}`, x, H / 2 + 56, 12, COL.amber, "center", 600);

@@ -120,13 +120,24 @@ const SCREENS = [["", "BEST FOR THE MODE"], ["1", "ONE SCREEN"], ["2", "TWO SCRE
 // (1112) LENGTH — the GAME CLOCK scale for the day (campaign.js LENGTHS); on SPEED BATTLE it is the round clock
 const LENGTHS = [["", "FULL DAY — 1 MIN PER HOUR", "60", "1 MINUTE ROUNDS"], ["quick", "QUICK — 30 S PER HOUR", "120", "2 MINUTE ROUNDS"],
                  ["long", "LONG HAUL — 2 MIN PER HOUR", "180", "3 MINUTE ROUNDS"]];
-const NROWS = 5;   // the mode list + EDITION · DEMAND · SCREENS · LENGTH
-let sel = 0, row = 0, ed = (Q.get("skin") || "school") === "diner" ? 1 : 0, dem = 0, scr = 0, len = 0;
-{ const s = (Q.get("sel") || "").split(","); if (s.length >= 4) { sel = +s[0] || 0; ed = +s[1] || 0; dem = +s[2] || 0; scr = +s[3] || 0; len = +s[4] || 0; } }
+// (1125 order 64, docs/COOP-HARD-AND-FUN-1125.md; DEFAULTS Joe 25 Nov "yes to all 4", docs/DEFAULTS-1125.md) the difficulty
+// settings. The DEFAULT of each row (marked ★) is the shipped game (web/campaign.js DEFAULTS) and rides NO URL param; any
+// other pick writes its value into the launch URL. In memory + the launch URL only (nothing stored).
+//   BREAD (solo, ?breadload): the % of orders that NAME a bread; the rest get the kitchen's HOUSE bun (PM-4114 ladder)
+//   CO-OP DEMAND (co-op, ?coopk): the % of the shift's headcount (PM-4115 ladder) · PLATES (co-op, ?deal) (PM-4116)
+const BREADLOADS = [["50", "EASY — 50% NAME A BREAD"], ["", "★ NORMAL — 85% NAME A BREAD"], ["100", "HARD — EVERY ORDER NAMES A BREAD"]];
+const COOPKS = [["100", "RELAXED — 100% OF THE CROWD"], ["110", "EASY — 110% OF THE CROWD"], ["", "★ NORMAL — 125% OF THE CROWD"], ["135", "HARD — 135% OF THE CROWD"]];
+const DEALS = [["", "★ ALTERNATE — EACH HALF IN TURN"], ["first", "FIRST FREE SLOT"]];
+const DEF_I = (a) => a.findIndex((o) => o[0] === "");   // the default's index in a ladder
+const isSolo = (m) => !m.page && !m.battle && (m.players || 1) === 1, isCoop = (m) => m.id === "coop";
+const NROWS = 7;   // the mode list + EDITION · DEMAND · SCREENS · LENGTH · DIFFICULTY (BREAD solo | CO-OP DEMAND) · PLATES
+const ROW_Y0 = 456, ROW_DY = 36;   // the settings rows' baselines (draw + hit test share them)
+let sel = 0, row = 0, ed = (Q.get("skin") || "school") === "diner" ? 1 : 0, dem = 0, scr = 0, len = 0, bl = DEF_I(BREADLOADS), ck = DEF_I(COOPKS), dl = DEF_I(DEALS);
+{ const s = (Q.get("sel") || "").split(","); if (s.length >= 4) { sel = +s[0] || 0; ed = +s[1] || 0; dem = +s[2] || 0; scr = +s[3] || 0; len = +s[4] || 0; const ix = (v, d) => (v === undefined || v === "" ? d : +v); bl = ix(s[5], bl); ck = ix(s[6], ck); dl = ix(s[7], dl); } }
 // (BATCH2 1116 B6) clamp the ?sel carried through the pages: an out-of-range index (an old bookmark, a stale RESULTS URL)
 // made MODES[sel] undefined → drawMenu threw on every frame and the front door froze on its RESULTS / menu.
-{ const cl = (v, n) => Math.min(n - 1, Math.max(0, Math.floor(v) || 0)); sel = cl(sel, MODES.length); ed = cl(ed, EDITIONS.length); dem = cl(dem, DEMANDS.length); scr = cl(scr, SCREENS.length); len = cl(len, LENGTHS.length); }
-const selStr = (i) => [i, ed, dem, scr, len].join(",");
+{ const cl = (v, n) => Math.min(n - 1, Math.max(0, Math.floor(v) || 0)); sel = cl(sel, MODES.length); ed = cl(ed, EDITIONS.length); dem = cl(dem, DEMANDS.length); scr = cl(scr, SCREENS.length); len = cl(len, LENGTHS.length); const cd = (v, n, d) => (Number.isFinite(v) ? cl(v, n) : d); bl = cd(bl, BREADLOADS.length, DEF_I(BREADLOADS)); ck = cd(ck, COOPKS.length, DEF_I(COOPKS)); dl = cd(dl, DEALS.length, DEF_I(DEALS)); }
+const selStr = (i) => [i, ed, dem, scr, len, bl, ck, dl].join(",");
 const skin = () => EDITIONS[ed][0];
 function launchUrl(i = sel) {
   const m = MODES[i], p = new URLSearchParams({ art: "3d", shell: "1" });
@@ -143,6 +154,9 @@ function launchUrl(i = sel) {
   for (const [k, v] of Object.entries(m.q)) p.set(k, v);
   if (DEMANDS[dem][0] && !m.battle) p.set("mode", DEMANDS[dem][0]);
   if (LENGTHS[len][0] && !m.battle) p.set("length", LENGTHS[len][0]);
+  if (isSolo(m) && BREADLOADS[bl][0]) p.set("breadload", BREADLOADS[bl][0]);   // (1125 order 64) only off-default values ride the URL
+  if (isCoop(m) && COOPKS[ck][0]) p.set("coopk", COOPKS[ck][0]);
+  if (isCoop(m) && DEALS[dl][0]) p.set("deal", DEALS[dl][0]);
   if (PMCast.ink) p.set("cast", "ink");
   if (QUIET) p.set("quiet", "1");
   if (Q.get("playlog")) p.set("playlog", Q.get("playlog"));   // ?playlog=on (1125): opt-in playtest log on the web
@@ -185,7 +199,10 @@ function act(a) {
     else if (row === 1) { ed = (ed + EDITIONS.length + d) % EDITIONS.length; PMCine.init({ skin: skin() }); }
     else if (row === 2) dem = (dem + DEMANDS.length + d) % DEMANDS.length;
     else if (row === 3) scr = (scr + SCREENS.length + d) % SCREENS.length;
-    else len = (len + LENGTHS.length + d) % LENGTHS.length; audio.ui("move"); }
+    else if (row === 4) len = (len + LENGTHS.length + d) % LENGTHS.length;
+    else if (row === 5) { if (isSolo(MODES[sel])) bl = (bl + BREADLOADS.length + d) % BREADLOADS.length; else if (isCoop(MODES[sel])) ck = (ck + COOPKS.length + d) % COOPKS.length; }
+    else if (row === 6) { if (isCoop(MODES[sel])) dl = (dl + DEALS.length + d) % DEALS.length; }
+    audio.ui("move"); }
   else if (a === "ok") { if (row === 0) launch(); else { row = 0; audio.ui("select"); } }
 }
 addEventListener("keydown", (e) => {
@@ -196,7 +213,7 @@ addEventListener("keydown", (e) => {
 });
 cv.addEventListener("pointerdown", (e) => { const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height;
   if (state === "menu") { for (let i = 0; i < MODES.length; i++) { const ry = 150 + i * 58; if (x > 60 && x < 560 && y > ry && y < ry + 56) { if (sel === i && row === 0) return act("ok"); sel = i; row = 0; audio.ui("move"); return; } }
-    for (let r2 = 1; r2 < NROWS; r2++) { const ry = 516 + (r2 - 1) * 40; if (x > 614 && x < 1226 && y > ry - 26 && y < ry + 10) { row = r2; return act(x > 920 ? "right" : "left"); } } return; }   // (1125) the hit rows sat 44 px below the drawn rows, and LENGTH had none
+    for (let r2 = 1; r2 < NROWS; r2++) { const ry = ROW_Y0 + (r2 - 1) * ROW_DY; if (x > 614 && x < 1226 && y > ry - 26 && y < ry + 10) { row = r2; return act(x > 920 ? "right" : "left"); } } return; }   // (1125) the hit rows sat 44 px below the drawn rows, and LENGTH had none
   if (state === "results") return act(x < W / 2 ? "ok" : "alt");
   act("ok"); });
 const padPrev = [];
@@ -333,13 +350,17 @@ function drawMenu(t) {
   T(m.name, 640, 188, 30, C.b, "left", 5, m.battle ? 300 : 400);
   m.desc.forEach((l, i) => T(l, 640, 222 + i * 24, 16, C.cream, "left", 3, m.battle ? 300 : 400));
   // the settings rows
-  ctx.fillStyle = "rgba(8,4,14,.8)"; ctx.fillRect(610, 476, 620, 172);
+  ctx.fillStyle = "rgba(8,4,14,.8)"; ctx.fillRect(610, ROW_Y0 - 38, 620, ROW_DY * (NROWS - 1) + 24);
   const rows = [["EDITION", m.page ? "THE DINER (this view)" : EDITIONS[ed][1]], ["DEMAND", m.battle && !m.page ? "MELTDOME RULES" : DEMANDS[dem][1]],
     ["SCREENS", m.page ? "ONE SCREEN — ITS OWN VIEW" : m.battle ? "TWO SCREENS" : (SCREENS[scr][0] ? SCREENS[scr][1] : (m.screens === 2 ? "TWO SCREENS (best)" : "ONE SCREEN (best)"))],
-    ["LENGTH", m.id === "speed" ? LENGTHS[len][3] : m.battle ? "THE BELL (90 s)" : LENGTHS[len][1]]];
-  rows.forEach(([k, v], i) => { const ry = 516 + i * 40, on = row === i + 1;
-    if (on) { ctx.fillStyle = C.a; ctx.fillRect(614, ry - 26, 612, 36); }
-    T(k, 630, ry, 18, on ? "#fff" : "rgba(243,230,200,.6)", "left", 3); T("◄  " + v + "  ►", 1214, ry, 20, on ? C.b : C.cream, "right", 4); });
+    ["LENGTH", m.id === "speed" ? LENGTHS[len][3] : m.battle ? "THE BELL (90 s)" : LENGTHS[len][1]],
+    isCoop(m) ? ["CO-OP DEMAND", COOPKS[ck][1]] : isSolo(m) ? ["BREAD", BREADLOADS[bl][1]] : ["DIFFICULTY", null],
+    ["PLATES", isCoop(m) ? DEALS[dl][1] : null]];
+  rows.forEach(([k, v], i) => { const ry = ROW_Y0 + i * ROW_DY, on = row === i + 1;
+    if (on) { ctx.fillStyle = C.a; ctx.fillRect(614, ry - 25, 612, 33); }
+    T(k, 630, ry, 17, on ? "#fff" : "rgba(243,230,200,.6)", "left", 3);
+    if (v === null) T("— not in this mode —", 1214, ry, 16, "rgba(243,230,200,.4)", "right", 3);   // (1125 order 64) solo / co-op only
+    else T("◄  " + v + "  ►", 1214, ry, 18, on ? C.b : C.cream, "right", 4, 440); });
   T("▲▼ pick  ·  ◄► change  ·  TAB settings  ·  SPACE / A = COOK  ·  ESC back", W / 2, H - 22, 15, "rgba(243,230,200,.75)", "center", 3);
   if (state === "launch") { const u = FX.seg(now() - t0 + 0, 0, 420); FX.flash(ctx, u, "#fff"); }
 }

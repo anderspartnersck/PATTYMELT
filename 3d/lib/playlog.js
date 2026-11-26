@@ -6,7 +6,7 @@
 // Observer-only: it reads engine state before/after the page calls the engine; it never changes the game.
 //
 // What it records, per shift:
-//   every FLIP / TOPPING / TOAST press — the item, its cook clock vs its window (early = sent back · rdy · PERFECT · late),
+//   every FLIP / TOPPING / TOAST press — the item, its cook clock vs its window (early = grades lower · rdy · PERFECT · late),
 //     and how many ticks after the item went RDY the press came (reaction);
 //   every HEY BILLY — was a plate waiting in your half (needed), was Billy already serving you (redundant), or nothing
 //     was ready yet (early); how long the oldest finished plate had waited;
@@ -74,7 +74,7 @@
     function shiftEnd(g, outcome, extra) {
       if (off || !cur || cur.end) return;
       cur.end = Object.assign({ outcome, ms: Date.now() - cur.t0, ticks: g ? g.ticks - cur.tick0 : 0, served: g ? g.served : 0, fails: g ? g.fails : 0,
-        sent_back: g ? g.sent_back : 0, combo_best: g ? g.combo_best : 0, score: g ? g.score : 0, wait: g ? +(g.wait / pm.WAIT_FULL).toFixed(3) : 0 }, extra || {});
+        combo_best: g ? g.combo_best : 0, score: g ? g.score : 0, wait: g ? +(g.wait / pm.WAIT_FULL).toFixed(3) : 0 }, extra || {});
       save();
     }
     function save() {
@@ -97,21 +97,21 @@
   // ---------- the read: did they wait for RDY? ----------
   function analyze(sessions, tps = TPS_FALLBACK) {
     const out = { sessions: sessions.length, shifts: 0, cook: { early: 0, rdy: 0, perfect: 0, late: 0, noop: 0 }, react: [],
-      billy: { needed: 0, redundant: 0, early: 0, plateWait: [] }, served: 0, fails: 0, sent_back: 0, byShift: [] };
+      billy: { needed: 0, redundant: 0, early: 0, plateWait: [] }, served: 0, fails: 0, byShift: [] };
     for (const s of sessions) for (const sh of s.shifts || []) {
       out.shifts++; const row = { session: s.id, n: sh.n, name: sh.name, outcome: sh.end ? sh.end.outcome : "open", early: 0, perfect: 0, presses: 0, hollers: 0, redundant: 0 };
       for (const e of sh.ev || []) {
         if (["flip", "top", "toast"].includes(e.verb) && e.kind in out.cook) { out.cook[e.kind]++; if (e.kind !== "noop") { row.presses++; if (e.kind === "early") row.early++; if (e.kind === "perfect") row.perfect++; } if (e.react != null) out.react.push(e.react); }
         if (e.verb === "billy") { out.billy[e.kind]++; row.hollers++; if (e.kind === "redundant") row.redundant++; if (e.kind === "needed" && e.plateWait != null) out.billy.plateWait.push(e.plateWait); }
       }
-      if (sh.end) { out.served += sh.end.served; out.fails += sh.end.fails; out.sent_back += sh.end.sent_back; }
+      if (sh.end) { out.served += sh.end.served; out.fails += sh.end.fails; }
       out.byShift.push(row);
     }
     const c = out.cook, acted = c.early + c.rdy + c.perfect + c.late;
     const med = (a) => { if (!a.length) return null; const q = a.slice().sort((x, y) => x - y); return q[Math.floor(q.length / 2)]; };
     out.summary = {
       presses: acted,
-      early_pct: acted ? +(100 * c.early / acted).toFixed(1) : null,       // too soon → SENT BACK (the skill failing)
+      early_pct: acted ? +(100 * c.early / acted).toFixed(1) : null,       // too soon → UNDER/RAW (the skill failing)
       rdy_pct: acted ? +(100 * c.rdy / acted).toFixed(1) : null,           // waited for RDY, a little eager
       perfect_pct: acted ? +(100 * c.perfect / acted).toFixed(1) : null,   // the sweet spot
       late_pct: acted ? +(100 * c.late / acted).toFixed(1) : null,         // waited too long (burn risk)

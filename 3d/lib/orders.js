@@ -47,12 +47,7 @@
     for (const t of g.service.tickets) if (t.id > seen) {
       seen = t.id; prints.push({ id: t.id, t0: now() });
       const si = seatIndex(t);
-      if (t.sip) {                                     // (1116) a drinks-only bar patron: a round, no food ticket
-        call = { t0: now(), text: "BAR · " + seatId(si) + " · A ROUND OF " + (t.rounds || 2) + " DRINKS", bread: null };
-        if (opt.voice && !opt.muted) say("Bar " + NUM[si < 6 ? si + 1 : si - 5] + ", a round.");
-        continue;
-      }
-      const bread = t.bread || null;
+      const bread = t.house ? null : t.bread || null;   // (1125 order 64 ?breadload) a HOUSE order names no bread
       call = { t0: now(), text: "ORDER IN · " + seatId(si) + " · " + itemLabel(t.item) + (bread ? " ON " + breadLabel(bread) : ""), bread };
       if (opt.voice && !opt.muted) say("Order in. " + (si < 6 ? "Bar " : "Table ") + NUM[si < 6 ? si + 1 : si - 5] + ", " +
                                        (SAY_ITEM[t.item] || itemLabel(t.item).toLowerCase()) + (bread ? " " + SAY_BREAD[bread] : "") + ".");
@@ -149,7 +144,7 @@
       T(ctx, itemLabel(tk.item), x + 5, y + 35, 11, "#2B2B2B", "left", 800, tw - 9);
       // bread band
       if (b) { ctx.fillStyle = BREAD_COL[b]; rr(ctx, x + 4, y + 39, tw - 8, 11, 2); ctx.fill();
-        T(ctx, "ON " + breadLabel(b), x + tw / 2, y + 48, 9.5, BREAD_INK[b], "center", 800, tw - 12); }
+        T(ctx, (tk.house ? "HOUSE " : "ON ") + breadLabel(b), x + tw / 2, y + 48, 9.5, BREAD_INK[b], "center", 800, tw - 12); }   // 1125 order 64 (?breadload): HOUSE = the kitchen lays this bun itself
       // where it is now
       if (!wh.blink || (t / 300 | 0) % 2) T(ctx, wh.s, x + tw / 2, y + th - 5, 10, wh.c, "center", 900, tw - 8);
       ctx.globalAlpha = 1;

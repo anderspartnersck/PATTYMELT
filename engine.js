@@ -48,30 +48,28 @@
   const WASTE_COST = 60, POOR_SPIKE = 9.0;
   // SHIFT POINTS: four categories (asymmetric-horror style emblems; presentation in web/lib/scoring.js)
   const CATS = ["grill", "service", "hustle", "nerve"];
-  const PTS = { PERFECT: 300, GOOD: 150, OK: 50, ON_TIME: 150, IN_ORDER: 100, DRINK: 100, DRINK_LATE: 25,
+  const PTS = { PERFECT: 300, GOOD: 150, OK: 50, ON_TIME: 150, IN_ORDER: 100,   /* 1125 order 64: DRINK / DRINK_LATE cut */
                 WAKE_UP: 100, HANDOFF: 75, CLUTCH: 75, STREAK: 25, BGE: 250 };
   const POPS_MAX = 12;
-  // DRINKS (opt-in cfg.drinks, service only): Billy runs one drink per customer off a 3-spot rail.
-  const DRINKS = ["SODA", "WATER", "MILKSHAKE"];
-  const DRINK_CYCLE = ["SODA", "WATER", "SODA", "MILKSHAKE", "WATER"];   // ticket id % 5
-  const DRINK_POUR = { WATER: 8, SODA: 14, MILKSHAKE: 36 };
-  const DRINK_RAIL = 3, DRINK_PATIENCE = 160, DRINK_SPIKE = 4.0, DRINK_BEAT = 3;   // a drink run = 1/DRINK_BEAT serve beat
-  const drink_for = (id) => DRINK_CYCLE[id % DRINK_CYCLE.length];
+  // DRINKS are CUT (1125 order 64, PM-4113, Joe: "make 1 and 2 cuts"): the drink rail, drink tickets, the BAR CROWD, the
+  // automatic drink runs and the 61 B opt-in drink run (send_drink, cooling plates) are gone from both engines. new_game()
+  // keeps its `drinks` positional slot (ignored) so `sched` keeps its place for old callers. Mirrors Python.
+  const GRADE_DOWN = { PERFECT: "GOOD", GOOD: "OK", OK: "UNDER" };   // 1125 order 61 D2 (opt-in cfg.breadsoft): one grade step
   // THE DAY (Joe 1112, docs/DAY-1112.md): a real restaurant day (opt-in cfg.sched, service only). Mirrors Python:
   // segments [n, gap, kind(, pre(, bag))] — walk | seat (a SEATING wave) | togo (TAKE-OUT bag + PICKUP clock) |
-  // bar (HAPPY HOUR round of drinks) | rush (a surge). The WAIT meter recovers DAY_RECOVER x in a breather
+  // bar (HAPPY HOUR: a food ticket since drinks were cut, order 64) | rush (a surge). The WAIT meter recovers DAY_RECOVER x in a breather
   // (next arrival a long gap away / schedule spent); a waste spikes WASTE_SPIKE (a redo, not a lost order).
   const DAY_LULL_GAP = 150, DAY_RECOVER = 2.0, WASTE_SPIKE = 9.0, DAY_CUE = 60, DAY_TAIL = 150;
   const DAY_WAVES = ["seat", "togo", "rush", "spike"];
-  const TAKEOUT_WINDOW = 240, TAKEOUT_BAG = 2, TAKEOUT_SPIKE = 4.0, BAG_BEAT = 2, BAR_ROUNDS = 2;
-  // 1124 pc TEMPO PROTOTYPE (opt-in cfg.tables / cfg.lamp, PM-4003; docs/TEMPO-1124.md §4) — mirrors src/patty_melt.py.
+  const TAKEOUT_WINDOW = 240, TAKEOUT_BAG = 2, TAKEOUT_SPIKE = 4.0, BAG_BEAT = 2;
+  // 1124 pc TEMPO PROTOTYPE (opt-in cfg.tables, PM-4003; 1125: the HEAT LAMP flag is retired, PM-4105; docs/TEMPO-1124.md §4) — mirrors src/patty_melt.py.
   const TABLE_SIZES = [2, 3, 2, 4], TABLE_JOIN = 60, BELL_SPREAD = 30, CLEAN_SPREAD = 60,   /* Joe 1124: bell 3 s / clean 6 s (was 15/40) */ BELL_PTS = 75, CLEAN_PTS = 25,
-        PASS_CAP = 4, LAMP_HOLD = 40;
+        PASS_CAP = 4;
   // 1125 REAL DELIVERY (opt-in cfg.deliver = Billy's tray size, PROTOTYPE) — mirrors src/patty_melt.py exactly
   const DLV_SEAT_T = [4, 5, 6, 7, 8, 9, 10, 12, 14, 16], DLV_HOP = 2, DLV_DROP = 3, DLV_IDLE = 7;
   // SHIFTS ON A GAME CLOCK (Joe 1112, docs/SHIFTS-AND-BATTLE-1112.md) — opt-in `tpm` in the day spec. Mirrors Python:
   // (t1 - t0) restaurant minutes x tpm ticks; a FLOW of [m0, m1, gap, kind(, n(, bag))] (n 0 = a stream until m1,
-  // n > 0 = a burst of n); the shift ends at the close (survive = won); `bump` = THE LATE BUMP inside the shift.
+  // n > 0 = a burst of n); the shift ends at the close (survive = won); (1125: THE LATE BUMP cut, PM-4104).
   const DAY_REF_TPM = 10;       // GAME CLOCK: the reference scale; a faster clock (QUICK) shrinks every burst to tpm/REF of its people
   // THE ORDER SPIKE (Joe 1118): a clocked spec's `spike` {at, n, gap} = a surge that always comes, telegraphed SPIKE_WARN
   // ticks ahead (day_spike()); every spike ticket served = BEATEN (WAIT -SPIKE_RELIEF), any lost = WEATHERED. Mirrors Python.
@@ -86,10 +84,11 @@
     flow.forEach((seg, si) => {
       const m0 = seg[0], m1 = seg[1], gap = seg[2], kind = seg[3], size = seg.length > 5 ? seg[5] : TAKEOUT_BAG;
       let n = seg.length > 4 ? seg[4] : 0;
-      const step = Math.max(1, Math.floor(drop_interval * gap / 100)), a = (m0 - t0) * tpm;
+      const step = Math.max(1, spec.k ? Math.floor(drop_interval * gap / spec.k) : Math.floor(drop_interval * gap / 100)), a = (m0 - t0) * tpm;   // 1125 order 64: spec.k = co-op demand %
       if (n > 0) {
         if (a < 0) return;                           // a burst before this shift opened (the late bump moved t0)
         if (tpm < DAY_REF_TPM && kind !== "spike") n = Math.max(1, Math.floor((n * tpm + DAY_REF_TPM - 1) / DAY_REF_TPM));   // QUICK: smaller bursts (tpm/REF, rounded up)
+        if (spec.k) n = Math.floor((n * spec.k + 99) / 100);   // 1125 order 64 co-op demand: k% of the burst (rounded up)
         for (let i = 0; i < n; i++) {
           const t = a + i * step; if (t >= door) break;
           if (kind === "togo" && i % size === 0) bags += 1;
@@ -120,17 +119,6 @@
     return out;
   }
   const day_clocked = (s) => !!(s.cfg.sched && s.cfg.sched.clocked);
-  function _day_bump_tick(s) {        // THE LATE BUMP (clocked): at the bump's wall-clock minute a hot shift keeps the pop going
-    const sc = s.cfg.sched, b = sc.spec.bump;
-    if (!b || s.ticks !== (b.at - sc.t0) * sc.tpm) return;
-    if (s.combo_best < b.combo || s.waste > b.waste) return;
-    const spec = Object.assign({}, sc.spec); delete spec.bump;
-    spec.t1 = b.t1; spec.flow = sc.spec.flow.concat(b.flow);
-    const nsc = _flow_compile(spec, s.cfg.drop_interval), added = nsc.gaps.length - sc.gaps.length;
-    s.cfg.sched = nsc; s.cfg.orders += added; s.orders_left += added; s.service.day.bumped = 1;
-    const k = s.service.nextId - 1;
-    if (k < nsc.gaps.length) s.drop_t = nsc.gaps.slice(0, k + 1).reduce((a, x) => a + x, 0) - s.ticks + 1;
-  }
   function _day_spike_tick(s) {       // THE ORDER SPIKE: coming -> WARN -> ON -> BEATEN / WEATHERED (mirrors Python)
     const sc = s.cfg.sched, sp = s.service.day.spike;
     if (sp === undefined || sp.state >= 3 || !sc.spike) return;
@@ -358,13 +346,13 @@
   // [TOAST_READY, TOAST_BURN) = READY, TOAST_BURN = BURNS). Mirrors Python's Bun.
   function Bun(born = 0, bread = null) { const b = { cook: 0, born }; if (bread !== null) b.bread = bread; return b; }
 
-  function new_game(rnd = 1, mode = "family", players = 1, theme = "diner", grill = SLOTS, items = null, profile = "legacy", bread = false, drinks = false, sched = null) {
+  function new_game(rnd = 1, mode = "family", players = 1, theme = "diner", grill = SLOTS, items = null, profile = "legacy", bread = false, drinks = false, sched = null) {   // `drinks`: retired (1125 order 64), ignored
     // `grill` = the GRILL-SIZE lever (default SLOTS=6). Everything else reads s.slots.length, so a
     // non-6 grill is fully supported (the shift = grill size x headcount). `items` = the ORDER VARIETY
     // item sequence (default = all BURGER = today's coin-op run). Mirrors Python exactly.
     grill = Math.max(1, grill);                  // hardening: a grill is always >=1 slot (no empty-array indexing)
     const cfg = round_config(rnd, mode, players, items);
-    if(profile === "service"){ cfg.drop_interval*=2; if(cfg.sear_burn<NEVER_BURN) cfg.sear_burn*=2; cfg.billy_drift/=2; cfg.billy_interval*=2; if(bread) cfg.bread=true; if(drinks) cfg.drinks=true; if(sched){ cfg.sched=day_compile(sched, cfg.drop_interval); if(cfg.sched.clocked) cfg.orders=cfg.sched.gaps.length; } }   // GAME CLOCK: the target = everyone who walks in
+    if(profile === "service"){ cfg.drop_interval*=2; if(cfg.sear_burn<NEVER_BURN) cfg.sear_burn*=2; cfg.billy_drift/=2; cfg.billy_interval*=2; if(bread) cfg.bread=true; if(sched){ cfg.sched=day_compile(sched, cfg.drop_interval); if(cfg.sched.clocked) cfg.orders=cfg.sched.gaps.length; } }   // GAME CLOCK: the target = everyone who walks in
     const roster = [{ name: "PATTY", cursor: 0 }];
     if (players === 2) roster.push({ name: "CHRISSY", cursor: grill - 1 });
     if (cfg.bread) for (const r of roster) r.held = null;   // BREAD game: the bread in hand
@@ -376,18 +364,17 @@
     return {
       cfg, mode, theme, rnd, players: roster,
       ...(profile === "service" ? {service:{profile:"service",nextId:1,tickets:[],events:[],queue:[],waste:{totals:{pattyBuilds:0,breadPortions:0,onionPortions:0,cheeseSlices:0},events:[]},
-        ...(cfg.drinks ? {drinks:{rail:new Array(DRINK_RAIL).fill(null),queue:[]}} : {}),
-        ...(cfg.sched ? {day:Object.assign({late:0,wseen:0,sips:0}, cfg.sched.clocked ? {bumped:0} : {}, cfg.sched.spike ? {spike:{state:0,lost:0}} : {})} : {})}} : {}),
+        ...(cfg.sched ? {day:Object.assign({late:0,wseen:0}, cfg.sched.spike ? {spike:{state:0,lost:0}} : {})} : {})}} : {}),
       slots: new Array(grill).fill(null),
       toaster,
       pile: 0, orders_left: cfg.orders, score: 0, fails: 0, bun_fails: 0, wait: 0.0,
       billy: BILLY_FULL, billy_facing: 0, billy_turn_t: 0, billy_turn_to: 0, ticks: 0,
       dropped: 0,                                       // ORDER VARIETY: patties minted so far (indexes item_seq)
       drop_t: cfg.sched && cfg.sched.gaps.length ? cfg.sched.gaps[0] : cfg.drop_interval, billy_t: 0,
-      served: 0, sent_back: 0, combo: 0, combo_best: 0,
+      served: 0, combo: 0, combo_best: 0,
       wait_sum: 0, wait_max: 0, over: false, won: false, flash: "", flash_t: 0,
       // COOK QUALITY + SHIFT POINTS (1112)
-      waste: 0, waste_cost: 0, poor: 0, drink_late: 0, drinks_run: 0, fseen: 0, bfseen: 0,
+      waste: 0, waste_cost: 0, poor: 0, fseen: 0, bfseen: 0,
       grades: { PERFECT: 0, GOOD: 0, OK: 0, UNDER: 0, OVER: 0 },
       pts: { grill: 0, service: 0, hustle: 0, nerve: 0 }, pops: [],
     };
@@ -398,13 +385,16 @@
   // carry SCORE (+ any back-of-house bonus), ease the WAIT meter (WAIT_RELIEF), re-apply the shift's
   // levers (grill size, optional headcount quota). headcount=null leaves the round_config quota.
   function advance_round(s, grill = SLOTS, headcount = null, bonus = 0) {
-    const next = new_game(s.rnd + 1, s.mode, s.players.length, s.theme, grill, s.cfg.item_seq, s.service ? "service" : "legacy", !!s.cfg.bread, !!s.cfg.drinks, s.cfg.sched ? s.cfg.sched.spec : null);
+    const next = new_game(s.rnd + 1, s.mode, s.players.length, s.theme, grill, s.cfg.item_seq, s.service ? "service" : "legacy", !!s.cfg.bread, false, s.cfg.sched ? s.cfg.sched.spec : null);
     if (headcount != null) { next.cfg.orders = headcount; next.orders_left = headcount; }
     next.score = s.score + bonus;
     next.wait = Math.max(0, s.wait - WAIT_RELIEF);
     if (s.cfg.tables) next.cfg.tables = true;       // 1124 pc: the opt-in tempo flags ride the carry
-    if (s.cfg.lamp) next.cfg.lamp = true;
     if (s.cfg.deliver) next.cfg.deliver = s.cfg.deliver;   // 1125 deliver rides the carry
+    if (s.cfg.breadsoft) next.cfg.breadsoft = true;   // 1125 order 61 flags ride the carry
+    if (s.cfg.deal) next.cfg.deal = s.cfg.deal;       // 1125 order 64 flags ride the carry
+    if (s.cfg.breadload != null) next.cfg.breadload = s.cfg.breadload;
+    for (const f of ["coopk", "cooptoast", "coopwait"]) if (s.cfg[f]) next.cfg[f] = s.cfg[f];
     return next;
   }
 
@@ -449,17 +439,11 @@
   function _new_ticket(s) {
     const id=s.service.nextId++, item=s.cfg.item_seq[(id-1)%s.cfg.item_seq.length];
     const ticket={id,item,arrivedTick:s.ticks,placedTick:null,status:'queued',surface:null,slot:null,
-      actions:[],rating:null,reason:null,servedTick:null,seat:SEAT_CYCLE[id%10],bread:bread_for(item,id),redo:0,
-      drink:s.cfg.drinks?drink_for(id):null,drinkTick:null,drinkLate:false};
-    let rounds = 1;
+      actions:[],rating:null,reason:null,servedTick:null,seat:SEAT_CYCLE[id%10],bread:bread_for(item,id),redo:0};
+    if (s.cfg.breadload != null && s.cfg.bread && !TOASTER_ITEMS.has(item) && (id * 37) % 100 >= s.cfg.breadload) ticket.house = true;   // 1125 order 64 PM-4114: names no bread
     if (s.cfg.sched) {                               // THE DAY: who this is (walk-in / seating / take-out / bar)
       const sc = s.cfg.sched, k = id - 1, kind = k < sc.kinds.length ? sc.kinds[k] : "walk", togo = kind === "togo";
-      const sip = kind === "sip" && !!s.cfg.drinks;   // (1116 Q659) a drinks-only bar patron — mirrors Python
-      rounds = togo ? 0 : (kind === "bar" || sip) ? BAR_ROUNDS : 1;
       Object.assign(ticket, { party: kind, togo, bag: k < sc.bag.length ? sc.bag[k] : 0, due: togo ? s.ticks + TAKEOUT_WINDOW : null, pickupLate: false });
-      if (sip) ticket.sip = true;
-      if (togo) ticket.drink = null;                 // take-out: no table, no drink run
-      else if (s.cfg.drinks) Object.assign(ticket, { rounds, poured: 0, drinksOut: 0 });
     }
     if (s.cfg.tables) {                              // 1124 pc GROUP LANDING: seatings (or every ticket, without THE DAY)
       if ((ticket.party === undefined ? "seat" : ticket.party) === "seat") _seat_table(s, ticket);
@@ -467,7 +451,6 @@
         s.service.tables[s.service.tables.length - 1].left = 0;   // a walk-in / bag / bar order closes the open table
     }
     s.service.tickets.push(ticket);
-    if (s.cfg.drinks) for (let r = 0; r < (ticket.drink ? rounds : 0); r++) s.service.drinks.queue.push(id);
     return ticket;
   }
   function _ticket(s,p) { return s.service && p && s.service.tickets.find(t=>t.id===p.orderId); }
@@ -513,11 +496,7 @@
       [{raw:'Cooked too early',burnt:'Burnt order',dropped:'Dropped order',lost:'Order not served',wrong_bread:'Wrong bread',closed:'Still cooking at close'}[outcome]||'Order rejected'];
     if(waitPenalty) reasons.push('Long ticket wait (-'+waitPenalty+')');
     if(outcome==='served'&&t.redo) reasons.push('Redone x'+t.redo);
-    if(outcome==='served'&&t.drink&&(t.drinkTick===null||t.drinkLate)){ rating=Math.max(1,rating-1);
-      reasons.push(t.drinkTick!==null?'Drink came late':'No drink yet'); }
     if(outcome==='served'&&t.pickupLate){ rating=Math.max(1,rating-1); reasons.push('Pickup was late'); }   // THE DAY
-    if(outcome==='lost'&&s.service.drinks){ const d=s.service.drinks;   // the customer walked: pull their drink
-      d.queue=d.queue.filter(i=>i!==t.id); d.rail=d.rail.map(e=>e!==null&&e.id===t.id?null:e); }
     t.status=outcome==='served'?'served':'rejected';t.rating=rating;t.reason=reasons.join('; ');t.servedTick=s.ticks;
     s.service.events.push({id:t.id,type:'review',item:t.item,outcome,tick:s.ticks,ageTicks,rating,qualityScore,cookScore,waitPenalty,reasons});
   }
@@ -575,15 +554,14 @@
     for(const p of _plates(s)) if(p) _record_waste(s,p,'discarded');
     const closing=!!(s.cfg.sched&&s.cfg.sched.clocked&&s.won);   // GAME CLOCK: still in flight when the doors closed
     for(const t of s.service.tickets){
-      if(t.rating===null&&t.sip){ t.status='rejected'; t.rating=1; t.reason=closing?'Still at the bar at close':'Left the bar'; }   // (1116) no food review
-      else if(t.rating===null) _settle(s,null,closing?"closed":"lost",t);
+      if(t.rating===null) _settle(s,null,closing?"closed":"lost",t);
     }
     s.service.closed=true;
   }
   function order_receipts(s) {
     if(!s.service) return [];
     const active=_plates(s).filter(p=>p&&!isBun(p));
-    return s.service.tickets.filter(t=>t.rating===null&&!t.sip).map(t=>{   // (1116) bar patrons have no kitchen receipt
+    return s.service.tickets.filter(t=>t.rating===null).map(t=>{
       const p=active.find(p=>p.orderId===t.id), w=cook_window(s,p||{item:t.item,serviceScale:2});
       const at=s.slots.indexOf(p), ti=s.toaster.indexOf(p);
       const nextAction=!p?'WAIT':p.stage===Stage.DONE?(_needs_bun(p)&&!p.bunned?'TOAST BUN':'SERVE'):
@@ -601,7 +579,7 @@
   const _ready = (p) => p.cook >= sear_ready(p);
 
   const _peek_item = (s) => s.cfg.item_seq[s.dropped % s.cfg.item_seq.length];   // next order's item (no consume)
-  function _mint(s, item, ticket=null) { s.dropped += 1; const p=Patty(ticket?ticket.arrivedTick:s.ticks, item, _ACTION_STAGE[RECIPES[item][0]]); if(s.service){ const t=ticket||_new_ticket(s);p.orderId=t.id;p.serviceScale=2;t.placedTick=s.ticks;t.status="cooking"; if(s.cfg.bread&&!TOASTER_ITEMS.has(item)) p.bread=t.bread; } return p; }
+  function _mint(s, item, ticket=null) { s.dropped += 1; const p=Patty(ticket?ticket.arrivedTick:s.ticks, item, _ACTION_STAGE[RECIPES[item][0]]); if(s.service){ const t=ticket||_new_ticket(s);p.orderId=t.id;p.serviceScale=2;t.placedTick=s.ticks;t.status="cooking"; if(s.cfg.bread&&!TOASTER_ITEMS.has(item)) p.bread=t.bread; if(t.house) p.house=true; } return p; }
   function _new_patty(s) { return _mint(s, _peek_item(s)); }   // grill-slot mint (back-compat)
 
   // Place the NEXT order on its REQUIRED surface if there's room (GRILLED CHEESE -> a toaster slot, else a
@@ -619,6 +597,12 @@
     if (s.cfg.alt_deal && s.players.length === 2) {   // MELTDOME FAIR DEAL (opt-in, cfg.alt_deal): this order's half first
       const want = (s.dropped + (s.cfg.alt_deal === 2 ? 1 : 0)) % 2, f = _zone_of(s, want).concat(_zone_of(s, 1 - want)).find((j) => s.slots[j] === null);
       if (f !== undefined) gi = f;                    // (off = first free slot, byte-identical). Mirrors Python.
+    }
+    else if (s.players.length === 2 && (s.cfg.deal === "alternate" || s.cfg.deal === "least-loaded")) {   // 1125 order 64 PM-4116 FAIR PLATES (opt-in cfg.deal)
+      let want = s.dropped % 2;                       // alternate: the halves in turn; least-loaded: the half with fewer patties (a tie alternates)
+      if (s.cfg.deal === "least-loaded") { const n0 = _zone_of(s, 0).filter((j) => s.slots[j] !== null).length, n1 = _zone_of(s, 1).filter((j) => s.slots[j] !== null).length; if (n0 !== n1) want = n0 < n1 ? 0 : 1; }
+      const f = _zone_of(s, want).concat(_zone_of(s, 1 - want)).find((j) => s.slots[j] === null);
+      if (f !== undefined) gi = f;                    // (unset / "first" = the first free slot, byte-identical). Mirrors Python.
     }
     s.slots[gi] = _mint(s, item, ticket); return true;
   }
@@ -652,6 +636,7 @@
     if (p === null || isBun(p)) return;                           // empty, or a Bun (no cook actions)
     if (p.step >= RECIPES[p.item].length) return;                 // nothing pending (melting / done)
     if (RECIPES[p.item][p.step] !== action) return;               // not this item's next step — no-op
+    if (s.cfg.deal === "ticket-owner" && p.owner === undefined) p.owner = pi;   // 1125 order 64 PM-4116: the cook who STARTED it owns its plate
     if (p.cook < sear_ready(p)) p.understeared = true;            // acted early — NOT sent back: it grades lower (1112)
     if(s.service) _record_action(s,p,action,p.cook,cook_window(s,p));
     const [r, i0, i1, late] = grade_window(s, p);
@@ -748,6 +733,13 @@
     s.slots[best] = pat; s.slots[i] = null; _say(s, "HANDOFF!");
     if (!pat.handed) { pat.handed = true; _pop(s, "hustle", "HANDOFF", PTS.HANDOFF, ["grill", best]); }
   }
+  function bread_warning(s, pi = 0) {   // 1125 order 61 D1 hook (UI only, pure): the held bread matches nothing waiting on bread
+    if (!_bread_on(s) || pi >= s.players.length || s.players[pi].held == null) return false;
+    const h = s.players[pi].held;
+    const wants = (p) => p !== null && !isBun(p) && ((_needs_bun(p) && !p.bunned && p.bread === h) ||
+      (TOASTER_ITEMS.has(p.item) && p.step < RECIPES[p.item].length && RECIPES[p.item][p.step] === Action.TOAST && !!_ticket(s, p) && _ticket(s, p).bread === h));
+    return !s.slots.concat(s.toaster).some(wants);
+  }
   function hey_billy(s, pi = 0) {
     if (pi >= s.players.length) return;
     if (s.billy < s.cfg.billy_serve_min && (_zone_of(s, pi).some((i) => _servable(s.slots[i])) || s.toaster.some((e) => _servable(e))))
@@ -759,6 +751,12 @@
       s.billy_turn_to = pi; s.billy_turn_t = TURN_LATENCY * service_scale(s);   // start a swing (repeats don't reset)
     }
     _say(s, THEMES[s.theme].holler);
+  }
+  function _billy_serve_slots(s) {   // 1125 order 64 PM-4116 (opt-in cfg.deal "ticket-owner"): Billy serves the FACING cook's own plates,
+    if (s.cfg.deal !== "ticket-owner" || s.players.length < 2) return _billy_zone(s);   // wherever they sit (unstarted = the slot's half). Mirrors Python.
+    const half = Math.floor(s.slots.length / 2), out = [];
+    for (let i = 0; i < s.slots.length; i++) { const p = s.slots[i], o = p && p.owner !== undefined ? p.owner : i < half ? 0 : 1; if (o === s.billy_facing) out.push(i); }
+    return out;
   }
   function _billy_zone(s) {
     if (s.players.length < 2) return range(0, s.slots.length);
@@ -788,14 +786,43 @@
       if (e === null) continue;
       e.cook += 1;
       if (isBun(e)) {                                   // a bun for a melt (fungible)
-        if (e.cook >= toast_burn(s) && _bread_on(s) && s.cfg.sear_burn >= NEVER_BURN) {   // SERVICE KIDS: never burns —
-          _record_waste(s,e,"stale"); s.toaster[ti] = null; _say(s, "STALE BUN");      // an unclaimed bun goes stale (no fail)
+        if (e.cook >= toast_burn(s) && _bread_on(s)) {   // 1125 CUT bunburn (PM-4109): the bread game never BURNS a bun
+          _record_waste(s,e,"stale"); s.toaster[ti] = null; _say(s, "STALE BUN");      // an unclaimed bun goes stale (no fail, no spike)
         } else if (e.cook >= toast_burn(s)) { _record_waste(s,e,"burnt");s.toaster[ti] = null; s.fails += 1; s.bun_fails += 1; _break_combo(s); _say(s, "BUN BURNT!"); }
       } else if (_ACTIVE_STAGES.indexOf(e.stage) !== -1) {   // a grilled cheese mid-cook (TOAST / CHEESE step)
         if (e.cook >= sear_burn_of(s, e)) { e.stage = Stage.BURNT; s.toaster[ti] = null; _waste(s, e, "burnt", "BURNT!", ["toaster", ti]); }
       } else if (e.stage === Stage.MELT) {
         if (e.cook >= melt_done(s)) { e.stage = Stage.DONE; e.cook = 0; }   // finished grilled cheese jams the slot
       }
+    }
+  }
+  // 1125 order 64 PM-4114 · THE SOLO BREAD SETTING (opt-in cfg.breadload = the % of orders that NAME a bread; unset = 100 =
+  // today). An order that names no bread takes the HOUSE bun: when its patty reaches the melt the kitchen lays that bun on a
+  // free toaster bay by itself (no pan, no press); it still toasts, still needs a bay, still joins only its patty's bread and
+  // still goes stale. Bread stays the game for every named order. Mirrors Python.
+  // 1125 order 64 PM-4115 · CO-OP DIFFICULTY LEVERS (opt-in, 2 cooks only, set before the first tick; unset = byte-identical):
+  //   cfg.coopk     = co-op DEMAND: k% of the shift's headcount (THE DAY flow recompiled: k% of every burst, gaps / k%)
+  //   cfg.cooptoast = the toaster's bays when two cooks share it (today 2: one shared 2-bay toaster already)
+  //   cfg.coopwait  = the WAIT ceiling (% of WAIT_FULL) that ends a 2-cook shift. Mirrors Python.
+  function _coop_setup(s) {
+    if (s.players.length < 2 || !s.service) return;
+    if (s.cfg.coopk && s.cfg.coopk !== 100 && s.cfg.sched && s.cfg.sched.clocked && !s.cfg.sched.spec.k) {
+      s.cfg.sched = day_compile(Object.assign({}, s.cfg.sched.spec, { k: s.cfg.coopk }), s.cfg.drop_interval);
+      s.cfg.orders = s.cfg.sched.gaps.length; s.orders_left = s.cfg.orders;
+      s.drop_t = s.cfg.sched.gaps.length ? s.cfg.sched.gaps[0] : s.cfg.drop_interval;
+    }
+    if (s.cfg.cooptoast && s.cfg.cooptoast < s.toaster.length && s.toaster.every((e) => e === null)) s.toaster = s.toaster.slice(0, s.cfg.cooptoast);
+  }
+  const wait_full = (s) => s.cfg.coopwait && s.players.length === 2 ? WAIT_FULL * s.cfg.coopwait / 100 : WAIT_FULL;   // 1125 order 64 (opt-in)
+  function _house_tick(s) {
+    if (s.cfg.breadload == null || !_bread_on(s)) return;
+    const need = {}, order = []; for (const b of BREADS) need[b] = 0;
+    for (const p of s.slots) if (p !== null && p.house && _needs_bun(p) && !p.bunned && (p.stage === Stage.MELT || p.stage === Stage.DONE)) { need[p.bread] += 1; order.push(p.bread); }
+    for (const e of s.toaster) if (isBun(e)) need[e.bread] -= 1;
+    for (const b of order) {
+      if (need[b] <= 0) continue;
+      const i = s.toaster.findIndex((e) => e === null); if (i === -1) return;
+      s.toaster[i] = Bun(s.ticks, b); need[b] -= 1;
     }
   }
   function _assembly_tick(s) {          // the AUTOMATIC join: a finished melt claims the first READY bun
@@ -805,19 +832,23 @@
         const b = s.toaster[ti];
         if (isBun(b) && b.cook >= toast_ready(s) && b.cook < toast_burn(s) && (!_bread_on(s) || b.bread === p.bread)) { if(s.service){const r=toast_ready(s),bmax=toast_burn(s);_record_action(s,p,"BUN",b.cook,{ready:r,idealStart:r+Math.floor((bmax-r)*0.35),idealEnd:r+Math.floor((bmax-r)*0.55),burn:bmax});}p.bunned = true; s.toaster[ti] = null; break; }
       }
+      if (!p.bunned && s.cfg.breadsoft && _bread_on(s)) {   // 1125 D2 (opt-in): no bun of its bread — an ORPHAN ready bun (no other
+        for (let ti = 0; ti < s.toaster.length; ti++) {      // patty wants that bread) joins it: served a grade step down, no remake
+          const b = s.toaster[ti];
+          if (!isBun(b) || b.cook < toast_ready(s) || b.cook >= toast_burn(s)) continue;
+          if (s.slots.some((q) => q !== null && q !== p && !isBun(q) && _needs_bun(q) && !q.bunned && q.bread === b.bread)) continue;
+          p.bunned = true; p.wrongBread = true; s.toaster[ti] = null; break;
+        }
+      }
     }
   }
   // A DONE item Billy can run: a finished Patty EXCEPT a toast-item still waiting on its bun. (A Bun never
   // serves directly — it joins a melt.)
   const _servable = (p) => p !== null && !isBun(p) && p.stage === Stage.DONE && (!_needs_bun(p) || p.bunned);
   function _do_serve(s, p, at = null) {   // ring up by COOK GRADE (1112) + shift points — mirrors Python
-    if (p.wrongBread) { _waste(s, p, "wrong_bread", "WRONG BREAD!", at); return; }
+    if (p.wrongBread && !s.cfg.breadsoft) { _waste(s, p, "wrong_bread", "WRONG BREAD!", at); return; }
     let g = p.grade || "GOOD";
-    if (s.cfg.lamp && p.grade != null && p.up !== undefined) {   // 1124 pc HEAT LAMP: a plate that sat up loses grade steps
-      let steps = Math.floor((s.ticks - p.up) / LAMP_HOLD);
-      while (steps > 0 && (g === "PERFECT" || g === "GOOD")) { g = g === "PERFECT" ? "GOOD" : "OK"; steps -= 1; }
-      if (g !== p.grade) { p.grade = g; p.qual = Math.min(p.qual, g === "GOOD" ? GRADE_PERFECT - 1 : GRADE_GOOD - 1); _pop(s, "grill", "HEAT LAMP", 0, at); }
-    }
+    if (p.wrongBread) { g = GRADE_DOWN[g] || g; p.grade = g; _pop(s, "grill", "WRONG BREAD", 0, at); }   // 1125 D2: a grade step, no remake
     const wait = s.ticks - p.born;
     s.wait_sum += wait; s.wait_max = Math.max(s.wait_max, wait);
     s.served += 1; s.orders_left = Math.max(0, s.orders_left - 1);
@@ -837,45 +868,7 @@
     }
     _settle(s, p, "served");
   }
-  function _drink_tick(s) {          // DRINKS: pour the rail, refill from the queue, mark LATE drinks (once)
-    const d = s.service ? s.service.drinks : null;
-    if (!d) return;
-    for (const e of d.rail) if (e !== null && e.pour < DRINK_POUR[e.drink]) e.pour += 1;
-    for (let k = 0; k < d.rail.length; k++) {
-      if (d.rail[k] === null && d.queue.length) {
-        const id = d.queue.shift(), t = s.service.tickets.find((t) => t.id === id);
-        let drink = t.drink;
-        if (t.poured !== undefined) { if (t.poured > 0) drink = drink_for(id + 2 * t.poured); t.poured += 1; }   // THE DAY: a round
-        d.rail[k] = { id, drink, pour: 0 };
-      }
-    }
-    for (const t of s.service.tickets)
-      if (t.drink && t.drinkTick === null && !t.drinkLate && t.status !== "rejected" && s.ticks - t.arrivedTick > DRINK_PATIENCE) { t.drinkLate = true; s.drink_late += 1; }
-  }
-  function _sip_done(s, t) {          // (1116) a drinks-only bar patron got their round — mirrors Python
-    t.status = "served"; t.servedTick = s.ticks; t.rating = t.drinkLate ? 4 : 5;
-    t.reason = t.drinkLate ? "Bar round came late" : "Bar round"; s.service.day.sips += 1;
-    s.orders_left = Math.max(0, s.orders_left - 1);   // a customer looked after (quota games); never a food serve
-  }
-  function _run_drink(s) {           // Billy's drink run: the first POURED drink goes to its seat
-    const d = s.service ? s.service.drinks : null;
-    if (!d) return false;
-    for (let k = 0; k < d.rail.length; k++) {
-      const e = d.rail[k];
-      if (e !== null && e.pour >= DRINK_POUR[e.drink]) {
-        d.rail[k] = null;
-        const t = s.service.tickets.find((t) => t.id === e.id);
-        if (t.drinksOut !== undefined) { t.drinksOut += 1; if (t.drinksOut >= t.rounds) { t.drinkTick = s.ticks; if (t.sip) _sip_done(s, t); } }   // THE DAY: the round lands with its last drink
-        else t.drinkTick = s.ticks;
-        s.drinks_run += 1;
-        if (t.drinkLate) _pop(s, "service", "LATE DRINK", PTS.DRINK_LATE, ["rail", k, e.id]);
-        else _pop(s, "service", "DRINK RUN", PTS.DRINK, ["rail", k, e.id]);
-        return true;
-      }
-    }
-    return false;
-  }
-  // ---- 1124 pc TEMPO PROTOTYPE helpers (opt-in cfg.tables / cfg.lamp) — mirror src/patty_melt.py exactly ----
+  // ---- 1124 pc TEMPO PROTOTYPE helpers (opt-in cfg.tables) — mirror src/patty_melt.py exactly ----
   function _seat_table(s, t) {           // GROUP LANDING: seat t at the open table, or open the next one
     if (!s.service.tables) s.service.tables = [];
     const tb = s.service.tables;
@@ -923,7 +916,7 @@
     }
   }
   function _pass_tick(s) {               // plates UP stamp; with tables, an un-ready table's plate moves to THE PASS
-    if (!(s.cfg.tables || s.cfg.lamp)) return;
+    if (!s.cfg.tables) return;
     if (!s.passq) s.passq = [];
     for (const p of s.slots.concat(s.toaster)) if (_servable(p) && p.up === undefined) p.up = s.ticks;
     if (!s.cfg.tables) return;
@@ -974,13 +967,12 @@
     s.billy_t -= 1;
     if (s.billy_t > 0) return;
     s.billy_t = s.cfg.billy_interval;
-    if (_run_drink(s)) { s.billy_t = Math.max(1, Math.floor(s.cfg.billy_interval / DRINK_BEAT)); return; }   // DRINKS first — a quick run (1/DRINK_BEAT beat)
     if (s.cfg.tables) {                          // 1124 pc GROUP LANDING: a READY table goes out first, all together
       const zone = Array.from(_billy_zone(s), (i) => s.slots[i]).concat(s.toaster, s.passq || []);
       const hit = zone.find((p) => _servable(p) && _table_of(s, p) && _table_ready(s, _table_of(s, p)));
       if (hit) { _serve_table(s, _table_of(s, hit)); return; }
     }
-    for (const i of _billy_zone(s)) {            // grill first
+    for (const i of _billy_serve_slots(s)) {     // grill first
       const p = s.slots[i];
       if (!_servable(p)) continue;                 // skip empties, unfinished, and un-bunned melts (they jam)
       if (s.cfg.tables && _table_of(s, p)) continue;   // 1124 pc: a table plate never goes out alone
@@ -1000,7 +992,7 @@
   }
   function _day_tick(s) {            // THE DAY: a take-out not bagged by its quoted pickup time goes LATE (once)
     if (!(s.service && s.cfg.sched)) return;
-    if (s.cfg.sched.clocked) { _day_bump_tick(s); _day_spike_tick(s); }   // GAME CLOCK: THE LATE BUMP + THE ORDER SPIKE
+    if (s.cfg.sched.clocked) _day_spike_tick(s);   // GAME CLOCK: THE ORDER SPIKE (1125: THE LATE BUMP cut, PM-4104)
     for (const t of s.service.tickets)
       if (t.togo && t.rating === null && !t.pickupLate && s.ticks > t.due) { t.pickupLate = true; s.service.day.late += 1; }
   }
@@ -1013,7 +1005,6 @@
       else if(s.service.tickets.filter(t=>t.rating===null).length>=s.orders_left) return;
       const t=_new_ticket(s);
       if(s.cfg.sched) s.drop_t=_day_gap(s,t.id);   // THE DAY: the gap before the NEXT arrival (the curve)
-      if(t.sip){ t.status='bar'; return; }          // (1116) a bar patron: no food to place, the rail pours the round
       if(s.service.queue.length||!_place_next(s,t)){
         if(s.pile>=s.cfg.pile_max){_settle(s,null,"lost",t);s.fails++;_break_combo(s);_say(s,"ORDER LOST!");}
         else {s.service.queue.push(t);s.pile++;}
@@ -1027,15 +1018,16 @@
   }
   function tick(s) {
     if (s.over || s.won || (s.service && s.service.closed)) return;
+    if (s.ticks === 0) _coop_setup(s);   // 1125 order 64 co-op levers (opt-in; no-op unless set)
     s.ticks += 1;
     if (s.flash_t > 0) { s.flash_t -= 1; if (s.flash_t === 0) s.flash = ""; }
-    const f0 = s.fseen, bf0 = s.bfseen, pr0 = s.poor, dl0 = s.drink_late;   // fails since the LAST tick (1112)
+    const f0 = s.fseen, bf0 = s.bfseen, pr0 = s.poor;   // fails since the LAST tick (1112)
     const lt0 = s.service && s.service.day ? s.service.day.late : 0;
     _cook_tick(s);
     _toaster_tick(s);       // buns advance / burn
     _assembly_tick(s);      // finished patties claim ready buns (auto-join)
-    _pass_tick(s);          // 1124 pc: plates UP + THE PASS (no-op unless cfg.tables / cfg.lamp)
-    _drink_tick(s);        // DRINKS: pour the rail / late drinks (no-op unless cfg.drinks)
+    _house_tick(s);         // 1125 order 64 (opt-in cfg.breadload): HOUSE buns for orders that name no bread
+    _pass_tick(s);          // 1124 pc: plates UP + THE PASS (no-op unless cfg.tables)
     _day_tick(s);           // THE DAY: late take-out pickups (no-op unless cfg.sched)
     _billy_tick(s); _drop_tick(s); _place_from_pile_or_drop(s);
     // THE WEEDS: integrate buried pressure over COMFORT, spike on new fails, clamp 0..FULL. A burnt BUN
@@ -1052,13 +1044,13 @@
       s.wait += WAIT_SPIKE * Math.max(0, (s.fails - f0) - new_bun - nw) + BUN_SPIKE * Math.max(0, new_bun) + WASTE_SPIKE * nw;
       s.wait += TAKEOUT_SPIKE * (day.late - lt0);
     } else s.wait += WAIT_SPIKE * Math.max(0, (s.fails - f0) - new_bun) + BUN_SPIKE * Math.max(0, new_bun);
-    s.wait += POOR_SPIKE * (s.poor - pr0) + DRINK_SPIKE * (s.drink_late - dl0);   // complaints (0 for the auto-player)
+    s.wait += POOR_SPIKE * (s.poor - pr0);   // complaints (0 for the auto-player)
     s.wait = Math.max(0, Math.min(WAIT_FULL, s.wait));
     s.fseen = s.fails; s.bfseen = s.bun_fails;
     if (s.cfg.sched && s.cfg.sched.clocked) {             // GAME CLOCK: survive to close (the quota never ends it)
-      if (s.wait >= WAIT_FULL) s.over = true; else if (s.ticks >= s.cfg.sched.total) s.won = true;
+      if (s.wait >= wait_full(s)) s.over = true; else if (s.ticks >= s.cfg.sched.total) s.won = true;
     } else if (s.orders_left <= 0) s.won = true;
-    else if (s.wait >= WAIT_FULL) s.over = true;          // IN THE WEEDS — the WAIT meter is the loss now
+    else if (s.wait >= wait_full(s)) s.over = true;       // IN THE WEEDS — the WAIT meter is the loss now
     if(s.won&&s.service) finalize_service(s);
 
   }
@@ -1311,7 +1303,7 @@
     // COOK QUALITY (1112) — mirrors Python selftest 3b
     const j = new_game(1, "arcade");
     j.slots[0] = Patty(0); flip(j); add_cheese(j);
-    ok("rushed burger = RAW = WASTE (not sent back)", j.slots[0] === null && j.waste === 1 && j.sent_back === 0 && j.fails === 1 && j.served === 0);
+    ok("rushed burger = RAW = WASTE (not sent back)", j.slots[0] === null && j.waste === 1 && !("sent_back" in j) && j.fails === 1 && j.served === 0);
     {
     const [, gi0] = grade_window(j, Patty());
     const pf = new_game(1, "arcade"); pf.slots[0] = Patty(0); let pq = pf.slots[0];
@@ -1329,19 +1321,11 @@
     const stk = sv.service.tickets.find((t) => t.id === sid);
     ok("service: burnt = WASTE + REDO", sv.waste === 1 && stk.redo === 1 && stk.rating === null && sv.service.events.length === 0 &&
       sv.slots.some((x) => x && x.orderId === sid && x !== sp) && sv.score === 0 && sv.waste_cost === WASTE_COST);
-    // DRINKS (opt-in) — mirrors Python
-    const dk = new_game(1, "family", 1, "diner", SLOTS, ITEMS_BURGER, "service", true, true);
-    dk.drop_t = 1; tick(dk); dk.drop_t = 1e8; const t1 = dk.service.tickets[0]; _drink_tick(dk);
-    let dok = dk.cfg.drinks && advance_round(dk).cfg.drinks && t1.drink === "WATER" && dk.service.drinks.rail[0].id === 1;
-    for (let k = 0; k < DRINK_POUR.WATER; k++) _drink_tick(dk);
-    dk.billy = BILLY_FULL; dk.billy_t = 1; dk.slots[0].stage = Stage.DONE; _billy_tick(dk);
-    dok = dok && t1.drinkTick === dk.ticks && dk.drinks_run === 1 && dk.slots[0] !== null && dk.pts.service === PTS.DRINK;
-    for (const m of Object.keys(MODES)) {
-      const dd = new_game(1, m, 1, "diner", SLOTS, ITEMS_FULL_MENU, "service", true, true);
-      while (!(dd.won || dd.over) && dd.ticks < 8000) { auto_step(dd); tick(dd); }
-      if (!(dd.won && dd.drinks_run > 0)) dok = false;
+    {   // DRINKS are CUT (1125 order 64) — mirrors Python: the old `drinks` argument is ignored; no rail, no drink fields, no API
+      const dk = new_game(1, "family", 1, "diner", SLOTS, ITEMS_BURGER, "service", true, true); dk.drop_t = 1; tick(dk);
+      ok("drinks cut: no rail, no drink tickets, no drink points, no send_drink", !("drinks" in dk.service) && !("drinks" in dk.cfg)
+        && !("drinks_run" in dk) && !("drink" in dk.service.tickets[0]) && !("DRINK" in PTS) && typeof send_drink === "undefined");
     }
-    ok("drinks: rail pours, Billy runs a drink before food, auto clears R1 with drinks", dok);
     // THE DAY (1112, opt-in cfg.sched) — mirrors the Python selftest block
     {
       const spec = { t0: 660, t1: 720, segs: [[2, 100, "walk", 50], [3, 40, "seat", 200], [2, 50, "togo", 160], [1, 100, "bar", 160]] };
@@ -1353,8 +1337,8 @@
       while (!(dg.won || dg.over) && dg.ticks < 6000) { cue = cue || day_cue(dg) >= 0; br = br || day_breather(dg); auto_step(dg); tick(dg); }
       const tk = dg.service.tickets;
       dok = dok && dg.won && cue && br && tk.slice(0, 8).map((t) => t.party).join() === "walk,walk,seat,seat,seat,togo,togo,bar"
-        && tk[5].togo && tk[5].drink === null && tk[5].bag === 1 && tk[6].bag === 1 && tk[5].due === tk[5].arrivedTick + TAKEOUT_WINDOW
-        && tk[7].rounds === BAR_ROUNDS && tk[7].drinksOut === BAR_ROUNDS;
+        && tk[5].togo && !("drink" in tk[5]) && tk[5].bag === 1 && tk[6].bag === 1 && tk[5].due === tk[5].arrivedTick + TAKEOUT_WINDOW
+        && tk[7].party === "bar" && !("rounds" in tk[7]);   // happy hour is a food ticket (drinks cut)
       const wb = new_game(1, "family", 1, "diner", SLOTS, null, "service", true, true, spec);
       for (let i = 0; i < wb.cfg.sched.gaps[0]; i++) tick(wb);
       wb.slots[0].cook = sear_burn_of(wb, wb.slots[0]) - 1; const w0 = wb.wait; tick(wb);
@@ -1363,38 +1347,27 @@
       while (lp.service.nextId === 1) tick(lp);
       for (let i = 0; i < TAKEOUT_WINDOW + 2; i++) { lp.billy = 0; lp.wait = 0; tick(lp); }
       dok = dok && lp.service.day.late === 1 && lp.service.tickets[0].pickupLate;
-      ok("the day: curve gaps, wave cue, breather, take-out bags + pickup clock, happy-hour rounds, half waste spike", dok);
-      // (1116, Q659) THE BAR CROWD — mirrors the Python selftest
-      const sg = new_game(1, "family", 1, "diner", SLOTS, null, "service", true, true, { t0: 1050, t1: 1110, segs: [[1, 50, "walk"], [2, 60, "sip"], [1, 60, "walk"]] });
-      while (!(sg.won || sg.over) && sg.ticks < 6000) { auto_step(sg); tick(sg); }
-      const st = sg.service.tickets;
-      const nd = new_game(1, "family", 1, "diner", SLOTS, null, "service", true, false, { t0: 1050, t1: 1110, segs: [[2, 60, "sip"]] }); nd.drop_t = 1; tick(nd);
-      ok("bar crowd: drinks-only patrons settle on their round — no food, no review, no serve; no drinks → a walk-in",
-        sg.won && st.slice(0, 4).map((t) => !!t.sip).join() === "false,true,true,false" && sg.service.day.sips === 2 && sg.served === sg.cfg.orders - 2
-        && st.slice(1, 3).every((t) => t.status === "served" && t.drinksOut === BAR_ROUNDS && t.placedTick === null)
-        && !sg.service.events.some((e) => e.id === 2 || e.id === 3) && !nd.service.tickets[0].sip);
+      ok("the day: curve gaps, wave cue, breather, take-out bags + pickup clock, happy hour = food, half waste spike", dok);
+      // (1116 Q659) THE BAR CROWD was cut with drinks (1125 order 64): a "sip" arrival is an ordinary walk-in — mirrors Python
+      const nd = new_game(1, "family", 1, "diner", SLOTS, null, "service", true, true, { t0: 1050, t1: 1110, segs: [[2, 60, "sip"]] }); nd.drop_t = 1; tick(nd);
+      ok("bar crowd cut: a sip is a walk-in", !nd.service.tickets[0].sip && nd.service.tickets[0].status !== "bar");
     }
     // SHIFTS ON A GAME CLOCK (1112 pt 2, opt-in tpm) — mirrors the Python selftest block
     {
-      const cs = { t0: 660, t1: 720, tpm: 10, flow: [[662, 700, 200, "walk"], [680, 0, 50, "seat", 3], [690, 0, 50, "togo", 2]],
-                   bump: { at: 700, combo: 1, waste: 99, t1: 730, flow: [[705, 0, 60, "rush", 2]] } };
+      const cs = { t0: 660, t1: 720, tpm: 10, flow: [[662, 700, 200, "walk"], [680, 0, 50, "seat", 3], [690, 0, 50, "togo", 2]] };
       const cg = new_game(1, "family", 1, "diner", SLOTS, null, "service", true, true, cs), sc0 = cg.cfg.sched;
       const n0 = sc0.gaps.length, last0 = sc0.gaps.reduce((a, x) => a + x, 0);
       let cok = day_clocked(cg) && sc0.total === 600 && cg.cfg.orders === n0 && cg.orders_left === n0 && last0 < 600 - DAY_LAST_ORDERS
-        && sc0.kinds.filter((k) => k === "seat").length === 3 && sc0.wave[sc0.kinds.indexOf("seat")] === 1 && cg.service.day.bumped === 0;
+        && sc0.kinds.filter((k) => k === "seat").length === 3 && sc0.wave[sc0.kinds.indexOf("seat")] === 1 && !("bumped" in cg.service.day);
       let early = false;
       while (!(cg.won || cg.over) && cg.ticks < 3000) { auto_step(cg); tick(cg); if (cg.orders_left === 0 && !cg.won && cg.ticks < cg.cfg.sched.total) early = true; }
-      cok = cok && cg.won && cg.service.day.bumped === 1 && cg.ticks === 700 && day_clock(cg) === 730 && cg.cfg.orders === n0 + 2
-        && cg.service.tickets.filter((t) => t.party === "rush").length === 2 && early;
-      const nb = new_game(1, "family", 1, "diner", SLOTS, null, "service", true, true, Object.assign({}, cs, { bump: Object.assign({}, cs.bump, { combo: 999 }) }));
-      while (!(nb.won || nb.over) && nb.ticks < 3000) { auto_step(nb); tick(nb); }
-      cok = cok && nb.won && nb.ticks === 600 && nb.service.day.bumped === 0;
+      cok = cok && cg.won && cg.ticks === 600 && day_clock(cg) === 720 && cg.cfg.orders === n0 && early;   // 1125: no late bump
       const qk = new_game(1, "family", 1, "diner", SLOTS, null, "service", true, true, Object.assign({}, cs, { tpm: 5 }));
       cok = cok && qk.cfg.sched.total === 300 && qk.cfg.sched.kinds.filter((k) => k === "seat").length === 2;
       const cl = new_game(1, "kids", 1, "diner", SLOTS, null, "service", true, true, { t0: 0, t1: 40, tpm: 10, flow: [[1, 0, 50, "walk", 1]] });
       while (!(cl.won || cl.over) && cl.ticks < 3000) { cl.billy = 0; cl.wait = 0; tick(cl); }
       cok = cok && cl.won && cl.ticks === 400 && cl.service.tickets[0].reason.startsWith("Still cooking at close");
-      ok("game clock: flow compile, close-time end (not the quota), the late bump inside the shift, QUICK bursts, closed tickets", cok);
+      ok("game clock: flow compile, close-time end (not the quota), QUICK bursts, closed tickets", cok);
       // THE ORDER SPIKE (1118) — mirrors the Python selftest block
       const ss = { t0: 640, t1: 720, tpm: 10, flow: [[642, 715, 200, "walk"]], spike: { at: 675, n: 3, gap: 50 } };
       const sg = new_game(1, "family", 1, "diner", SLOTS, null, "service", true, true, ss), ssc = sg.cfg.sched;
@@ -1563,8 +1536,8 @@
     ro = ro && rc.seat === SEAT_CYCLE[1] && rc.bread === "SESAME" && rc.needsBun && rc.bunReady && !rc.bunJoined;
     _assembly_tick(sb);
     ro = ro && sp.bunned && sb.toaster[1] === null && sb.toaster[0] !== null && _servable(sp) && order_receipts(sb)[0].bunJoined;
-    sb.toaster[0].cook = toast_burn(sb) - 1; tick(sb);
-    ro = ro && sb.bun_fails === 1 && sb.service.waste.events[sb.service.waste.events.length - 1].bread === "WHITE";
+    const sbf = sb.fails; sb.toaster[0].cook = toast_burn(sb) - 1; tick(sb);   // 1125 bunburn cut: the wrong bun goes STALE (no fail)
+    ro = ro && sb.bun_fails === 0 && sb.fails === sbf && sb.toaster[0] === null && sb.service.waste.events[sb.service.waste.events.length - 1].bread === "WHITE";
     const gw = new_game(1, "family", 1, "diner", SLOTS, ITEMS_GRILLED_CHEESE, "service", true);
     ro = ro && _place_next(gw) && !isBun(gw.toaster[0]);
     const gcp = gw.toaster[0];
@@ -1586,6 +1559,49 @@
     const kb = new_game(1, "kids", 1, "diner", SLOTS, ITEMS_BURGER, "service", true);
     kb.toaster[0] = Bun(0, "RYE"); kb.toaster[0].cook = toast_burn(kb) - 1; tick(kb);
     ro = ro && kb.toaster[0] === null && kb.fails === 0 && kb.bun_fails === 0 && kb.wait === 0;   // kids: stale, not burnt
+    {   // 1125 order 64 PM-4116 FAIR PLATES (opt-in cfg.deal) — mirrors the Python selftest block
+      const order = (deal) => { const g = new_game(1, "family", 2, "diner", SLOTS, ITEMS_BURGER, "service"); if (deal) g.cfg.deal = deal; const o = [];
+        for (let k = 0; k < 4; k++) { _place_next(g); o.push(g.slots.findIndex((p, j) => p !== null && o.indexOf(j) === -1)); } return o.join(); };
+      const ll = new_game(1, "family", 2, "diner", SLOTS, ITEMS_BURGER, "service"); ll.cfg.deal = "least-loaded"; ll.slots[3] = Patty(0); ll.slots[4] = Patty(0);
+      _place_next(ll); _place_next(ll); _place_next(ll);
+      const to = new_game(1, "family", 2, "diner", SLOTS, ITEMS_BURGER, "service"); to.cfg.deal = "ticket-owner"; _place_next(to);
+      to.players[1].cursor = 0; _act(to, 1, Action.FLIP, ""); const own = to.slots[0].owner === 1; to.players[0].cursor = 0; flip(to, 0);
+      to.billy_facing = 1; const f1 = _billy_serve_slots(to).indexOf(0) !== -1; to.billy_facing = 0; const f0 = _billy_serve_slots(to).indexOf(0) === -1;
+      ok("fair plates (opt-in cfg.deal): first / alternate / least-loaded / ticket-owner", order(null) === "0,1,2,3" && order("first") === "0,1,2,3"
+        && order("alternate") === "0,3,1,4" && order("least-loaded") === "0,3,1,4" && ll.slots.slice(0, 3).every((p) => p !== null) && ll.slots[5] === null
+        && own && to.slots[0].owner === 1 && f1 && f0 && advance_round(to).cfg.deal === "ticket-owner");
+    }
+    {   // 1125 order 64 PM-4115 CO-OP LEVERS (opt-in coopk / cooptoast / coopwait) — mirrors the Python selftest block
+      const spec = { t0: 720, t1: 780, tpm: 10, flow: [[722, 775, 120, "walk"], [740, 0, 60, "seat", 4]] };
+      const mk = (pl, f) => { const g = new_game(1, "family", pl, "diner", SLOTS, null, "service", true, false, spec); Object.assign(g.cfg, f); tick(g); return g; };
+      const b2 = mk(2, {}), k2 = mk(2, { coopk: 200 }), k1 = mk(1, { coopk: 200 }), t2 = mk(2, { cooptoast: 1 }), t1 = mk(1, { cooptoast: 1 });
+      const w2 = mk(2, { coopwait: 50 }); w2.wait = 55; w2.drop_t = 1e8; for (const k of [0, 1]) w2.players[k].cursor = 0; tick(w2);
+      const w1 = mk(1, { coopwait: 50 }); w1.wait = 55; tick(w1);
+      ok("co-op levers (opt-in): demand k% of the headcount, a 1-bay shared toaster, a tighter WAIT ceiling — 2 cooks only",
+        k2.cfg.orders >= 2 * b2.cfg.orders - 2 && k2.orders_left === k2.cfg.orders && k1.cfg.orders === mk(1, {}).cfg.orders
+        && t2.toaster.length === 1 && t1.toaster.length === TOASTER_SLOTS_SERVICE && w2.over && !w1.over && wait_full(w2) === 50
+        && advance_round(k2).cfg.coopk === 200);
+    }
+    {   // 1125 order 64 PM-4114 THE SOLO BREAD SETTING (opt-in cfg.breadload) — mirrors the Python selftest block
+      const hb = (v) => { const g = new_game(1, "family", 1, "diner", SLOTS, ITEMS_BURGER, "service", true); g.cfg.breadload = v; _place_next(g);
+        const p = g.slots[0]; p.stage = Stage.MELT; p.step = RECIPES[p.item].length; tick(g); return [g, p]; };
+      const [h0, p0] = hb(0), [h1, p1] = hb(100);
+      ok("bread setting (opt-in cfg.breadload): an order naming no bread gets its HOUSE bun laid by the kitchen, no press",
+        p0.house === true && h0.service.tickets[0].house === true && isBun(h0.toaster[0]) && h0.toaster[0].bread === p0.bread && h0.players[0].held === null
+        && p1.house === undefined && h1.toaster.every((e) => e === null) && advance_round(h0).cfg.breadload === 0);
+    }
+    {   // 1125 order 61 D2 (opt-in cfg.breadsoft) + the D1 bread_warning hook — mirrors the Python selftest block
+      const sw = new_game(1, "family", 1, "diner", SLOTS, ITEMS_BURGER, "service", true); sw.cfg.breadsoft = true;
+      _place_next(sw); const sp2 = sw.slots.find((p) => p !== null), other = BREADS.find((b) => b !== sp2.bread);
+      sp2.stage = Stage.DONE; sp2.grade = "PERFECT"; sw.toaster[0] = Bun(0, other); sw.toaster[0].cook = toast_ready(sw);
+      sw.players[0].held = other; let sok = bread_warning(sw, 0);
+      sw.players[0].held = sp2.bread; sok = sok && !bread_warning(sw, 0); sw.players[0].held = null;
+      _assembly_tick(sw);
+      sok = sok && sp2.bunned && sp2.wrongBread === true && sw.toaster[0] === null;
+      const sw0 = sw.waste; _do_serve(sw, sp2);
+      sok = sok && sw.waste === sw0 && sw.served === 1 && sp2.grade === "GOOD" && sw.pops.some((p) => p.label === "WRONG BREAD");
+      ro = ro && sok;
+    }
     const lg = new_game(1, "arcade", 1, "diner", SLOTS, ITEMS_PATTY_MELT);                     // LEGACY untouched
     for (let k = 0; k < 40; k++) move(lg, 1);
     ro = ro && cursorOf(lg) === SLOTS + TOASTER_SLOTS - 1 && !("held" in lg.players[0]);
@@ -1605,7 +1621,7 @@
     for (const m of Object.keys(MODES)) for (const pl of [1, 2]) for (const items of [ITEMS_BURGER, ITEMS_FULL_MENU, ITEMS_GRILLED_CHEESE]) {
       const sa = new_game(1, m, pl, "diner", SLOTS, items, "service", true);
       while (!(sa.won || sa.over) && sa.ticks < 6000) { auto_step(sa); tick(sa); }
-      if (!(sa.won && sa.bun_fails === 0 && sa.sent_back === 0)) ro = false;
+      if (!(sa.won && sa.bun_fails === 0)) ro = false;
     }
     ok("real orders (service): seats, bread_for, pans -> toast -> join by bread, wrong bun unclaimed, GC wrong bread = waste + redo, legacy untouched", ro);
 
@@ -1624,14 +1640,14 @@
     finalize_service, close_service:finalize_service, cook_window, order_receipts, melt_done, toast_ready, toast_burn,
     TPS, SLOTS, SEAR_READY, SEAR_BURN, MELT_DONE, BILLY_FULL, SERVE_POINTS,
     PERFECT_BONUS, NEVER_BURN, TURN_LATENCY, COMBO_PER_MULT, MULT_MAX, FLOW_COMBO,
-    BURIED_RESTLESS, BURIED_BARKING, WAIT_FULL, WAIT_COMFORT, WAIT_RATE_UP,
+    BURIED_RESTLESS, BURIED_BARKING, WAIT_FULL, wait_full, WAIT_COMFORT, WAIT_RATE_UP,
     WAIT_RATE_DOWN, WAIT_SPIKE, WAIT_RELIEF, HISCORE_N, DEFAULT_SCORES, THEMES, MODES,
     GRADE_PERFECT, GRADE_GOOD, GRADE_OK, FLIP_PENALTY, GRADE_BONUS, WASTE_COST, POOR_SPIKE, CATS, PTS, POPS_MAX,   // 1112 COOK QUALITY
-    SIDE_STEPS, MIN_FLIPS, grade_window, DRINKS, DRINK_CYCLE, DRINK_POUR, DRINK_RAIL, DRINK_PATIENCE, DRINK_SPIKE, drink_for,
-    DAY_LULL_GAP, DAY_RECOVER, WASTE_SPIKE, DAY_CUE, DAY_TAIL, DAY_WAVES, TAKEOUT_WINDOW, TAKEOUT_BAG, TAKEOUT_SPIKE, BAG_BEAT, BAR_ROUNDS,   // THE DAY
+    SIDE_STEPS, MIN_FLIPS, grade_window,
+    DAY_LULL_GAP, DAY_RECOVER, WASTE_SPIKE, DAY_CUE, DAY_TAIL, DAY_WAVES, TAKEOUT_WINDOW, TAKEOUT_BAG, TAKEOUT_SPIKE, BAG_BEAT,   // THE DAY
     day_compile, day_clock, day_breather, day_cue, day_clocked, DAY_LAST_ORDERS, DAY_REF_TPM, day_spike, SPIKE_WARN, SPIKE_RELIEF,
     PERIODS, Stage, combo_mult, pyround, round_config, Patty, new_game, advance_round, cursorOf,
-    move, flip, add_cheese, toast, drop, handoff, hey_billy, tick, live_wait, buried_index, crowd_bark,
+    move, flip, add_cheese, toast, drop, handoff, hey_billy, bread_warning, tick, live_wait, buried_index, crowd_bark,
     qualifies, add_high_score, auto_step, selftest,
     Action, Item, RECIPES, ITEM_PAY, ITEM_LABEL, ITEM_TICKET, ITEM_COOK, sear_ready, sear_burn_of,
     TOASTER_SLOTS, TOAST_READY, TOAST_BURN, BUN_SPIKE, TOAST_ITEMS, TOASTER_ITEMS, Bun,   // THE BUN TOASTER
