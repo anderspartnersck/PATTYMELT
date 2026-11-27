@@ -45,14 +45,17 @@
   const ONION_ST = ["raw", "soft", "golden", "burnt"], SWISS_ST = ["fresh", "melting", "browned"];
   const TOP = {};
   const OFF = typeof location !== "undefined" && /[?&]toppings=0\b/.test(location.search);   // QA: the old procedural look
-  const isMeltItem = (p) => !!(p && p.stage !== undefined && PM && PM.RECIPES[p.item] && PM.RECIPES[p.item].includes("ONION"));
+  const isMeltItem = (p) => !!(p && p.stage !== undefined && PM && PM.TOAST_ITEMS && PM.TOAST_ITEMS.has(p.item));   // the melts (PATTY / SMASH MELT)
   // The melt's ONIONS step: the onions go on (engine: step passes ONION, cook resets to 0) and then cook in the
   // Swiss step's own sear window until the Swiss lands. raw when laid ▸ soft ▸ GOLDEN across the go-window
   // (cook >= sear_ready = the perfect time to lay the Swiss) ▸ burnt in the red near-burn band (the last 6 ticks
   // before the engine burns the melt — the same band the slot ring flashes red). KIDS never burn: the band sits at
   // 2x ready so overstaying still shows.
+  // 1126 order 73 ONE TOPPING PRESS (default): the onions go on WITH the Swiss, so there is no raw-onion beat on the grill;
+  // the onion drape rides the Swiss's melt ladder (fresh = soft, melting = golden, browned = burnt) under the draped slice.
   function onionStage(p, s) {
-    if (!onionsOn(p)) return null;
+    if (!onionsOn(p, s)) { const sw = isMeltItem(p) && !(s && s.cfg && s.cfg.onionpress) ? swissStage(p) : null;
+      return sw ? { fresh: "soft", melting: "golden", browned: "burnt" }[sw] : null; }
     const ready = PM.sear_ready(p), burn = Math.min(s && s.cfg ? PM.sear_burn_of(s, p) : PM.SEAR_BURN, ready * 2);
     if (p.cook >= burn - 6) return "burnt";
     if (p.cook >= ready) return "golden";
@@ -115,9 +118,11 @@
       for (let i = 0; i < cur.length; i++) {
         const a = prev[i], b = cur[i];
         if (b && !b.bun && a && !a.bun && a.born === b.born && b.step > a.step) {          // a recipe step landed
-          const act = PM.RECIPES[a.item][a.step];
-          const kind = act === "CHEESE" && PM.TOAST_ITEMS.has(a.item) && !(PM.RECIPES[a.item] || []).includes("ONION") ? "MELT_CHEESE" : act;
-          // (ONION is its own step now — Joe 1026 "onions are a step": the melt's onions land on their own press)
+          const rec = PM.recipe ? PM.recipe(s, a.item) : PM.RECIPES[a.item];
+          const act = rec[a.step];
+          const kind = act === "CHEESE" && PM.TOAST_ITEMS.has(a.item) && !rec.includes("ONION") ? "MELT_CHEESE" : act;
+          // (1126 order 73: ONE TOPPING press = MELT_CHEESE, the onions then the Swiss on one press; ?onion=press = Joe 1026's
+          //  "onions are a step": the melt's onions land on their own ONION press)
           start(st, cursorNear(s, i), { kind, idx: i, item: a.item, from: a.stage });
         } else if (b && b.bun && !a) {                                                    // a bun laid on the toaster
           start(st, cursorNear(s, i), { kind: "BUN", idx: i, item: "BUN" });
@@ -316,8 +321,11 @@
     a.dur = DUR[a.kind] || 560; a.t0 = now() - k * a.dur; st.anim[pi] = a;
   }
   // the onions sit on a melt once laid, until the Swiss goes over them: pages draw this over the patty
-  function onionsOn(p) { if (!p || p.stage === undefined || !PM || !PM.RECIPES[p.item]) return false;
-    const i = PM.RECIPES[p.item].indexOf("ONION"); return i >= 0 && p.step === i + 1 && p.stage === "SEAR_B"; }   // (the Swiss then covers them)
+  // (1126 order 73: only on the ?onion=press opt-out — with ONE topping press a melt never waits in SEAR_B past an ONION step,
+  //  so the opt-out's table answers for both; `s` is optional)
+  function onionsOn(p, s) { if (!p || p.stage === undefined || !PM) return false;
+    const R = (PM.recipe && s ? PM.recipe(s, p.item) : (PM.RECIPES_PRESS || PM.RECIPES)[p.item]); if (!R) return false;
+    const i = R.indexOf("ONION"); return i >= 0 && p.step === i + 1 && p.stage === "SEAR_B"; }   // (the Swiss then covers them)
   // drawOnions(ctx, x, y, w [, p, s, view]) — with the patty + state: Joe's sprite for its onionStage ('top' on the
   // grill, 'side' where the food is seen side-on); without (or art absent): the procedural mix, as before.
   function drawOnions(ctx, x, y, w, p, s, view) {

@@ -170,7 +170,9 @@
   // A neutral value (breadload 100, coopk 100, deal "first") leaves the engine flag UNSET, so it plays the old game bit-exact.
   // The page overrides through the launch URL (?breadload / ?coopk / ?deal — the front door writes only off-default values);
   // nothing is stored. A harness pins its own with setSettings({...}) (null = the shipped DEFAULTS).
-  const DEFAULTS = Object.freeze({ breadload: 85, coopk: 125, deal: "alternate" });
+  //   TOPPING (1126 order 73, PM-4106): onion = "topping" (ONE press lays a melt's onions + Swiss) | "press" (the old
+  //                 separate ONION press = engine cfg.onionpress, bit-exact; ?onion=press), solo and co-op alike
+  const DEFAULTS = Object.freeze({ breadload: 85, coopk: 125, deal: "alternate", onion: "topping" });
   let _settings = null;
   function setSettings(o) { _settings = o ? Object.assign({}, DEFAULTS, o) : null; }
   function settingsOf(players, q) {   // the settings this launch plays (players 1 = solo bread; 2 = co-op demand + plates)
@@ -180,8 +182,9 @@
       const d = q.get("deal"); if (d === "alternate" || d === "first") st.deal = d;
       const k = num("coopk", 50, 200); if (k !== null) st.coopk = k;
       const bl = num("breadload", 0, 100); if (bl !== null) st.breadload = bl;
+      const on = q.get("onion"); if (on === "press" || on === "topping") st.onion = on;
     }
-    return players === 2 ? { coopk: st.coopk, deal: st.deal } : { breadload: st.breadload };
+    return players === 2 ? { coopk: st.coopk, deal: st.deal, onion: st.onion } : { breadload: st.breadload, onion: st.onion };
   }
   function applySettings(g, players, q) {
     const st = settingsOf(players, q);
@@ -189,6 +192,7 @@
       if (st.deal && st.deal !== "first") g.cfg.deal = st.deal;
       if (st.coopk && st.coopk !== 100) g.cfg.coopk = st.coopk;
     } else if (st.breadload != null && st.breadload !== 100) g.cfg.breadload = st.breadload;
+    if (st.onion === "press") g.cfg.onionpress = true;   // 1126 order 73: the opt-out (the melts' separate ONION press)
     return st;
   }
   // the off-default settings a game is playing (the GET READY card's amber line; [] at the shipped defaults)
@@ -202,6 +206,7 @@
       const b = c.breadload == null ? 100 : c.breadload;
       if (b !== DEFAULTS.breadload) out.push(b === 100 ? "BREAD: EVERY ORDER NAMES ONE (HARD)" : "BREAD " + b + "% · HOUSE BUN ON THE REST");
     }
+    if (c.onionpress) out.push("MELTS: ONIONS ON THEIR OWN PRESS");   // 1126 order 73 (?onion=press)
     return out;
   }
 

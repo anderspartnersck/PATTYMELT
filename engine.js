@@ -237,26 +237,39 @@
   const Item = Object.freeze({ BURGER: "BURGER", GRILLED_CHEESE: "GRILLED_CHEESE", PATTY_MELT: "PATTY_MELT",
                                HAMBURGER: "HAMBURGER", DOUBLE_CHEESE: "DOUBLE_CHEESE",
                                SMASH: "SMASH", SMASH_MELT: "SMASH_MELT" });
+  // 1126 order 73 PM-4106 ONE TOPPING PRESS (DEFAULT): on the melts the CHEESE (topping) press lays the onions AND the
+  // Swiss in one press — no separate ONION step. RECIPES_PRESS = the opt-out cfg.onionpress (?onion=press): today's separate
+  // ONION press, bit-exact. Every rule reads the game's table through recipe(s, item). Mirrors Python.
   const RECIPES = {
     BURGER:         [Action.FLIP, Action.CHEESE],
     GRILLED_CHEESE: [Action.TOAST, Action.CHEESE],               // (phase 2: moves to the toaster)
-    PATTY_MELT:     [Action.FLIP, Action.ONION, Action.CHEESE],  // flip, the onion mix, the Swiss; rye toasts on the TOASTER + joins
+    PATTY_MELT:     [Action.FLIP, Action.CHEESE],                 // flip, then ONE topping press: onions + Swiss; rye toasts on the TOASTER + joins
     HAMBURGER:      [Action.FLIP],                                // sear, flip, plate — no cheese
     DOUBLE_CHEESE:  [Action.FLIP, Action.FLIP, Action.CHEESE],    // two patties, then the cheese
     SMASH:          [Action.FLIP, Action.CHEESE],                 // smashed cheeseburger — same steps as BURGER but SLOW (ITEM_COOK)
-    SMASH_MELT:     [Action.FLIP, Action.ONION, Action.CHEESE],   // smashed patty (1.5x), onions, Swiss, on rye + a toasted bun
+    SMASH_MELT:     [Action.FLIP, Action.CHEESE],                 // smashed patty (1.5x), onions + Swiss in one press, on rye + a toasted bun
   };
+  const RECIPES_PRESS = Object.assign({}, RECIPES, {            // the opt-out (cfg.onionpress): the melts' own ONION press
+    PATTY_MELT:     [Action.FLIP, Action.ONION, Action.CHEESE],  // flip, the onion mix, the Swiss
+    SMASH_MELT:     [Action.FLIP, Action.ONION, Action.CHEESE],
+  });
+  const _recipes = (s) => (s && s.cfg && s.cfg.onionpress ? RECIPES_PRESS : RECIPES);
+  const recipe = (s, item) => _recipes(s)[item];
   // Items whose patty needs a TOASTED BUN off the toaster before it can be served (docs/BUN_TOASTER.md).
   // Their grill recipe is now identical to a BURGER's; a round with NONE of these never spins up a toaster.
   const TOAST_ITEMS = new Set([Item.PATTY_MELT, Item.SMASH_MELT]);
   // COOK QUALITY: steps each SIDE cooks face-down in the minimum-flip flow (BURGER [1,1], MELT [1,2],
   // HAMBURGER [1,0], DOUBLE [2,1]) and the minimum flips. Mirrors Python's SIDE_STEPS / MIN_FLIPS.
-  const SIDE_STEPS = {}, MIN_FLIPS = {};
-  for (const it of Object.keys(RECIPES)) {
-    const n = [0, 0]; let down = 0, f = 0;
-    for (const a of RECIPES[it]) { n[down] += 1; if (a === Action.FLIP) { down ^= 1; f += 1; } }
-    SIDE_STEPS[it] = n; MIN_FLIPS[it] = f;
-  }
+  // (1126 order 73: the fold makes the melts [1,1]; the opt-out keeps [1,2] in SIDE_STEPS_PRESS)
+  const SIDE_STEPS = {}, MIN_FLIPS = {}, SIDE_STEPS_PRESS = {}, MIN_FLIPS_PRESS = {};
+  for (const [R, SS, MF] of [[RECIPES, SIDE_STEPS, MIN_FLIPS], [RECIPES_PRESS, SIDE_STEPS_PRESS, MIN_FLIPS_PRESS]])
+    for (const it of Object.keys(R)) {
+      const n = [0, 0]; let down = 0, f = 0;
+      for (const a of R[it]) { n[down] += 1; if (a === Action.FLIP) { down ^= 1; f += 1; } }
+      SS[it] = n; MF[it] = f;
+    }
+  const side_steps = (s, item) => (s && s.cfg && s.cfg.onionpress ? SIDE_STEPS_PRESS : SIDE_STEPS)[item];
+  const min_flips = (s, item) => (s && s.cfg && s.cfg.onionpress ? MIN_FLIPS_PRESS : MIN_FLIPS)[item];
   // Items that live ENTIRELY on the toaster — no patty, no grill slot (phase 2). GRILLED CHEESE cooks its
   // whole recipe on a toaster slot and Billy serves it off the toaster. A toaster entry is a Bun (no .stage)
   // or a Patty (a grilled cheese) — `isBun` tells them apart in the tick/serve/dump logic.
@@ -395,6 +408,7 @@
     if (s.cfg.deal) next.cfg.deal = s.cfg.deal;       // 1125 order 64 flags ride the carry
     if (s.cfg.breadload != null) next.cfg.breadload = s.cfg.breadload;
     for (const f of ["coopk", "cooptoast", "coopwait"]) if (s.cfg[f]) next.cfg[f] = s.cfg[f];
+    if (s.cfg.onionpress) next.cfg.onionpress = true;   // 1126 order 73: the opt-out (separate ONION press) rides the carry
     return next;
   }
 
@@ -460,7 +474,7 @@
     const bun=isBun(p), ticket=bun?null:_ticket(s,p), actions=ticket?ticket.actions:[];
     const ingredients={pattyBuilds:bun||p.item===Item.GRILLED_CHEESE?0:1,
       breadPortions:bun||p.item===Item.GRILLED_CHEESE||p.bunned?1:0,
-      onionPortions:actions.filter(a=>a.action===Action.ONION).length,
+      onionPortions:actions.filter(a=>a.action===Action.ONION||(!s.cfg.onionpress&&a.action===Action.CHEESE&&TOAST_ITEMS.has(p.item))).length,   // (1126 fold: the melt's topping press lays its onions)
       cheeseSlices:actions.filter(a=>a.action===Action.CHEESE).length};
     p.wasteRecorded=true;
     const w=s.service.waste;
@@ -484,12 +498,12 @@
     const cookScore=graded ? p.qual : actions.length ? Math.floor(actions.reduce((n,a)=>n+a.quality,0)/actions.length) : 0;
     const ideal=graded ? p.grade==="PERFECT" : actions.length>0 && actions.every(a=>a.cook>=a.idealStart&&a.cook<=a.idealEnd);
     const w=cook_window(s,p||{item:t.item,serviceScale:2});
-    const target=RECIPES[t.item].length*w.idealEnd+w.meltDone+(_item_needs_bun(s,t.item)?w.toastReady:0)+TPS*3;
+    const target=recipe(s,t.item).length*w.idealEnd+w.meltDone+(_item_needs_bun(s,t.item)?w.toastReady:0)+TPS*3;
     const waitPenalty=Math.min(40,Math.floor(Math.max(0,ageTicks-target)/TPS)*2);
     const qualityScore=outcome==='served'?Math.max(0,cookScore-waitPenalty):0;
     let rating=outcome==='served'?Math.max(1,Math.min(ideal?5:4,Math.floor((qualityScore+19)/20))):1;
     let reasons;
-    if(graded&&outcome==='served'){ const extra=Math.max(0,p.flips-MIN_FLIPS[p.item]);
+    if(graded&&outcome==='served'){ const extra=Math.max(0,p.flips-min_flips(s,p.item));
       reasons=[p.grade+(['PERFECT','GOOD','OK'].indexOf(p.grade)!==-1?' cook':'COOKED'),
         p.flips+(p.flips===1?' flip':' flips')+(extra?' (+'+extra+' extra)':'')]; }
     else reasons=outcome==='served'?[ideal?'Ideal cook timing':'Cook timing outside ideal band']:
@@ -525,13 +539,13 @@
     } else {
       const qs = [];
       for (const k of [0, 1]) {
-        const n = SIDE_STEPS[p.item][k]; if (n === 0) continue;
+        const n = side_steps(s, p.item)[k]; if (n === 0) continue;
         const t = p.sear[k]; qs.push(_q(t, n * r, n * i0, n * i1, n * late));
         if (t < n * r) { under = true; if (2 * t < n * r) raw = true; }
       }
       qual = Math.floor(qs.reduce((a, b) => a + b, 0) / qs.length);
     }
-    const extra = Math.max(0, p.flips - MIN_FLIPS[p.item]);
+    const extra = Math.max(0, p.flips - min_flips(s, p.item));
     qual = Math.max(0, qual - FLIP_PENALTY * extra);
     p.qual = qual;
     p.grade = raw ? "RAW" : (qual >= GRADE_PERFECT && extra === 0) ? "PERFECT" : qual >= GRADE_GOOD ? "GOOD"
@@ -565,9 +579,9 @@
       const p=active.find(p=>p.orderId===t.id), w=cook_window(s,p||{item:t.item,serviceScale:2});
       const at=s.slots.indexOf(p), ti=s.toaster.indexOf(p);
       const nextAction=!p?'WAIT':p.stage===Stage.DONE?(_needs_bun(p)&&!p.bunned?'TOAST BUN':'SERVE'):
-        p.stage===Stage.MELT?'MELT':RECIPES[p.item][p.step]||'SERVE';
+        p.stage===Stage.MELT?'MELT':recipe(s,p.item)[p.step]||'SERVE';
       const needs=_item_needs_bun(s,t.item), joined=!!(p&&p.bunned), buns=s.toaster.filter(b=>isBun(b)&&b.bread===t.bread);
-      return {...t,recipe:RECIPES[t.item].slice(),needsBun:needs,bunJoined:joined,
+      return {...t,recipe:recipe(s,t.item).slice(),needsBun:needs,bunJoined:joined,
         bunReady:needs&&!joined&&buns.some(b=>b.cook>=toast_ready(s)&&b.cook<toast_burn(s)),
         bunToasting:needs&&!joined&&buns.some(b=>b.cook<toast_ready(s)),status:!p?'queued':p.stage===Stage.DONE?'ready':'cooking',
         surface:p?(at>=0?'grill':ti>=0?'toaster':'pass'):null,slot:p?(at>=0?at:ti>=0?ti:s.passq.indexOf(p)):null,nextAction,ageTicks:s.ticks-t.arrivedTick,
@@ -634,8 +648,9 @@
     if (cont === null) return;
     const p = cont[i];
     if (p === null || isBun(p)) return;                           // empty, or a Bun (no cook actions)
-    if (p.step >= RECIPES[p.item].length) return;                 // nothing pending (melting / done)
-    if (RECIPES[p.item][p.step] !== action) return;               // not this item's next step — no-op
+    const rec = recipe(s, p.item);
+    if (p.step >= rec.length) return;                             // nothing pending (melting / done)
+    if (rec[p.step] !== action) return;                           // not this item's next step — no-op
     if (s.cfg.deal === "ticket-owner" && p.owner === undefined) p.owner = pi;   // 1125 order 64 PM-4116: the cook who STARTED it owns its plate
     if (p.cook < sear_ready(p)) p.understeared = true;            // acted early — NOT sent back: it grades lower (1112)
     if(s.service) _record_action(s,p,action,p.cook,cook_window(s,p));
@@ -643,7 +658,7 @@
     p.qsum += _q(p.cook, r, i0, i1, late); p.qn += 1;             // per-step quality (grades toaster items)
     if (action === Action.FLIP) { p.flips += 1; p.down ^= 1; p.off = p.cook; }   // recipe flip: other side down
     p.step += 1;
-    p.stage = (p.step < RECIPES[p.item].length) ? _ACTION_STAGE[RECIPES[p.item][p.step]] : Stage.MELT;
+    p.stage = (p.step < rec.length) ? _ACTION_STAGE[rec[p.step]] : Stage.MELT;
     p.cook = 0; _say(s, msg);
     if (p.stage === Stage.MELT) {                                 // the sear is over -> stamp the grade
       const surf = cont === s.slots ? "grill" : "toaster", g = _grade(s, p);
@@ -656,14 +671,15 @@
   // RESUMES its step clock (rescue an early flip), at FLIP_PENALTY per extra flip. Mirrors Python.
   function flip(s, pi = 0) {
     const [cont, i] = _target(s, pi), p = cont === s.slots ? cont[i] : null;
-    if (p && !TOASTER_ITEMS.has(p.item) && (p.stage === Stage.SEAR_A || p.stage === Stage.SEAR_B) && RECIPES[p.item][p.step] !== Action.FLIP) {
+    if (p && !TOASTER_ITEMS.has(p.item) && (p.stage === Stage.SEAR_A || p.stage === Stage.SEAR_B) && recipe(s, p.item)[p.step] !== Action.FLIP) {
       p.flips += 1; p.down ^= 1; const c = p.cook; p.cook = p.off; p.off = c; _say(s, "FLIP!"); return;
     }
     _act(s, pi, Action.FLIP, "FLIP!");
   }
-  function add_cheese(s, pi = 0) {   // the TOPPING button: on a melt whose next step is the onion mix it lays the ONIONS first
+  function add_cheese(s, pi = 0) {   // the TOPPING button: one press = the cheese (on a melt: onions + Swiss, 1126 order 73).
+    // Opt-out cfg.onionpress: on a melt whose next step is the onion mix it lays the ONIONS first (their own press).
     const [cont, i] = _target(s, pi), p = cont !== null ? cont[i] : null;
-    if (p !== null && !isBun(p) && p.step < RECIPES[p.item].length && RECIPES[p.item][p.step] === Action.ONION) { _act(s, pi, Action.ONION, "ONIONS!"); return; }
+    if (p !== null && !isBun(p) && p.step < recipe(s, p.item).length && recipe(s, p.item)[p.step] === Action.ONION) { _act(s, pi, Action.ONION, "ONIONS!"); return; }
     _act(s, pi, Action.CHEESE, "CHEESE!");
   }
   // Context-aware TOAST (the `X` button): an EMPTY toaster slot -> start a bun for a melt; a toaster slot with
@@ -698,7 +714,7 @@
         if (pl.held == null) { _say(s, "GRAB BREAD!"); return; }
         s.toaster[i] = Bun(s.ticks, pl.held); pl.held = null; _say(s, "TOAST!"); return;
       }
-      if (!isBun(entry) && entry.step < RECIPES[entry.item].length && RECIPES[entry.item][entry.step] === Action.TOAST) {
+      if (!isBun(entry) && entry.step < recipe(s, entry.item).length && recipe(s, entry.item)[entry.step] === Action.TOAST) {
         if (pl.held == null) { _say(s, "GRAB BREAD!"); return; }
         const bread = pl.held;
         _act(s, pi, Action.TOAST, "TOAST!");
@@ -737,7 +753,7 @@
     if (!_bread_on(s) || pi >= s.players.length || s.players[pi].held == null) return false;
     const h = s.players[pi].held;
     const wants = (p) => p !== null && !isBun(p) && ((_needs_bun(p) && !p.bunned && p.bread === h) ||
-      (TOASTER_ITEMS.has(p.item) && p.step < RECIPES[p.item].length && RECIPES[p.item][p.step] === Action.TOAST && !!_ticket(s, p) && _ticket(s, p).bread === h));
+      (TOASTER_ITEMS.has(p.item) && p.step < recipe(s, p.item).length && recipe(s, p.item)[p.step] === Action.TOAST && !!_ticket(s, p) && _ticket(s, p).bread === h));
     return !s.slots.concat(s.toaster).some(wants);
   }
   function hey_billy(s, pi = 0) {
@@ -854,7 +870,7 @@
     s.served += 1; s.orders_left = Math.max(0, s.orders_left - 1);
     s.grades[g] = (s.grades[g] || 0) + 1;
     const [r, i0, i1, late] = grade_window(s, p);
-    const target = RECIPES[p.item].length * i1 + melt_done(s) + (_item_needs_bun(s, p.item) ? toast_ready(s) : 0) + TPS * 3;
+    const target = recipe(s, p.item).length * i1 + melt_done(s) + (_item_needs_bun(s, p.item) ? toast_ready(s) : 0) + TPS * 3;
     if (wait <= target) _pop(s, "service", "ON TIME", PTS.ON_TIME, at);
     if (!s.slots.concat(s.toaster).some((q) => q !== null && !isBun(q) && q.born < p.born)) _pop(s, "service", "IN ORDER", PTS.IN_ORDER, at);
     if (buried_index(s) >= BURIED_RESTLESS) _pop(s, "hustle", "CLUTCH", PTS.CLUTCH, at);
@@ -1126,7 +1142,7 @@
       if (bestCont === null) continue;
       s.players[pi].cursor = (bestCont === s.slots ? bestI : s.slots.length + bestI);
       const p = bestCont[bestI];
-      const act = RECIPES[p.item][p.step];              // do the item's NEXT recipe step
+      const act = recipe(s, p.item)[p.step];            // do the item's NEXT recipe step
       if (act === Action.FLIP) flip(s, pi); else if (act === Action.CHEESE || act === Action.ONION) add_cheese(s, pi); else toast(s, pi);
     }
   }
@@ -1179,7 +1195,7 @@
       if (bestCont === null) continue;
       pl.cursor = bestCont === s.slots ? bestI : g + bestI;
       const p = bestCont[bestI];
-      if (RECIPES[p.item][p.step] === Action.FLIP) flip(s, pi); else add_cheese(s, pi);
+      if (recipe(s, p.item)[p.step] === Action.FLIP) flip(s, pi); else add_cheese(s, pi);
     }
   }
 
@@ -1431,7 +1447,8 @@
 
     // ORDER VARIETY: three items from shared steps; BURGER byte-identical, the new ones winnable.
     let varOk = RECIPES.BURGER.length === 2 && RECIPES.GRILLED_CHEESE[0] === Action.TOAST &&
-      RECIPES.PATTY_MELT.length === 3 && RECIPES.SMASH_MELT.length === 3 && RECIPES.PATTY_MELT[1] === Action.ONION &&   // melts: flip, onions, Swiss; rye's on the toaster
+      RECIPES.PATTY_MELT.length === 2 && RECIPES.SMASH_MELT.length === 2 && RECIPES.PATTY_MELT[1] === Action.CHEESE &&   // melts (1126): flip, ONE topping press (onions + Swiss)
+      RECIPES_PRESS.PATTY_MELT.length === 3 && RECIPES_PRESS.SMASH_MELT[1] === Action.ONION && RECIPES_PRESS.BURGER === RECIPES.BURGER &&   // the opt-out keeps the ONION press
       TOAST_ITEMS.has(Item.PATTY_MELT) && TOAST_ITEMS.has(Item.SMASH_MELT) && !TOAST_ITEMS.has(Item.SMASH) &&
       ITEM_PAY.GRILLED_CHEESE < ITEM_PAY.BURGER && ITEM_PAY.BURGER < ITEM_PAY.PATTY_MELT &&
       ITEM_PAY.BURGER === SERVE_POINTS;
@@ -1453,6 +1470,14 @@
     const tb = new_game(1, "arcade", 1, "diner", SLOTS, ITEMS_GRILLED_CHEESE);   // in-slot toast still burns (phase 1)
     tb.slots[0] = Patty(0, Item.GRILLED_CHEESE, Stage.TOAST); tb.slots[0].cook = SEAR_BURN; _cook_tick(tb);
     varOk = varOk && tb.slots[0] === null && tb.fails === 1;
+    // 1126 order 73: ONE TOPPING press on a melt (default) vs the opt-out's separate ONION press (mirrors Python)
+    for (const press of [false, true]) {
+      const tm = new_game(1, "arcade", 1, "diner", SLOTS, ITEMS_PATTY_MELT); if (press) tm.cfg.onionpress = true;
+      tm.slots[0] = Patty(0, Item.PATTY_MELT, Stage.SEAR_A); tm.slots[0].cook = SEAR_READY; const q = tm.slots[0];
+      flip(tm); q.cook = SEAR_READY; add_cheese(tm);
+      varOk = varOk && (press ? q.step === 2 && q.stage === Stage.SEAR_B && tm.flash === "ONIONS!" : q.step === 2 && q.stage === Stage.MELT && !q.understeared)
+        && side_steps(tm, Item.PATTY_MELT)[1] === (press ? 2 : 1) && !!advance_round(tm).cfg.onionpress === press;
+    }
     // FULL MENU interleaves all items deterministically by creation order
     const fm = new_game(1, "arcade", 1, "diner", SLOTS, ITEMS_FULL_MENU);
     const minted = []; for (let i = 0; i < 2 * ITEMS_FULL_MENU.length; i++) minted.push(_new_patty(fm).item);
@@ -1584,7 +1609,7 @@
     }
     {   // 1125 order 64 PM-4114 THE SOLO BREAD SETTING (opt-in cfg.breadload) — mirrors the Python selftest block
       const hb = (v) => { const g = new_game(1, "family", 1, "diner", SLOTS, ITEMS_BURGER, "service", true); g.cfg.breadload = v; _place_next(g);
-        const p = g.slots[0]; p.stage = Stage.MELT; p.step = RECIPES[p.item].length; tick(g); return [g, p]; };
+        const p = g.slots[0]; p.stage = Stage.MELT; p.step = recipe(g, p.item).length; tick(g); return [g, p]; };
       const [h0, p0] = hb(0), [h1, p1] = hb(100);
       ok("bread setting (opt-in cfg.breadload): an order naming no bread gets its HOUSE bun laid by the kitchen, no press",
         p0.house === true && h0.service.tickets[0].house === true && isBun(h0.toaster[0]) && h0.toaster[0].bread === p0.bread && h0.players[0].held === null
@@ -1643,13 +1668,13 @@
     BURIED_RESTLESS, BURIED_BARKING, WAIT_FULL, wait_full, WAIT_COMFORT, WAIT_RATE_UP,
     WAIT_RATE_DOWN, WAIT_SPIKE, WAIT_RELIEF, HISCORE_N, DEFAULT_SCORES, THEMES, MODES,
     GRADE_PERFECT, GRADE_GOOD, GRADE_OK, FLIP_PENALTY, GRADE_BONUS, WASTE_COST, POOR_SPIKE, CATS, PTS, POPS_MAX,   // 1112 COOK QUALITY
-    SIDE_STEPS, MIN_FLIPS, grade_window,
+    SIDE_STEPS, MIN_FLIPS, SIDE_STEPS_PRESS, MIN_FLIPS_PRESS, side_steps, min_flips, grade_window,
     DAY_LULL_GAP, DAY_RECOVER, WASTE_SPIKE, DAY_CUE, DAY_TAIL, DAY_WAVES, TAKEOUT_WINDOW, TAKEOUT_BAG, TAKEOUT_SPIKE, BAG_BEAT,   // THE DAY
     day_compile, day_clock, day_breather, day_cue, day_clocked, DAY_LAST_ORDERS, DAY_REF_TPM, day_spike, SPIKE_WARN, SPIKE_RELIEF,
     PERIODS, Stage, combo_mult, pyround, round_config, Patty, new_game, advance_round, cursorOf,
     move, flip, add_cheese, toast, drop, handoff, hey_billy, bread_warning, tick, live_wait, buried_index, crowd_bark,
     qualifies, add_high_score, auto_step, selftest,
-    Action, Item, RECIPES, ITEM_PAY, ITEM_LABEL, ITEM_TICKET, ITEM_COOK, sear_ready, sear_burn_of,
+    Action, Item, RECIPES, RECIPES_PRESS, recipe, ITEM_PAY, ITEM_LABEL, ITEM_TICKET, ITEM_COOK, sear_ready, sear_burn_of,
     TOASTER_SLOTS, TOAST_READY, TOAST_BURN, BUN_SPIKE, TOAST_ITEMS, TOASTER_ITEMS, Bun,   // THE BUN TOASTER
     TOASTER_SLOTS_SERVICE, TOAST_READY_BREAD, TOAST_BURN_BREAD, needs_bun, BREADS, BREAD_LABEL, BREAD_TAG, SEAT_CYCLE, COUNTER_SEATS,      // REAL ORDERS (service)
     seat_id, seat_label, bread_for, cursor_target,

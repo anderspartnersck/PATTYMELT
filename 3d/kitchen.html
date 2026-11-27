@@ -1012,7 +1012,7 @@ function stageCol(p) { if (!p) return null;
 // so parity is untouched). Returns null when there's nothing to prompt (melting / done / burnt / empty).
 function cookPrompt(p) {
   if (!p || p.stage === S.DONE || p.stage === S.BURNT || p.stage === S.MELT) return null;
-  const rec = pm.RECIPES[p.item]; if (p.step >= rec.length) return null;
+  const rec = pm.recipe(game, p.item); if (p.step >= rec.length) return null;   // (1126 order 73: a melt's one TOPPING press; ?onion=press = the old ONIONS step)
   const act = rec[p.step];
   const label = act === pm.Action.FLIP ? "FLIP" : act === pm.Action.CHEESE ? "CHEESE" : act === pm.Action.ONION ? "ONIONS" : "TOAST";
   const key = act === pm.Action.FLIP ? "F" : (act === pm.Action.CHEESE || act === pm.Action.ONION) ? "C" : "X";   // onions ride the CHEESE button
@@ -1319,7 +1319,7 @@ function drawKitchen3D() {
       const k = grillKey3D(p, i), sw = swissOver3D(p, i, r);
       if (sw) {}                                                         // a melt's Swiss: Joe's draped ladder IS the item
       else if (!k || !foodArt(k, r.x, r.y, null, p)) PMDrawItem(ctx, p, c.x, c.y, 15, { ...pm, MELT_DONE:pm.melt_done(game) }, now / 1000);
-      if (PMSpat.onionsOn(p)) { const ps = ART3D.m.sprites["grill.SEAR_B.slot" + i], ow = ps ? ps.w * 0.82 : 28;   // sized to the rendered patty
+      if (PMSpat.onionsOn(p, game)) { const ps = ART3D.m.sprites["grill.SEAR_B.slot" + i], ow = ps ? ps.w * 0.82 : 28;   // sized to the rendered patty
         PMSpat.drawOnions(ctx, ps ? r.x + ps.x + ps.w / 2 : c.x, ps ? r.y + ps.y + ps.h * 0.36 : c.y - 4, ow, p, game, "top"); }   // raw ▸ soft ▸ golden ▸ burnt until the Swiss
     }
   }
@@ -1583,7 +1583,7 @@ function drawGrillItem(p, x, y, rad, now) {
     return;
   }
   PMDrawItem(ctx, p, x, y, rad, { ...pm, MELT_DONE:pm.melt_done(game) }, now / 1000);
-  if (PMSpat.onionsOn(p)) PMSpat.drawOnions(ctx, x, y - rad * 0.3, rad * 1.75, p, game, "top");   // the onions sit on the melt
+  if (PMSpat.onionsOn(p, game)) PMSpat.drawOnions(ctx, x, y - rad * 0.3, rad * 1.75, p, game, "top");   // the onions sit on the melt
 }
 
 // THE FOOD-SAFETY CARD (Joe 1026) — every shift opens on it: two spatulas, no hands on the food. Told to the audience.
@@ -2465,7 +2465,7 @@ function drawPause() {
   if (pmenu.view === "controls") {
     card(Math.max(8, cx - 360), 58, Math.min(W - 16, 720), H - 86);
     txt("CONTROLS", cx, 96, 34, COL.cheese, "center", 800);
-    const rows = [["", "KEYBOARD", "PAD"], ["MOVE (grill + toaster)", "◄ ►  /  A D", "stick / d-pad"], ["FLIP", "F", "A"], ["TOPPING (cheese / onions)", "C", "B"],
+    const rows = [["", "KEYBOARD", "PAD"], ["MOVE (grill + toaster)", "◄ ►  /  A D", "stick / d-pad"], ["FLIP", "F", "A"], ["TOPPING (cheese · a melt's onions + Swiss)", "C", "B"],
       ["GRAB BREAD (at the pans) · TOAST IT", "X", "X"], ["EXPO — HEY BILLY! (run it)", "SPACE", "Y / RT"], ["PAUSE", "P / Esc", "START"]];
     if (PLAYERS === 2) rows.push(["CHRISSY (P2)", "J L · I K . · M", "pad 2"], ["CO-OP HANDOFF / DROP", "G T  ·  U O", ""]);
     rows.forEach((r, i) => { const y = 150 + i * 34, c = i ? COL.cream : COL.amber;
@@ -2494,7 +2494,7 @@ function setTipsOn(v) { try { localStorage.setItem(TIPS_OFF_KEY, v ? "0" : "1");
 const TIPS = {
   rdy:    ["WAIT FOR RDY", "It's ready when it says RDY — then F / Ⓐ to FLIP."],
   early:  ["TOO SOON — STILL RAW", "Flipped early: keep cooking. FLIP again to finish that side (one extra flip costs a little)."],
-  top:    ["TOPPING TIME", "Cheese (or the melt's onions first): C / Ⓑ when it's RDY."],
+  top:    ["TOPPING TIME", "Cheese (on a melt, the onions + Swiss in one press): C / Ⓑ when it's RDY."],
   bun:    ["EVERY ORDER NEEDS ITS BREAD", "Read the ticket: SESAME · RYE · WHITE. ► past the toaster to the pans, X grabs it; X on the toaster lays it. It joins its patty by itself."],
   billy:  ["ORDER UP — EXPO!", "A plate is up. SPACE / Ⓨ = EXPO: Billy runs it to the table on its ticket."],
   coop:   ["BILLY SERVES ONE SIDE", "He faces one cook at a time — holler for YOUR side when your plate is up."],
@@ -2514,7 +2514,7 @@ function tipWatch() {
   for (let i = 0; i < game.slots.length; i++) { const p = game.slots[i]; if (!p || !mine(i)) continue;
     if (p.understeared) return tipShow("early");
     if (p.stage === S.BURNT) return tipShow("burnt");
-    const nx = pm.RECIPES[p.item][p.step];
+    const nx = pm.recipe(game, p.item)[p.step];
     if (nx !== undefined && p.cook >= pm.sear_ready(p)) return tipShow(nx === A.FLIP ? "rdy" : (nx === A.CHEESE || nx === A.ONION) ? "top" : "rdy");
     if (BUN_ITEMS.has(p.item) && !p.bunned && (p.stage === S.MELT || p.stage === S.DONE) && game.toaster.length && !game.toaster.some((b) => b && b.stage === undefined)) return tipShow("bun");
     if (servable(p)) return tipShow(PLAYERS === 2 ? "coop" : "billy");

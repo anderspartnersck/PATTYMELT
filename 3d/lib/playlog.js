@@ -41,7 +41,7 @@
       const all = g.slots.map((p, i) => [p, "grill", i]).concat((g.toaster || []).map((p, i) => [p, "toaster", i]));
       for (const [p] of all) { if (!p || isBun(p)) continue; const k = keyOf(p); let t = track.get(k); if (!t) track.set(k, t = { step: p.step, readyAt: null, doneAt: null });
         if (t.step !== p.step) { t.step = p.step; t.readyAt = null; }
-        if (t.readyAt == null && p.step < pm.RECIPES[p.item].length && p.cook >= pm.sear_ready(p)) t.readyAt = g.ticks;
+        if (t.readyAt == null && p.step < pm.recipe(g, p.item).length && p.cook >= pm.sear_ready(p)) t.readyAt = g.ticks;
         if (t.doneAt == null && servable(p)) t.doneAt = g.ticks; }
       if (g.ticks % TPS === 0) { cur.series.wait.push(+(g.wait / pm.WAIT_FULL).toFixed(3)); cur.series.buried.push(+pm.buried_index(g).toFixed(3)); }
     }

@@ -110,7 +110,7 @@ function cpuStep(sd) {
   });
   if (best < 0) return;
   const travel = Math.abs(best - g.players[0].cursor); g.players[0].cursor = best;
-  const p = g.slots[best], act = PM.RECIPES[p.item][p.step];
+  const p = g.slots[best], act = PM.recipe(g, p.item)[p.step];
   if (act === PM.Action.FLIP) PM.flip(g, 0); else if (act === PM.Action.TOAST) PM.toast(g, 0); else PM.add_cheese(g, 0);
   sd.busy = L.hands + travel;
 }
