@@ -1,0 +1,230 @@
+{
+ "order": "28A",
+ "made": "1125 pc",
+ "law": "painted cutouts only (Joe's paintings), 2 spatulas, no hands on food",
+ "credit": "Created by Joseph Coleman, with Claude, ChatGPT, and Blender.",
+ "frames": [
+  {
+   "who": "patty",
+   "pose": "FLIP",
+   "painting": "cast_joe/heroes/patty-flip.webp",
+   "size": [
+    520,
+    829
+   ],
+   "painting_at": [
+    0,
+    69
+   ],
+   "feet_bottom": true,
+   "props_carried": [
+    "patty",
+    "tray"
+   ],
+   "hands_on_food_px": 0,
+   "spatulas": 2
+  },
+  {
+   "who": "patty",
+   "pose": "PRESS",
+   "painting": "cast_joe/heroes/patty-plate.webp",
+   "size": [
+    516,
+    760
+   ],
+   "painting_at": [
+    0,
+    0
+   ],
+   "feet_bottom": true,
+   "props_carried": [],
+   "hands_on_food_px": 0,
+   "spatulas": 2
+  },
+  {
+   "who": "patty",
+   "pose": "PLATE",
+   "painting": "cast_joe/heroes/patty-carry.webp",
+   "size": [
+    509,
+    760
+   ],
+   "painting_at": [
+    0,
+    0
+   ],
+   "feet_bottom": true,
+   "props_carried": [
+    "patty",
+    "tray"
+   ],
+   "hands_on_food_px": 0,
+   "spatulas": 2
+  },
+  {
+   "who": "patty",
+   "pose": "CARRY",
+   "painting": "cast_joe/heroes/patty-serve.webp",
+   "size": [
+    594,
+    760
+   ],
+   "painting_at": [
+    0,
+    0
+   ],
+   "feet_bottom": true,
+   "props_carried": [
+    "patty",
+    "tray"
+   ],
+   "hands_on_food_px": 0,
+   "spatulas": 2
+  },
+  {
+   "who": "patty",
+   "pose": "SERVE",
+   "painting": "cast_joe/heroes/patty-serve.webp",
+   "size": [
+    500,
+    760
+   ],
+   "painting_at": [
+    0,
+    0
+   ],
+   "feet_bottom": true,
+   "props_carried": [],
+   "hands_on_food_px": 0,
+   "spatulas": 2
+  },
+  {
+   "who": "patty",
+   "pose": "CHEER",
+   "painting": "cast_joe/heroes/patty-cheer.webp",
+   "size": [
+    463,
+    760
+   ],
+   "painting_at": [
+    0,
+    0
+   ],
+   "feet_bottom": true,
+   "props_carried": [],
+   "hands_on_food_px": 0,
+   "spatulas": 2
+  },
+  {
+   "who": "chrissy",
+   "pose": "FLIP",
+   "painting": "cast_joe/heroes/chrissy-flip.webp",
+   "size": [
+    484,
+    833
+   ],
+   "painting_at": [
+    0,
+    73
+   ],
+   "feet_bottom": true,
+   "props_carried": [
+    "patty",
+    "tray"
+   ],
+   "hands_on_food_px": 0,
+   "spatulas": 2
+  },
+  {
+   "who": "chrissy",
+   "pose": "PRESS",
+   "painting": "cast_joe/heroes/chrissy-press.webp",
+   "size": [
+    455,
+    760
+   ],
+   "painting_at": [
+    0,
+    0
+   ],
+   "feet_bottom": true,
+   "props_carried": [],
+   "hands_on_food_px": 0,
+   "spatulas": 2
+  },
+  {
+   "who": "chrissy",
+   "pose": "PLATE",
+   "painting": "cast_joe/heroes/chrissy-cheese-b.webp",
+   "size": [
+    430,
+    760
+   ],
+   "painting_at": [
+    0,
+    0
+   ],
+   "feet_bottom": true,
+   "props_carried": [
+    "patty",
+    "tray"
+   ],
+   "hands_on_food_px": 0,
+   "spatulas": 2
+  },
+  {
+   "who": "chrissy",
+   "pose": "CARRY",
+   "painting": "cast_joe/heroes/chrissy-serve.webp",
+   "size": [
+    561,
+    760
+   ],
+   "painting_at": [
+    0,
+    0
+   ],
+   "feet_bottom": true,
+   "props_carried": [
+    "patty",
+    "tray"
+   ],
+   "hands_on_food_px": 0,
+   "spatulas": 2
+  },
+  {
+   "who": "chrissy",
+   "pose": "SERVE",
+   "painting": "cast_joe/heroes/chrissy-serve.webp",
+   "size": [
+    488,
+    760
+   ],
+   "painting_at": [
+    0,
+    0
+   ],
+   "feet_bottom": true,
+   "props_carried": [],
+   "hands_on_food_px": 0,
+   "spatulas": 2
+  },
+  {
+   "who": "chrissy",
+   "pose": "CHEER",
+   "painting": "cast_joe/heroes/chrissy-cheer.webp",
+   "size": [
+    444,
+    760
+   ],
+   "painting_at": [
+    0,
+    0
+   ],
+   "feet_bottom": true,
+   "props_carried": [],
+   "hands_on_food_px": 0,
+   "spatulas": 2
+  }
+ ]
+}

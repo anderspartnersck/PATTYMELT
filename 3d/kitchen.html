@@ -362,14 +362,30 @@ for (let i = 0; i < 6; i++) { const j = i; PMCast.img(PMCast.heroChain(SKIN, "bi
 for (const k of ["serve", "turn", "slack"]) PMCast.img(PMCast.heroChain(SKIN, "billy", k).filter((u) => u.indexOf("-" + k + ".") !== -1), (im) => { BILLY_SPR[k] = im; });
 let _billyPhase = 0, _billyPrev = 0, _billyFace = 1;     // walk-cycle phase · last pos (for velocity) · facing (1=right)
 const PATTY_H = 0.50, PATTY_X = -0.05;                   // fraction of KIT height / x nudge off the left edge
+// (1127, PM-1803) ORDER 28A COOKING POSES — opt-in ?poses=1 (HEROES only: they are Joe's own Cougars paintings, so the
+// DINER skin never gets them). Twelve frames (patty/chrissy × flip/press/plate/carry/serve/cheer) from the PC's 28A pass
+// (assets/art3d/cast_joe/poses1124/, poses1124.json): the painting untouched + the food the pose acts on riding a blade
+// (never a hand; hands-on-food 0 px on all 12). ?poses=fig = the paintings alone (no carried food). Render-only: the pose
+// is picked from the same flashes/served count as before, so the engine and parity never see it. Default OFF = unchanged.
+const POSES28_Q = Q.get("poses"), POSES28_FIG = POSES28_Q === "fig";
+const POSES28 = (POSES28_Q === "1" || POSES28_FIG) && SCHOOL ? { patty: {}, chrissy: {} } : null;
+const POSES28_PAINT_H = 760;                                        // every 28A painting is 760 px tall, feet at the bottom
+const POSES28_FIG_W = { patty: { carry: 500 }, chrissy: { carry: 488 } };   // composites wider than the painting (tray past the blade)
+if (POSES28) for (const who of ["patty", "chrissy"]) for (const p of ["flip", "press", "plate", "carry", "serve", "cheer"])
+  PMCast.img(["../assets/art3d/cast_joe/poses1124/" + who + "-" + p + (POSES28_FIG ? ".fig" : "") + ".webp"], (im) => { POSES28[who][p] = im; });
 function pickPattyPose() {
-  const ov = Q.get("pose"); if (ov && (PATTY_SPR[ov] || (ART3D_ON && globalThis.ART3D && ART3D.cast.patty && ART3D.cast.patty[ov]))) return ov;   // ?pose=cheer — QA/preview override (?art=3d: any manifest pose, e.g. flip/cheese)
+  const ov = Q.get("pose"); if (ov && (PATTY_SPR[ov] || (POSES28 && POSES28.patty[ov]) || (ART3D_ON && globalThis.ART3D && ART3D.cast.patty && ART3D.cast.patty[ov]))) return ov;   // ?pose=cheer — QA/preview override (?art=3d: any manifest pose, e.g. flip/cheese)
   const now = performance.now(), P = pickPattyPose;
   if (P._served == null) P._served = game.served;
   if (game.served > P._served) P._serveT = now;
   P._served = game.served;
   if (game.flash === "CHEESE!") P._cheeseT = now;
   if (game.flash === "FLIP!" || game.flash === "TOAST!") P._flipT = now;
+  if (POSES28) {                                  // ?poses=1: a serve plays PLATE ▸ CARRY ▸ SERVE inside the same 650 ms beat
+    const ds = now - (P._serveT || -9e9);
+    if (ds < 650) return ds < 200 ? "plate" : ds < 420 ? "carry" : "serve";
+    if (now - (P._cheeseT || -9e9) < 360) return "press";   // the topping press (CHEESE button) = both blades driven down
+  }
   if (now - (P._serveT  || -9e9) < 650) return "serve";
   if (now - (P._cheeseT || -9e9) < 360) return "cheese";
   if (now - (P._flipT   || -9e9) < 360) return "flip";
@@ -379,7 +395,8 @@ function pickPattyPose() {
 // pose fallback so a cook missing a given frame degrades gracefully (Patty has no flip/cheese → serve → idle)
 function cookSprite(map, pose) {
   const chain = { cheese: ["cheese", "idle"], flip: ["flip", "idle"],   // grill actions → idle for a plater (she's not at the grill)
-                  serve: ["serve", "cheer", "idle"], cheer: ["cheer", "idle"], idle: ["idle"] };
+                  serve: ["serve", "cheer", "idle"], cheer: ["cheer", "idle"], idle: ["idle"],
+                  press: ["cheese", "idle"], plate: ["serve", "cheer", "idle"], carry: ["serve", "cheer", "idle"] };   // (1127) ?poses=1 keys
   for (const k of (chain[pose] || [pose, "idle"])) if (map[k]) return map[k];
   return map.idle;
 }
@@ -1177,8 +1194,10 @@ function toastKey3D(b, j) {           // toaster[j]: a Bun (no .stage) by its co
 function castSprite3D(who, pose) {    // the kitchen-lit relief frames, same pose fallbacks as cookSprite()
   if (who === "patty" && COSTUME.includes("A") && ART3D.cast.pattyA) who = "pattyA";
   if (who === "chrissy" && COSTUME.includes("B") && ART3D.cast.chrissyB) who = "chrissyB";
+  if (POSES28 && POSES28[who]) { const im = POSES28[who][pose]; if (im && im.width) return im; }   // (1127) ?poses=1 (costume swaps keep their own frames)
   const m = ART3D.cast[who] || {};
-  const chain = { cheese: ["cheese", "idle"], flip: ["flip", "idle"], serve: ["serve", "cheer", "idle"], cheer: ["cheer", "idle"], idle: ["idle"] };
+  const chain = { cheese: ["cheese", "idle"], flip: ["flip", "idle"], serve: ["serve", "cheer", "idle"], cheer: ["cheer", "idle"], idle: ["idle"],
+                  press: ["cheese", "idle"], plate: ["serve", "cheer", "idle"], carry: ["serve", "cheer", "idle"] };   // (1127) ?poses=1 keys → shipped frames
   for (const k of (chain[pose] || [pose, "idle"])) if (m[k]) return m[k];
   return m.idle;
 }
@@ -1201,7 +1220,12 @@ function rigContact(im, x, y, w, face, ry) {
 }
 function drawCook3D(who, st) {        // feet on the station point, height = what 1.6 m measures there on this camera
   const pose = pickPattyPose(), sp = castSprite3D(who, pose); if (!sp || !sp.width) return;
-  const h = st.h * 1.02, w = h * sp.width / sp.height, x = KIT.x + st.x, y = KIT.y + st.y + (heroHudCompact() ? HERO_COOK_DROP : 0);
+  let h = st.h * 1.02, w = h * sp.width / sp.height, x = KIT.x + st.x, y = KIT.y + st.y + (heroHudCompact() ? HERO_COOK_DROP : 0);
+  if (POSES28 && POSES28[who] && POSES28[who][pose] === sp) {   // (1127) 28A frame: scale the PAINTING to the cook height (a FLIP adds
+    const k = h / POSES28_PAINT_H; h = sp.height * k; w = sp.width * k;   // headroom for the patty in the air) and keep her feet on the
+    const fw = (POSES28_FIG_W[who] && POSES28_FIG_W[who][pose]) || sp.width;   // station: a tray past the blade must not shift her
+    x += (sp.width / 2 - fw / 2) * k;                                          // (the painting is left-aligned in the composite)
+  }
   ctx.fillStyle = "rgba(0,0,0,0.28)"; ctx.beginPath(); ctx.ellipse(x, y - 2, w * 0.30, 5, 0, 0, 7); ctx.fill();
   rigContact(sp, x, y, w, 1, 3.5);
   // THE JUICE (render-only): a pose change lands with a squash-and-spring; idle breathes from the feet
@@ -2101,7 +2125,7 @@ function prewarm3D() {
 // room crop sits UNDER it (it used to be drawn over the room: it covered GAME DAY / GO CATS / TODAY'S LUNCH / FAST·HOT·HEROES
 // in HEROES and the counter in the DINER). The crops start where each room's signs + seats read whole.
 const RAIL_STRIP = 80;
-const ONE_CROP = { kit: { x: 0, y: SCHOOL ? 62 : 140, w: 640, h: Math.round(640 * 372 / 720) },   // HEROES: the flat-top sits higher in frame
+const ONE_CROP = { kit: { x: 0, y: SCHOOL ? 28 : 40, w: 640, h: Math.round(640 * 372 / 720) },   // 1127 Joe: the cook stands IN the band (DINER 140 cut Patty off; HEROES 62 put COMBO on her face); bread bins + toppings still in
                    din: { x: 0, y: SCHOOL ? 128 : 150, w: 640, h: Math.round(640 * (600 - 372 - RAIL_STRIP) / 720) } };
 let _off = null, _skipHUD = false;
 function render3DOneScreen() {
